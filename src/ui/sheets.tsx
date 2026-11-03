@@ -1,19 +1,26 @@
 import { useState, type ReactNode } from 'react';
-import { AIRCRAFT, CLASS_NAMES } from '../data/aircraft';
+import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
-import { marketBetween, modelledAnnualPax, pairKey } from '../sim/markets';
+import { marketBetween, pairKey } from '../sim/markets';
 import { units } from '../sim/schedule';
+import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
-  blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, topMarketsFrom, utcFromLocal, weeklyDepartures,
+  blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
+import { RouteRivals } from './rivals';
 import type { DayRecord } from './clock';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
 export const tone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
 /** Clock time at an airport, from UTC minutes. */
 export const at = (code: string, utc: number) => hhmm(localMinutes(code, utc));
+/** Arrival clock time at the destination, with +1 / -1 when it is on another date than the departure. */
+export const arrivalAt = (from: string, depUtc: number, to: string, arrUtc: number) => {
+  const mark = dayMark(dayShiftBetween(from, to, depUtc, arrUtc));
+  return mark ? `${at(to, arrUtc)} ${mark}` : at(to, arrUtc);
+};
 export const arrival = (ac: Aircraft, i: number) => {
   const l = ac.legs[i];
   return l.dep + blockMinutes(l.from, l.to, ac.type);
@@ -149,6 +156,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} />
         </div>
       )}
+      {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客只付直飛票價的 85%，且需要接得上：看「機場」的轉機分頁。</div>}
       {result && result.spill > 1 && <div className="hint">有旅客買不到位子：加一班或換大一點的飛機。</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint">載客率偏低：減一班或降低票價。</div>}
       <div className="fare">
@@ -162,10 +170,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </div>
       </div>
       <div className="competition">
-        <span>其他航空 {m?.rivalFreq ? `每週 ${m.rivalFreq} 班` : '無直飛'}</span>
         {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
-        <span>航空旅客 每週 {count(m?.airDemand ?? 0)}</span>
+        <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
       </div>
+      <h4>競爭對手（右邊是搭機旅客占比）</h4>
+      <RouteRivals a={a} b={b} result={result} />
       {[[a, b], [b, a]].map(([from, to]) => {
         const dir = flights.filter((f) => f.leg.from === from);
         if (!dir.length) return null;
@@ -176,7 +185,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
               {dir.map(({ ac, index, leg }) => (
                 <li key={`${ac.id}-${index}`} onClick={() => onEditFlight(ac.id, index)} className="tap">
                   <span className="t">{at(leg.from, leg.dep)}</span>
-                  <span className="name">抵達 {at(leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
+                  <span className="name">抵達 {arrivalAt(leg.from, leg.dep, leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
                   <span className="chev">調整 ›</span>
                 </li>
               ))}
@@ -237,7 +246,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
               <span className="t">{at(l.from, l.dep)}</span>
               <span className="name">
                 {u.count === 2 ? `${l.from} ⇄ ${l.to}` : `${l.from} → ${l.to}`}
-                <small>{u.count === 2 ? `回到 ${l.from} ${at(l.from, arrival(ac, last))}` : `抵達 ${at(l.to, arrival(ac, last))}`} · {AIRPORT_BY_CODE[l.to].name}</small>
+                <small>{u.count === 2 ? `回到 ${l.from} ${arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last))}` : `抵達 ${arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}`} · {AIRPORT_BY_CODE[l.to].name}</small>
               </span>
               <span className="chev">調整 ›</span>
             </li>
@@ -246,29 +255,6 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
       </ul>
       <button className="primary" onClick={() => onAddHere(ac.legs.length)}>從{AIRPORT_BY_CODE[here].name}加一班來回</button>
       <Confirm label="退租這架飛機" confirm={`退租 ${ac.reg}，取消它的 ${ac.legs.length} 個航班？`} onYes={onRemove} />
-    </Sheet>
-  );
-}
-
-// ---------- Airport ----------
-
-export function AirportSheet({ plan, code, onConnect, onOpen, onClose }: { plan: Plan; code: string; onConnect: () => void; onOpen: (to: string) => void; onClose: () => void }) {
-  const a = AIRPORT_BY_CODE[code];
-  const used = weeklyDepartures(plan, code);
-  const top = topMarketsFrom(code, plan);
-  return (
-    <Sheet title={`${a.name} ${a.code}`} sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
-      <button className="primary wide" onClick={onConnect}>從這裡開新航線</button>
-      <h4>最大市場（每週單向航空旅客）</h4>
-      <ul className="markets">
-        {top.map((m) => (
-          <li key={m.to}>
-            <span className="name">{AIRPORT_BY_CODE[m.to].name} <small>{m.to} · {count(m.distKm)} 公里</small></span>
-            <span className="num">{count(m.airDemand)}</span>
-            {m.served ? <span className="tag">已開航</span> : <button onClick={() => onOpen(m.to)}>開航</button>}
-          </li>
-        ))}
-      </ul>
     </Sheet>
   );
 }

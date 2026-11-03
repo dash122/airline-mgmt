@@ -29,7 +29,13 @@ export interface Airport {
   slotCap: number; // weekly departures the player may add
 }
 
-export const AIRPORTS = data as Airport[];
+/**
+ * The data file carries a base weekly slot figure per airport size (hub 140, major 84, large 56, medium 35, small 14).
+ * Slots were the limit on growing a network, so the game multiplies them: a hub allows about 20 departures an hour.
+ */
+export const SLOT_SCALE = 10;
+
+export const AIRPORTS = (data as Airport[]).map((a) => ({ ...a, slotCap: a.slotCap * SLOT_SCALE }));
 
 export const AIRPORT_BY_CODE: Record<string, Airport> = Object.fromEntries(AIRPORTS.map((a) => [a.code, a]));
 

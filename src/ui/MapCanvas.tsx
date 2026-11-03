@@ -4,6 +4,7 @@ import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
+import { rivalsAt } from '../sim/competitors';
 import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
@@ -225,11 +226,34 @@ export default function MapCanvas(props: Props) {
       ctx.drawImage(drawLand(pal), 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Routes and aircraft, drawn once per visible copy of the world.
       const pairs = routePairs(p.plan);
       const wrapPx = 360 * v.scale;
       const copies = WORLD_COPIES.filter((k) => ((-180 + 360 * k - v.cx) * v.scale + w / 2) < w && ((180 + 360 * k - v.cx) * v.scale + w / 2) > 0);
       const pathPx = (pts: [number, number][], k: number) => pts.map(([la, lo]) => { const [x, y] = screen(la, lo); return [x + k * wrapPx, y] as [number, number]; });
+      // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
+      const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
+      if (focus) {
+        for (const r of rivalsAt(focus)) {
+          const unwrapped = arcUnwrapped(focus, r.to);
+          const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
+          const freq = r.services.reduce((s, x) => s + x.freq, 0);
+          for (const k of [-2, -1, 0, 1, 2]) {
+            const pts = pathPx(unwrapped, k);
+            if (pts.every(([x]) => x < -20) || pts.every(([x]) => x > w + 20)) continue;
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+            ctx.strokeStyle = top.airline.color;
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = Math.min(4, 0.8 + Math.sqrt(freq) / 4);
+            ctx.setLineDash([2, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
+        }
+      }
+
+      // Routes and aircraft, drawn once per visible copy of the world.
       for (const r of pairs) {
         const unwrapped = arcUnwrapped(r.a, r.b);
         const res = p.result?.routes[r.key];
@@ -249,9 +273,15 @@ export default function MapCanvas(props: Props) {
           }
           ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
           ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
+          // With an airport selected, show its direct routes and fade the rest.
+          if (focus) {
+            if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
+            else ctx.globalAlpha = 0.18;
+          }
           if (!res) ctx.setLineDash([6, 5]);
           ctx.stroke();
           ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
         }
       }
 
