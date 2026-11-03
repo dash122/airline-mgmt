@@ -116,3 +116,17 @@ describe('route rules', () => {
     expect(routeProblem('TTT', 'KYD', 'A20N')).not.toBeNull();
   });
 });
+
+describe('economics', () => {
+  const build = (base: string, to: string, type: 'A20N' | 'B77W', trips: number) => {
+    let p = emptyPlan(base);
+    for (let i = 0; i < trips; i++) { const r = addRoundTrip(p, base, to, type); if ('error' in r) throw new Error(r.error); p = r.plan; }
+    return simulate(p);
+  };
+  test('a well-matched narrowbody on a busy route can break even at the reference fare', () => {
+    expect(build('TPE', 'HKG', 'A20N', 3).costRecovery).toBeGreaterThan(1);
+  });
+  test('a 777-300ER on a short domestic route loses money', () => {
+    expect(build('TPE', 'KHH', 'B77W', 3).costRecovery).toBeLessThan(1);
+  });
+});

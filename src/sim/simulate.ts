@@ -187,6 +187,10 @@ export interface NetworkResult {
 export const MIN_CONNECT = 45;
 export const MAX_CONNECT = 240;
 const CONNECTION_PENALTY_H = 1;
+/** Per passenger on each flight: check-in, catering and airport passenger fees, NT$. */
+export const PAX_COST_PER_SEGMENT = 250;
+/** Share of ticket revenue that goes on sales, distribution and card fees. */
+export const SALES_COST_SHARE = 0.12;
 
 function buildFlights(plan: Plan): Flight[] {
   const out: Flight[] = [];
@@ -282,10 +286,15 @@ export function simulate(plan: Plan): NetworkResult {
     }
   }
 
+  const flightCost = (f: Flight) => {
+    const spec = AIRCRAFT[f.ac.type];
+    return f.blockH * spec.costPerBlockHour + spec.costPerDeparture
+      + (flightPax.get(f) ?? 0) * PAX_COST_PER_SEGMENT + (flightRevenue.get(f) ?? 0) * SALES_COST_SHARE;
+  };
+
   const routes: Record<string, RouteResult> = {};
   for (const f of flights) {
     const key = pairKey(f.from, f.to);
-    const spec = AIRCRAFT[f.ac.type];
     let r = routes[key];
     if (!r) {
       const m = marketBetween(f.from, f.to);
@@ -306,7 +315,7 @@ export function simulate(plan: Plan): NetworkResult {
     r.pax += 7 * (flightPax.get(f) ?? 0);
     r.spill += 7 * (flightSpill.get(f) ?? 0);
     r.revenue += 7 * (flightRevenue.get(f) ?? 0);
-    r.flyingCost += 7 * (f.blockH * spec.costPerBlockHour + spec.costPerDeparture);
+    r.flyingCost += 7 * flightCost(f);
   }
   for (const r of Object.values(routes)) r.loadFactor = r.seats ? r.pax / r.seats : 0;
 
@@ -317,11 +326,10 @@ export function simulate(plan: Plan): NetworkResult {
   }
   for (const f of flights) {
     const a = aircraft[f.ac.id];
-    const spec = AIRCRAFT[f.ac.type];
     a.pax += 7 * (flightPax.get(f) ?? 0);
     a.seats += 7 * f.seats;
     a.revenue += 7 * (flightRevenue.get(f) ?? 0);
-    a.flyingCost += 7 * (f.blockH * spec.costPerBlockHour + spec.costPerDeparture);
+    a.flyingCost += 7 * flightCost(f);
   }
 
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);

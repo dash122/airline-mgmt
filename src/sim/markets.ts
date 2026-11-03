@@ -26,7 +26,8 @@ export const MIN_MARKET_KM = 100;
 const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
 const MIN_RIVAL_FREQ = 3;
 
-export const refFare = (distKm: number) => Math.max(1200, Math.round((900 + 2.2 * distKm) / 10) * 10);
+/** Average one-way fare across all cabins and booking classes, NT$. */
+export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6 * distKm) / 10) * 10);
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
 
