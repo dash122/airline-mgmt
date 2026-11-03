@@ -65,3 +65,25 @@ describe('radial layout', () => {
     expect(out[1]).toBeLessThan(out[2]);
   });
 });
+
+import { dayMark, dayShiftBetween, zoneDiffHours } from './airports';
+describe('arrival day markers', () => {
+  test('a late flight east across a one hour zone lands the next day', () => {
+    const dep = utcFromLocal('TPE', 23 * 60 + 30);
+    expect(dayShiftBetween('TPE', 'NRT', dep, dep + 200)).toBe(1);
+    expect(dayShiftBetween('TPE', 'NRT', utcFromLocal('TPE', 8 * 60), utcFromLocal('TPE', 8 * 60) + 200)).toBe(0);
+  });
+  test('the base clock view reads both ends on one clock', () => {
+    const dep = utcFromLocal('TPE', 22 * 60 + 30);
+    expect(dayShiftBetween('TPE', 'TPE', dep, dep + 200)).toBe(1);
+    expect(dayShiftBetween('TPE', 'TPE', dep, dep + 60)).toBe(0);
+  });
+  test('zone difference and marks', () => {
+    expect(zoneDiffHours('TPE', 'NRT')).toBe(1);
+    expect(zoneDiffHours('NRT', 'TPE')).toBe(-1);
+    expect(zoneDiffHours('TPE', 'HKG')).toBe(0);
+    expect(dayMark(1)).toBe('+1');
+    expect(dayMark(-1)).toBe('-1');
+    expect(dayMark(0)).toBe('');
+  });
+});

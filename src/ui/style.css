@@ -337,3 +337,8 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .st-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .st-top .name .chip { padding: 1px 7px; font-size: 11px; font-weight: 400; }
 .stations small { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+.daymark { color: var(--sel); font-weight: 700; font-size: 0.72em; margin-left: 2px; vertical-align: super; line-height: 0; font-variant-numeric: tabular-nums; }
+b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
+.timetable .t sup.daymark { font-size: 11px; }
+.group-head small.tz { font-weight: 400; }

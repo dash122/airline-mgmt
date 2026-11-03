@@ -3,7 +3,7 @@
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from './markets';
 import {
-  blockMinutes, DAY, detourOk, HUB_COST_PER_WEEK, localMinutes, minConnect, weeklyDepartures,
+  blockMinutes, DAY, detourOk, HUB_COST_PER_WEEK, localMinutes, minConnect, utcOffsetMin, weeklyDepartures,
   type Aircraft, type Leg, type NetworkResult, type Plan,
 } from './simulate';
 import { distanceKm } from './geo';
@@ -37,6 +37,26 @@ export type ClockBasis = 'local' | 'base';
 export const clockAt = (plan: Plan, basis: ClockBasis, code: string, utc: number) =>
   localMinutes(basis === 'base' ? plan.base : code, utc);
 
+const dateOf = (code: string, utc: number) => Math.floor((utc + utcOffsetMin(AIRPORT_BY_CODE[code])) / DAY);
+
+/**
+ * How many calendar days after departure the flight lands, as read on the clocks of the chosen basis:
+ * at each airport's own clock ('local') or all at the base's clock ('base'). Negative when it lands on an earlier date
+ * (flying east across the date line). Uses only localMinutes/utcOffsetMin so it follows whatever zones the airports carry.
+ */
+export function dayShift(plan: Plan, basis: ClockBasis, f: { from: string; to: string; depUtc: number; arrUtc: number }): number {
+  return basis === 'base' ? dayShiftBetween(plan.base, plan.base, f.depUtc, f.arrUtc) : dayShiftBetween(f.from, f.to, f.depUtc, f.arrUtc);
+}
+
+/** Calendar days between leaving `from` and landing at `to`, each read on its own airport's clock. */
+export const dayShiftBetween = (from: string, to: string, depUtc: number, arrUtc: number) => dateOf(to, arrUtc) - dateOf(from, depUtc);
+
+/** Clock difference between two airports, in hours (arrival airport minus departure airport). */
+export const zoneDiffHours = (from: string, to: string) => (utcOffsetMin(AIRPORT_BY_CODE[to]) - utcOffsetMin(AIRPORT_BY_CODE[from])) / 60;
+
+/** "+1" or "-1" for an arrival on another date, '' for the same date. */
+export const dayMark = (n: number) => (n === 0 ? '' : n > 0 ? `+${n}` : `${n}`);
+
 /**
  * Every departure (or arrival) in the plan as one chronological list. Times are the clock time at the
  * airport the row is about, or at the base.
@@ -46,7 +66,7 @@ export function timeline(plan: Plan, opts: { mode: 'dep' | 'arr'; basis: ClockBa
     .filter((f) => !opts.airport || (opts.mode === 'dep' ? f.from : f.to) === opts.airport)
     .map((f) => {
       const at = opts.mode === 'dep' ? f.from : f.to;
-      return { ...f, at, time: clockAt(plan, opts.basis, at, opts.mode === 'dep' ? f.depUtc : f.arrUtc), other: clockAt(plan, opts.basis, opts.mode === 'dep' ? f.to : f.from, opts.mode === 'dep' ? f.arrUtc : f.depUtc) };
+      return { ...f, at, shift: dayShift(plan, opts.basis, f), durMin: f.arrUtc - f.depUtc, zone: zoneDiffHours(f.from, f.to), time: clockAt(plan, opts.basis, at, opts.mode === 'dep' ? f.depUtc : f.arrUtc), other: clockAt(plan, opts.basis, opts.mode === 'dep' ? f.to : f.from, opts.mode === 'dep' ? f.arrUtc : f.depUtc) };
     });
   return rows.sort((x, y) => x.time - y.time || x.at.localeCompare(y.at));
 }
