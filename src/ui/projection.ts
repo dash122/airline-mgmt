@@ -7,6 +7,14 @@ export interface View {
 
 const DEG = 180 / Math.PI;
 export const projX = (lon: number) => lon;
+export const nearestLongitude = (lon: number, center: number) => lon + 360 * Math.round((center - lon) / 360);
+
+/** World copies intersecting the viewport, including a margin for routes. */
+export function worldCopies(view: View, width: number): number[] {
+  const left = Math.floor((view.cx - width / (2 * view.scale) + 180) / 360) - 1;
+  const right = Math.floor((view.cx + width / (2 * view.scale) + 180) / 360) + 1;
+  return Array.from({ length: right - left + 1 }, (_, i) => (left + i) * 360);
+}
 export const projY = (lat: number) => DEG * Math.log(Math.tan(Math.PI / 4 + (Math.max(-85, Math.min(85, lat)) * Math.PI) / 360));
 
 export function toScreen(view: View, w: number, h: number, lat: number, lon: number): [number, number] {

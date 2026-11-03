@@ -5,7 +5,7 @@ import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
 import { rivalsAt } from '../sim/competitors';
-import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
+import { fitView, nearestLongitude, projX, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
 
@@ -43,7 +43,10 @@ const HIT_AIRPORT_PX = 22;
 function arc(a: string, b: string): [number, number][] {
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   const pts: [number, number][] = [];
-  for (let i = 0; i <= ARC_STEPS; i++) pts.push(greatCirclePoint(A.lat, A.lon, B.lat, B.lon, i / ARC_STEPS));
+  for (let i = 0; i <= ARC_STEPS; i++) {
+    const [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, i / ARC_STEPS);
+    pts.push([lat, nearestLongitude(lon, i ? pts[i - 1][1] : A.lon)]);
+  }
   return pts;
 }
 
@@ -79,7 +82,7 @@ export default function MapCanvas(props: Props) {
       const A = AIRPORT_BY_CODE[r.a], B = AIRPORT_BY_CODE[r.b];
       [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, 0.5);
     }
-    const [x, y] = toScreen(v, w, h, lat, lon);
+    const [x, y] = toScreen(v, w, h, lat, nearestLongitude(lon, v.cx));
     const visibleBottom = h * 0.42;
     if (y > 100 && y < visibleBottom && x > 20 && x < w - 20) return;
     const targetY = h * 0.27;
@@ -110,10 +113,11 @@ export default function MapCanvas(props: Props) {
     // Test hook: screen position of an airport.
     (window as unknown as { __wpScreen?: unknown }).__wpScreen = (code: string) => {
       const a = AIRPORT_BY_CODE[code];
-      return a ? toScreen(viewRef.current!, sizeRef.current.w, sizeRef.current.h, a.lat, a.lon) : null;
+      return a ? toScreen(viewRef.current!, sizeRef.current.w, sizeRef.current.h, a.lat, nearestLongitude(a.lon, viewRef.current!.cx)) : null;
     };
 
-    const screen = (lat: number, lon: number) => toScreen(viewRef.current!, sizeRef.current.w, sizeRef.current.h, lat, lon);
+    let worldOffset = 0;
+    const screen = (lat: number, lon: number) => toScreen(viewRef.current!, sizeRef.current.w, sizeRef.current.h, lat, lon + worldOffset);
 
     const drawLand = (pal: (typeof PALETTE)['day']) => {
       const { w, h, dpr } = sizeRef.current;
@@ -127,8 +131,11 @@ export default function MapCanvas(props: Props) {
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.fillStyle = pal.sea;
       c.fillRect(0, 0, w, h);
-      const sx = (lon: number) => w / 2 + (projX(lon) - v.cx) * v.scale;
+      let landOffset = 0;
+      const sx = (lon: number) => w / 2 + (projX(lon) + landOffset - v.cx) * v.scale;
       const sy = (lat: number) => h / 2 - (projY(lat) - v.cy) * v.scale;
+      for (const offset of worldCopies(v, w)) {
+      landOffset = offset;
       c.beginPath();
       for (const ring of geo.land as number[][][]) {
         ring.forEach(([lon, lat], i) => (i ? c.lineTo(sx(lon), sy(lat)) : c.moveTo(sx(lon), sy(lat))));
@@ -147,6 +154,7 @@ export default function MapCanvas(props: Props) {
       c.strokeStyle = pal.border;
       c.stroke();
       c.setLineDash([]);
+      }
       landCache.current = { key, canvas: off };
       return off;
     };
@@ -168,6 +176,8 @@ export default function MapCanvas(props: Props) {
       ctx.drawImage(drawLand(pal), 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+      for (const offset of worldCopies(v, w)) {
+      worldOffset = offset;
       // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
       const rivalFocus = p.selection?.kind === 'airport' ? p.selection.id : null;
       if (rivalFocus) {
@@ -249,7 +259,7 @@ export default function MapCanvas(props: Props) {
 
       // Rubber band while dragging a new route
       const drag = dragRef.current;
-      if (drag) {
+      if (drag && AIRPORT_BY_CODE[drag.from].lon + worldOffset === nearestLongitude(AIRPORT_BY_CODE[drag.from].lon, v.cx)) {
         const A = AIRPORT_BY_CODE[drag.from];
         const [ax, ay] = screen(A.lat, A.lon);
         ctx.beginPath();
@@ -307,6 +317,8 @@ export default function MapCanvas(props: Props) {
         ctx.fillStyle = pal.label;
         ctx.fillText(l.text, l.x, l.y);
       }
+      }
+      worldOffset = 0;
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
@@ -325,7 +337,7 @@ export default function MapCanvas(props: Props) {
     const airportAt = (x: number, y: number): string | null => {
       let best: string | null = null, bestD = HIT_AIRPORT_PX;
       for (const a of AIRPORTS) {
-        const [ax, ay] = screen(a.lat, a.lon);
+        const [ax, ay] = screen(a.lat, nearestLongitude(a.lon, viewRef.current!.cx));
         const d = Math.hypot(ax - x, ay - y);
         if (d < bestD) { bestD = d; best = a.code; }
       }
@@ -333,9 +345,11 @@ export default function MapCanvas(props: Props) {
     };
     const routeAt = (x: number, y: number): string | null => {
       for (const r of routePairs(propsRef.current.plan)) {
-        const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
+        for (const offset of worldCopies(viewRef.current!, sizeRef.current.w)) {
+        const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo + offset));
         for (let i = 0; i < pts.length - 1; i++) {
           if (distToSegment(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 12) return r.key;
+        }
         }
       }
       return null;
