@@ -2,6 +2,7 @@
 // travel propensity, tourism pull and distance, then calibrated to a few national air-travel totals.
 // Deterministic: same data in, same markets out.
 import { AIRPORTS, type Airport } from '../data/airports';
+import { hasCompetitorRoute } from '../data/competitor-network';
 import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
 import { airUtility, groundUtility, noTravelUtility, type GroundOption } from './choice';
@@ -114,6 +115,7 @@ function buildMarkets(): Map<string, Market> {
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
     for (const r of raw) {
+      if (!hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])) continue;
       const b = baseline(r.gravity * scale[r.group], refFare(r.distKm), r.distKm, r.ground);
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
@@ -124,7 +126,9 @@ function buildMarkets(): Map<string, Market> {
   for (const r of raw) {
     const potential = r.gravity * scale[r.group];
     const fare = refFare(r.distKm);
-    const b = baseline(potential, fare, r.distKm, r.ground);
+    const b = hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
+      ? baseline(potential, fare, r.distKm, r.ground)
+      : { air: 0, freq: 0 };
     out.set(pairKey(AIRPORTS[r.i].code, AIRPORTS[r.j].code), {
       a: AIRPORTS[r.i].code,
       b: AIRPORTS[r.j].code,
