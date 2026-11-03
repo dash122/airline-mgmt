@@ -1,0 +1,11 @@
+{
+  "name": "航點 Waypoint",
+  "short_name": "航點",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f5ef",
+  "theme_color": "#2f6fb3",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
