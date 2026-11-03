@@ -10,6 +10,14 @@ describe('global jet airport coverage', () => {
       expect(a.name, a.code).not.toMatch(/[a-z]/i);
     }
   });
+  test('uses concise place labels and distinguishes airports in shared cities', () => {
+    expect(AIRPORT_BY_CODE.DXB.name).toBe('杜拜');
+    expect(AIRPORT_BY_CODE.SIN.name).toBe('新加坡');
+    expect(AIRPORT_BY_CODE.LAX.name).toBe('洛杉磯');
+    expect(AIRPORT_BY_CODE.LHR.name).toBe('倫敦希斯洛');
+    expect(AIRPORT_BY_CODE.JFK.name).toBe('紐約甘迺迪');
+    for (const a of AIRPORTS) expect(a.name, a.code).not.toMatch(/國際機場|航空站|機場/);
+  });
   test('has worldwide coverage and excludes turboprop-only airports', () => {
     expect(AIRPORTS.length).toBeGreaterThan(1000);
     expect(new Set(AIRPORTS.map(a => a.country)).size).toBeGreaterThan(150);
