@@ -3,6 +3,7 @@
 // Deterministic: same data in, same markets out.
 import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { hasCompetitorRoute } from '../data/competitor-network';
+import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
 import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
 import { airUtility, groundUtility, noTravelUtility, type GroundOption } from './choice';
@@ -93,7 +94,8 @@ function baseline(potential: number, fare: number, distKm: number, ground?: Grou
 
 function buildMarkets(): Map<string, Market> {
   const mass = AIRPORTS.map((a) =>
-    Math.pow(a.catchment * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism * (isIsland(a) ? ISLAND_PROPENSITY : 1), MASS_EXPONENT),
+    Math.pow((ANNUAL_TRAFFIC_M[a.code] && !['JP', 'TW', 'HK', 'MO'].includes(a.country) ? ANNUAL_TRAFFIC_M[a.code] * 1e6 / 3 : a.catchment)
+      * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism * (isIsland(a) ? ISLAND_PROPENSITY : 1), MASS_EXPONENT),
   );
   const raw: { i: number; j: number; distKm: number; gravity: number; group: string; ground?: GroundOption }[] = [];
   for (let i = 0; i < AIRPORTS.length; i++) {
@@ -154,7 +156,7 @@ function buildMarkets(): Map<string, Market> {
     const a = AIRPORT_BY_CODE[m.a], b = AIRPORT_BY_CODE[m.b];
     if ((degree.get(m.a) ?? 0) >= limits[a.size] || (degree.get(m.b) ?? 0) >= limits[b.size]
       || m.distKm > 15000
-      || (m.distKm > 4500 && ![a, b].every(x => x.size === 'hub' || x.size === 'major'))) {
+      || (m.distKm > 4500 && ![a, b].every(x => (x.size === 'hub' || x.size === 'major') && x.maxClass === 'widebody'))) {
       m.rivalFreq = 0;
       m.airDemand = 0;
     } else {
@@ -164,6 +166,28 @@ function buildMarkets(): Map<string, Market> {
   }
   // Preserve calibrated regional totals on the retained network.
   const retained = candidates.filter(m => m.rivalFreq > 0);
+  // Fit global airport traffic budgets on the retained network. Regional markets
+  // remain fixed; terminal totals guide simulated OD demand, not exact route counts.
+  // Scaling potential too ensures player demand and competitor service agree.
+  for (let iter = 0; iter < 40; iter++) {
+    const totals: Record<string, number> = {};
+    const fixed: Record<string, number> = {};
+    for (const m of retained) for (const code of [m.a, m.b]) {
+      const bucket = m.group in AIR_TARGETS_M ? fixed : totals;
+      bucket[code] = (bucket[code] ?? 0) + m.airDemand * 104;
+    }
+    const factors: Record<string, number> = {};
+    for (const [code, millions] of Object.entries(ANNUAL_TRAFFIC_M)) {
+      factors[code] = Math.max(0.1, (millions * 1e6 - (fixed[code] ?? 0)) / Math.max(1, totals[code] ?? 0));
+    }
+    for (const m of retained) {
+      if (m.group in AIR_TARGETS_M) continue;
+      m.potential *= Math.pow((factors[m.a] ?? 1) * (factors[m.b] ?? 1), 0.35);
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground);
+      m.airDemand = b.air;
+      m.rivalFreq = b.freq;
+    }
+  }
   for (let iter = 0; iter < 20; iter++) {
     const totals: Record<string, number> = {};
     for (const m of retained) totals[m.group] = (totals[m.group] ?? 0) + m.airDemand;

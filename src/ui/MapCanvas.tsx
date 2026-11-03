@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import geo from '../data/geo.json';
-import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
+import { AIRPORTS, AIRPORT_BY_CODE, airportMarkerRadius } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
@@ -32,7 +32,6 @@ const PALETTE = {
   night: { sea: '#0c1620', land: '#17232e', coast: '#2b3a47', border: '#33424f', label: '#d6e2ea', labelHalo: '#0c1620', airport: '#d6e2ea', route: '#5fb0ff', idle: '#5d6f7d', plane: '#ffffff', sel: '#ff9a5a' },
 };
 
-const SIZE_RADIUS = { hub: 7, major: 5, large: 4.5, medium: 3.5, small: 3 } as const;
 const SIZE_PRIORITY = { hub: 2, major: 3, large: 4, medium: 5, small: 6 } as const;
 const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
@@ -286,7 +285,7 @@ export default function MapCanvas(props: Props) {
       for (const a of AIRPORTS) {
         const [x, y] = screen(a.lat, a.lon);
         if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
-        const r = SIZE_RADIUS[a.size];
+        const r = airportMarkerRadius(a);
         const isBase = a.code === p.plan.base;
         const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
         if (selected) {
