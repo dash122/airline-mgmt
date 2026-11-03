@@ -299,7 +299,7 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 /* Airport views */
 .seg.two { grid-template-columns: repeat(2, 1fr); }
 .seg.three { grid-template-columns: repeat(3, 1fr); }
-.seg.two button, .seg.three button { flex-direction: row; justify-content: center; font-size: 13px; padding: 8px 4px; }
+.seg.two button, .seg.three button, .seg.four button { flex-direction: row; justify-content: center; font-size: 13px; padding: 8px 4px; }
 .viewopts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .group { display: flex; flex-direction: column; }
 .group-head { display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 8px 0; border-bottom: 2px solid var(--line); font-weight: 700; }
@@ -337,3 +337,9 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .st-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .st-top .name .chip { padding: 1px 7px; font-size: 11px; font-weight: 400; }
 .stations small { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+/* Competitor airlines */
+.airline { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.airline i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.airline em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
+.rivals small { white-space: normal; }
