@@ -329,8 +329,8 @@ export function FlightEditor({ plan, acId, leg, onChange, onMove, onClose }: {
 
 // ---------- Add a round trip on a route, or move one to another aircraft ----------
 
-export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
-  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit };
+export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }: {
+  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit }; prefer?: { from: string; dep: number };
   onDone: (plan: Plan, msg: string, acId: string) => void; onClose: () => void;
 }) {
   const [a, b] = routeKey.split('-');
@@ -338,8 +338,8 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
   const srcLeg = src && move ? src.legs[move.unit.start] : undefined;
   const opts = useMemo(() => {
     const pool = move ? { ...plan, fleet: plan.fleet.filter((x) => x.id !== move.acId) } : plan;
-    return placementOptions(pool, a, b, srcLeg?.dep);
-  }, [plan, a, b, move, srcLeg?.dep]);
+    return placementOptions(pool, a, b, srcLeg?.dep ?? prefer?.dep);
+  }, [plan, a, b, move, srcLeg?.dep, prefer?.dep]);
   const types = typesFor(plan, a, b);
   const firstOk = opts.findIndex((o) => o.placement);
   const [choice, setChoice] = useState<number | 'lease'>(firstOk >= 0 ? firstOk : 'lease');
@@ -347,7 +347,13 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
   const chosen: Placement | null = choice === 'lease' ? null : opts[choice]?.placement ?? null;
   const [dep, setDep] = useState<number | null>(null);
   const leaseFrom = b === plan.base ? b : a;
-  const defaultLeaseDep = srcLeg ? srcLeg.dep : utcFromLocal(leaseFrom, 7 * 60);
+  // A suggested departure is for the leg that leaves `prefer.from`; a new aircraft starting at the other end leaves earlier.
+  const leaseDepFor = (t: AircraftModel | undefined) => {
+    if (!prefer) return utcFromLocal(leaseFrom, 7 * 60);
+    if (leaseFrom === prefer.from || !t) return prefer.dep;
+    return Math.floor((prefer.dep - blockMinutes(a, b, t) - AIRCRAFT[t].turnMin) / 5) * 5;
+  };
+  const defaultLeaseDep = srcLeg ? srcLeg.dep : leaseDepFor(leaseType);
   const cur = chosen ? Math.max(chosen.lo, Math.min(chosen.hi, dep ?? chosen.dep)) : dep ?? defaultLeaseDep;
   const slot = move ? null : slotProblem(plan, a, b);
   const from = chosen ? chosen.from : srcLeg?.from ?? leaseFrom;
@@ -396,6 +402,7 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
         <div className="label">從{AIRPORT_BY_CODE[from].name}出發時間（當地）</div>
         <TimeStepper code={from} dep={cur} lo={chosen ? chosen.lo : -Infinity} hi={chosen ? chosen.hi : Infinity} onChange={setDep} />
         <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '新飛機全天都可以'}。早上 7–10 點與傍晚 4–8 點的航班最好賣。</div>
+        {prefer && <div className="hint">建議從{AIRPORT_BY_CODE[prefer.from].name} {at(prefer.from, prefer.dep)} 出發，這樣才接得上轉機。</div>}
       </div>
     </Sheet>
   );

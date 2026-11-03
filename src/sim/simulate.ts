@@ -218,8 +218,12 @@ export function connectFareShare(layoverMin: number): number {
   const extraH = Math.max(0, layoverMin - LONG_LAYOVER_MIN) / 60;
   return Math.max(MIN_CONNECT_FARE_SHARE, CONNECT_FARE_SHARE - LAYOVER_DISCOUNT_PER_HOUR * extraH);
 }
-/** A one-stop trip may be at most this much longer than the direct distance (2× under 800 km). */
-export const MAX_DETOUR = 1.6;
+/**
+ * A one-stop trip may be at most this much longer than the direct distance (3x under 800 km). Detours below this
+ * are not forbidden: the extra flying time already costs the itinerary most of its travellers.
+ */
+export const MAX_DETOUR = 2.5;
+export const MAX_DETOUR_SHORT = 3;
 
 /** Shortest workable connection at `code` between a flight arriving from `from` and one leaving for `to`. */
 export function minConnect(code: string, from: string, to: string, hub?: string): number {
@@ -232,7 +236,7 @@ export function minConnect(code: string, from: string, to: string, hub?: string)
 }
 
 export function detourOk(distKm: number, legsKm: number): boolean {
-  return legsKm <= distKm * (distKm < 800 ? 2 : MAX_DETOUR);
+  return legsKm <= distKm * (distKm < 800 ? MAX_DETOUR_SHORT : MAX_DETOUR);
 }
 /** Per passenger on each flight: check-in, catering and airport passenger fees, NT$. */
 export const PAX_COST_PER_SEGMENT = 250;

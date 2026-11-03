@@ -168,11 +168,11 @@ describe('transfers', () => {
     expect(direct).toBeGreaterThan(0);
     expect(local).toBeGreaterThan(0);
   });
-  test('detours are rejected', () => {
-    expect(detourOk(1000, 1500)).toBe(true);
-    expect(detourOk(1000, 1700)).toBe(false);
-    expect(detourOk(500, 950)).toBe(true);
-    expect(detourOk(500, 1100)).toBe(false);
+  test('only extreme detours are rejected', () => {
+    expect(detourOk(1000, 2400)).toBe(true);
+    expect(detourOk(1000, 2600)).toBe(false);
+    expect(detourOk(500, 1400)).toBe(true);
+    expect(detourOk(500, 1600)).toBe(false);
   });
   test('stopping on the same aircraft counts as a through service', () => {
     // Aircraft flies HKG→TPE then straight on to NRT after a 25 min turn.

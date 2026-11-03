@@ -87,3 +87,47 @@ describe('arrival day markers', () => {
     expect(dayMark(0)).toBe('');
   });
 });
+
+import { linkages } from './airports';
+import { AIRPORT_BY_CODE } from '../data/airports';
+describe('connecting markets', () => {
+  const base = emptyPlan('TPE');
+  const mk = (id: string, from: string, to: string, h: number) => ({ ...newAircraft(base, 'A20N'), id, reg: id, legs: [{ from, to, dep: utcFromLocal(from, h * 60) }] });
+  const find = (list: ReturnType<typeof linkages>, a: string, b: string) => list.find((l) => (l.o === a && l.d === b) || (l.o === b && l.d === a));
+
+  test('a market through a hub that is far out of the way is explained, with nonstop as the way out', () => {
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [mk('a', 'HKG', 'KIX', 8), mk('b', 'HKG', 'OKA', 8)] };
+    const l = find(linkages(p, simulate(p), 'HKG', 50), 'KIX', 'OKA')!;
+    expect(l.status).toBe('detour');
+    expect(l.detourPct).toBeGreaterThan(1.5);
+    expect(l.nonstopFlown).toBe(false);
+    expect(l.demand).toBeGreaterThan(0);
+  });
+  test('Fukuoka to Taipei through Hong Kong is possible but long, and is shown as a market to link', () => {
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [mk('a', 'FUK', 'HKG', 8), mk('b', 'HKG', 'TPE', 14)] };
+    const l = find(linkages(p, simulate(p), 'HKG', 50), 'FUK', 'TPE')!;
+    expect(l.status).not.toBe('detour');
+    expect(l.detourPct).toBeGreaterThan(0.9);
+  });
+  test('a missing leg is named', () => {
+    const p: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8)] };
+    const l = find(linkages(p, simulate(p), 'TPE', 50), 'HKG', 'NRT')!;
+    expect(l.status).toBe('leg');
+    expect(l.missing).toEqual(['NRT']);
+  });
+  test('flights that miss each other get a suggested time, and taking it connects the market', () => {
+    const miss: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', 19)] };
+    const l = find(linkages(miss, simulate(miss), 'TPE', 50), 'HKG', 'NRT')!;
+    expect(l.status).toBe('timing');
+    expect(l.suggest).toBeDefined();
+    const fixed: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', l.suggest!.local / 60)] };
+    const after = find(linkages(fixed, simulate(fixed), 'TPE', 50), 'HKG', 'NRT')!;
+    expect(after.status).toBe('connected');
+    expect(after.viaPax).toBeGreaterThan(0);
+    expect(after.lost).toBeLessThan(after.demand);
+  });
+  test('slots were expanded', () => {
+    expect(AIRPORT_BY_CODE.TPE.slotCap).toBeGreaterThanOrEqual(1000);
+    expect(AIRPORT_BY_CODE.KNH.slotCap).toBeGreaterThanOrEqual(100);
+  });
+});
