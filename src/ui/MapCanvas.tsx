@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react';
 import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
-import { blockMinutes, DAY, hhmm, localMinutes, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
-import { dayAt, type GameClock } from './clock';
+import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
+import { type GameClock } from './clock';
 import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
@@ -278,16 +278,6 @@ export default function MapCanvas(props: Props) {
         ctx.strokeText(l.text, l.x, l.y);
         ctx.fillStyle = pal.label;
         ctx.fillText(l.text, l.x, l.y);
-      }
-      // Clock (local time at the base)
-      {
-        ctx.font = '700 15px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
-        const label = `第 ${dayAt(p.plan.base, now)} 天 · ${AIRPORT_BY_CODE[p.plan.base].name} ${hhmm(localMinutes(p.plan.base, clock))}${p.clock.speed === 0 ? ' · 暫停' : ''}`;
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = pal.labelHalo;
-        ctx.strokeText(label, 14, h - 88);
-        ctx.fillStyle = pal.label;
-        ctx.fillText(label, 14, h - 88);
       }
       raf = requestAnimationFrame(draw);
     };
