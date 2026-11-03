@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { NAMES, METROS, HSR, TIERS } from './airport-meta.mjs';
 
+// Display labels use concise Traditional Chinese place names, with airport qualifiers where needed.
 const LOCALIZED_NAMES = JSON.parse(readFileSync(new URL('./airport-names.zh-TW.json', import.meta.url), 'utf8'));
 const airportName = (code) => {
   const name = NAMES[code] ?? LOCALIZED_NAMES[code];
