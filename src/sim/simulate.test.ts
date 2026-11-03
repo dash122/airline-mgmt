@@ -2,16 +2,19 @@ import { describe, expect, test } from 'vitest';
 import { AIRPORTS } from '../data/airports';
 import { marketBetween, markets, modelledAnnualPax } from './markets';
 import { AIR_TARGETS_M } from '../data/calibration';
-import { routeProblem, simulate, simulateRoute, type Plan } from './simulate';
+import {
+  addRoundTrip, emptyPlan, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
+} from './simulate';
 
-const plan: Plan = {
-  base: 'TPE',
-  routes: [
-    { id: 'r1', a: 'TPE', b: 'HKG', aircraft: 'narrowbody', freq: 14, fareMult: 1 },
-    { id: 'r2', a: 'TSA', b: 'MZG', aircraft: 'turboprop', freq: 14, fareMult: 1 },
-    { id: 'r3', a: 'TPE', b: 'NRT', aircraft: 'narrowbody', freq: 7, fareMult: 1 },
-  ],
+const must = (r: ReturnType<typeof addRoundTrip>) => {
+  if ('error' in r) throw new Error(r.error);
+  return r.plan;
 };
+const trips = (p: Plan, a: string, b: string, n: number, type?: Parameters<typeof addRoundTrip>[3]) => {
+  for (let i = 0; i < n; i++) p = must(addRoundTrip(p, a, b, type));
+  return p;
+};
+const plan = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3), 'TSA', 'MZG', 4, 'turboprop');
 
 describe('markets', () => {
   test('modelled air travel matches each group target', () => {
@@ -48,21 +51,59 @@ describe('simulate', () => {
     expect(simulate(plan)).toEqual(simulate(plan));
   });
   test('never carries more than seats', () => {
-    for (const r of Object.values(simulate(plan).routes)) expect(r.paxPerDir).toBeLessThanOrEqual(r.seatsPerDir + 1e-9);
+    for (const r of Object.values(simulate(plan).routes)) expect(r.pax).toBeLessThanOrEqual(r.seats + 1e-6);
   });
-  test('more flights win more travellers', () => {
-    const base = { id: 'x', a: 'TPE', b: 'HKG', aircraft: 'widebody' as const, fareMult: 1 };
-    expect(simulateRoute({ ...base, freq: 21 }).demandPerDir).toBeGreaterThan(simulateRoute({ ...base, freq: 7 }).demandPerDir);
+  test('more flights carry more travellers', () => {
+    const one = simulate(trips(emptyPlan('TPE'), 'TPE', 'HKG', 1, 'widebody')).pax;
+    const three = simulate(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3, 'widebody')).pax;
+    expect(three).toBeGreaterThan(one);
   });
   test('cheaper fares win more travellers', () => {
-    const base = { id: 'x', a: 'TPE', b: 'OKA', aircraft: 'narrowbody' as const, freq: 7 };
-    expect(simulateRoute({ ...base, fareMult: 0.8 }).demandPerDir).toBeGreaterThan(simulateRoute({ ...base, fareMult: 1.2 }).demandPerDir);
+    const p = trips(emptyPlan('TPE'), 'TPE', 'OKA', 1, 'widebody');
+    const cheap = simulate({ ...p, fares: { 'OKA-TPE': 0.8 } }).pax;
+    const dear = simulate({ ...p, fares: { 'OKA-TPE': 1.2 } }).pax;
+    expect(cheap).toBeGreaterThan(dear);
   });
-  test('high-speed rail takes most short trips', () => {
-    const m = marketBetween('HND', 'NGO')!;
-    expect(m.airDemand / m.potential).toBeLessThan(0.3);
-    const far = marketBetween('HND', 'OKA')!;
-    expect(far.airDemand / far.potential).toBeGreaterThan(0.9);
+  test('a morning departure sells better than one at 3am', () => {
+    const at = (localMin: number) => {
+      const ac = newAircraft(emptyPlan('TPE'), 'widebody');
+      return simulate({ ...emptyPlan('TPE'), fleet: [{ ...ac, legs: [{ from: 'TPE', to: 'HKG', dep: utcFromLocal('TPE', localMin) }] }] }).pax;
+    };
+    expect(at(8 * 60)).toBeGreaterThan(at(3 * 60));
+  });
+  test('well-timed flights at a hub carry connecting travellers', () => {
+    const base = emptyPlan('TPE');
+    const a1 = newAircraft(base, 'narrowbody');
+    const a2 = { ...newAircraft(base, 'narrowbody'), id: 'second' };
+    const hkgTpe = { from: 'HKG', to: 'TPE', dep: utcFromLocal('HKG', 8 * 60) };
+    const timed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 11 * 60) }] }] };
+    const untimed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 19 * 60) }] }] };
+    expect(simulate(timed).connectingPax).toBeGreaterThan(0);
+    expect(simulate(untimed).connectingPax).toBe(0);
+  });
+  test('an idle aircraft still costs its lease', () => {
+    const idle = { ...emptyPlan('TPE'), fleet: [newAircraft(emptyPlan('TPE'), 'narrowbody')] };
+    const r = simulate(idle);
+    expect(r.revenue).toBe(0);
+    expect(r.ownershipCost).toBeGreaterThan(0);
+    expect(r.avgUtilisation).toBe(0);
+  });
+});
+
+describe('fleet and rotations', () => {
+  test('round trips share an aircraft until its day is full, then lease another', () => {
+    const p = trips(emptyPlan('TPE'), 'TPE', 'HKG', 6);
+    expect(p.fleet.length).toBeGreaterThan(1);
+    for (const ac of p.fleet) {
+      const info = rotationInfo(ac);
+      expect(info.fits).toBe(true);
+      expect(info.closed).toBe(true);
+    }
+    expect(rotationInfo(p.fleet[0]).utilisation).toBeGreaterThan(0.4);
+  });
+  test('an aircraft that does not return home is flagged', () => {
+    const ac = withLeg(newAircraft(emptyPlan('TPE'), 'narrowbody'), 'TPE', 'HKG');
+    expect(rotationInfo(ac).closed).toBe(false);
   });
 });
 

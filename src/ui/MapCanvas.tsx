@@ -2,13 +2,13 @@ import { useEffect, useRef } from 'react';
 import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
-import type { NetworkResult, Plan } from '../sim/simulate';
+import { blockMinutes, DAY, hhmm, localMinutes, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
 
 export interface Selection {
-  kind: 'airport' | 'route';
+  kind: 'airport' | 'route' | 'aircraft';
   id: string;
 }
 
@@ -36,6 +36,7 @@ const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;
+export const CLOCK_DAY_MS = 60_000;
 const HIT_AIRPORT_PX = 22;
 
 function arc(a: string, b: string): [number, number][] {
@@ -72,7 +73,7 @@ export default function MapCanvas(props: Props) {
       if (!a) return;
       [lat, lon] = [a.lat, a.lon];
     } else {
-      const r = props.plan.routes.find((x) => x.id === props.selection!.id);
+      const r = props.selection.kind === 'route' ? routePairs(props.plan).find((x) => x.key === props.selection!.id) : undefined;
       if (!r) return;
       const A = AIRPORT_BY_CODE[r.a], B = AIRPORT_BY_CODE[r.b];
       [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, 0.5);
@@ -166,10 +167,11 @@ export default function MapCanvas(props: Props) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       // Routes
-      for (const r of p.plan.routes) {
+      const pairs = routePairs(p.plan);
+      for (const r of pairs) {
         const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-        const res = p.result && !p.stale ? p.result.routes[r.id] : undefined;
-        const selected = p.selection?.kind === 'route' && p.selection.id === r.id;
+        const res = p.result && !p.stale ? p.result.routes[r.key] : undefined;
+        const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
         ctx.beginPath();
         pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
         ctx.lineCap = 'round';
@@ -181,38 +183,38 @@ export default function MapCanvas(props: Props) {
           ctx.globalAlpha = 1;
         }
         ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
-        ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.paxPerDir) / 12) : 2.5;
+        ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
         if (!res) ctx.setLineDash([6, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
 
-        // Planes moving along the arc
-        if (res && r.freq > 0) {
-          const n = Math.min(6, Math.ceil(r.freq / 7));
-          const period = 4000 + res.blockH * 2500;
-          for (let dir = 0; dir < 2; dir++) {
-            for (let k = 0; k < n; k++) {
-              let t = ((time / period + k / n + dir * 0.5 / n) % 1);
-              if (dir) t = 1 - t;
-              const f = t * ARC_STEPS;
-              const i = Math.min(ARC_STEPS - 1, Math.floor(f));
-              const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
-              const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
-              const ang = Math.atan2(y1 - y0, x1 - x0) + (dir ? Math.PI : 0);
-              ctx.save();
-              ctx.translate(x, y);
-              ctx.rotate(ang);
-              ctx.fillStyle = pal.plane;
-              ctx.beginPath();
-              ctx.moveTo(6, 0);
-              ctx.lineTo(-4, -4);
-              ctx.lineTo(-2, 0);
-              ctx.lineTo(-4, 4);
-              ctx.closePath();
-              ctx.fill();
-              ctx.restore();
-            }
-          }
+      // Aircraft, placed by a simulated clock running through the day (one day per CLOCK_DAY_MS).
+      const clock = ((time % CLOCK_DAY_MS) / CLOCK_DAY_MS) * DAY;
+      for (const ac of p.plan.fleet) {
+        const selectedAc = p.selection?.kind === 'aircraft' && p.selection.id === ac.id;
+        for (const leg of ac.legs) {
+          const block = blockMinutes(leg.from, leg.to, ac.type);
+          const t = (((clock - leg.dep) % DAY) + DAY) % DAY;
+          if (t >= block) continue;
+          const pts = arc(leg.from, leg.to);
+          const f = (t / block) * ARC_STEPS;
+          const i = Math.min(ARC_STEPS - 1, Math.floor(f));
+          const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
+          const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
+          ctx.fillStyle = selectedAc ? pal.sel : pal.plane;
+          const s = selectedAc ? 1.6 : 1;
+          ctx.beginPath();
+          ctx.moveTo(6 * s, 0);
+          ctx.lineTo(-4 * s, -4 * s);
+          ctx.lineTo(-2 * s, 0);
+          ctx.lineTo(-4 * s, 4 * s);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
         }
       }
 
@@ -232,7 +234,7 @@ export default function MapCanvas(props: Props) {
       }
 
       // Airports
-      const inPlan = new Set(p.plan.routes.flatMap((r) => [r.a, r.b]));
+      const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
       ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
       ctx.textBaseline = 'middle';
       const labels: { prio: number; text: string; x: number; y: number }[] = [];
@@ -276,6 +278,16 @@ export default function MapCanvas(props: Props) {
         ctx.fillStyle = pal.label;
         ctx.fillText(l.text, l.x, l.y);
       }
+      // Clock (local time at the base)
+      if (p.plan.fleet.length) {
+        ctx.font = '700 15px system-ui, sans-serif';
+        const label = `${AIRPORT_BY_CODE[p.plan.base].name} ${hhmm(localMinutes(p.plan.base, clock))}`;
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = pal.labelHalo;
+        ctx.strokeText(label, 14, h - 40);
+        ctx.fillStyle = pal.label;
+        ctx.fillText(label, 14, h - 40);
+      }
       raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
@@ -301,10 +313,10 @@ export default function MapCanvas(props: Props) {
       return best;
     };
     const routeAt = (x: number, y: number): string | null => {
-      for (const r of propsRef.current.plan.routes) {
+      for (const r of routePairs(propsRef.current.plan)) {
         const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
         for (let i = 0; i < pts.length - 1; i++) {
-          if (distToSegment(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 12) return r.id;
+          if (distToSegment(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 12) return r.key;
         }
       }
       return null;
