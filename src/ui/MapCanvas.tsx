@@ -40,13 +40,19 @@ const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COL
 const ARC_STEPS = 32;
 const HIT_AIRPORT_PX = 22;
 
+const arcCache = new Map<string, [number, number][]>();
 function arc(a: string, b: string): [number, number][] {
+  const key = `${a}>${b}`;
+  const cached = arcCache.get(key);
+  if (cached) return cached;
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   const pts: [number, number][] = [];
   for (let i = 0; i <= ARC_STEPS; i++) {
     const [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, i / ARC_STEPS);
     pts.push([lat, nearestLongitude(lon, i ? pts[i - 1][1] : A.lon)]);
   }
+  if (arcCache.size >= 4096) arcCache.delete(arcCache.keys().next().value!);
+  arcCache.set(key, pts);
   return pts;
 }
 

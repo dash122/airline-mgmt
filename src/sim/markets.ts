@@ -112,11 +112,13 @@ function buildMarkets(): Map<string, Market> {
   for (const r of raw) totalGravity[r.group] = (totalGravity[r.group] ?? 0) + r.gravity;
   const targetWeekly = (g: string) => ((AIR_TARGETS_M[g] ?? 0.1) * 1e6) / 52 / 2;
   for (const g of Object.keys(totalGravity)) scale[g] = (targetWeekly(g) * 3) / totalGravity[g];
+  // Calibration only uses regional pairs, not the entire global market collection.
+  const calibrated = raw.filter(r => r.group in AIR_TARGETS_M && hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j]))
+    .map(r => ({ ...r, fare: refFare(r.distKm) }));
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
-    for (const r of raw) {
-      if (!(r.group in AIR_TARGETS_M) || !hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])) continue;
-      const b = baseline(r.gravity * scale[r.group], refFare(r.distKm), r.distKm, r.ground);
+    for (const r of calibrated) {
+      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground);
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
     for (const g of Object.keys(scale).filter(g => g in AIR_TARGETS_M)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
@@ -177,8 +179,20 @@ function buildMarkets(): Map<string, Market> {
 }
 
 let cache: Map<string, Market> | null = null;
+const airportMarkets = new Map<string, Market[]>();
+const annualPax = new Map<string, number>();
 export function markets(): Map<string, Market> {
-  if (!cache) cache = buildMarkets();
+  if (!cache) {
+    cache = buildMarkets();
+    for (const m of cache.values()) {
+      for (const code of [m.a, m.b]) {
+        let list = airportMarkets.get(code);
+        if (!list) airportMarkets.set(code, list = []);
+        list.push(m);
+        annualPax.set(code, (annualPax.get(code) ?? 0) + 104 * m.airDemand);
+      }
+    }
+  }
   return cache;
 }
 
@@ -188,7 +202,12 @@ export function marketBetween(a: string, b: string): Market | undefined {
 
 /** Modelled annual air passengers at an airport today (both directions). */
 export function modelledAnnualPax(code: string): number {
-  let weekly = 0;
-  for (const m of markets().values()) if (m.a === code || m.b === code) weekly += 2 * m.airDemand;
-  return weekly * 52;
+  markets();
+  return annualPax.get(code) ?? 0;
+}
+
+/** Markets touching an airport, indexed once when the demand model is built. */
+export function marketsAt(code: string): readonly Market[] {
+  markets();
+  return airportMarkets.get(code) ?? [];
 }
