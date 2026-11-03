@@ -121,7 +121,7 @@ export default function App() {
     setSpeedState(1);
     setGame(g);
     setPlan(emptyPlan(base));
-    setToast('從機場拖曳到另一個機場，即可開每日來回航班');
+    setToast('拖曳移動地圖；點選機場後，按「從這裡開新航線」規劃航班');
   }} />;
   const clock = clockRef.current;
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
@@ -166,12 +166,15 @@ export default function App() {
         connectFrom={connectFrom}
         theme={theme}
         onTapAirport={(code) => {
-          if (connectFrom && connectFrom !== code) addTrip(connectFrom, code);
+          if (connectFrom && connectFrom !== code) {
+            setOverlay({ kind: 'add', key: [connectFrom, code].sort().join('-'), prefer: { from: connectFrom, dep: utcMorning(connectFrom) } });
+            setConnectFrom(null);
+          }
           else select({ kind: 'airport', id: code });
         }}
         onTapRoute={(key) => select({ kind: 'route', id: key })}
         onTapEmpty={() => { if (selection || connectFrom) select(null); else openTab(null); }}
-        onDragRoute={(a, b) => addTrip(a, b)}
+        onDragRoute={(a, b) => setOverlay({ kind: 'add', key: [a, b].sort().join('-'), prefer: { from: a, dep: utcMorning(a) } })}
       />
 
       <TopBar result={result} balance={game?.balance ?? 0} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
@@ -180,7 +183,7 @@ export default function App() {
         }} />
       <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
 
-      {connectFrom && <div className="banner">點選目的地機場，從{AIRPORT_BY_CODE[connectFrom].name}開航<button onClick={() => setConnectFrom(null)}>取消</button></div>}
+      {connectFrom && <div className="banner">從{AIRPORT_BY_CODE[connectFrom].name}出發：點選目的地，再確認航班<button onClick={() => setConnectFrom(null)}>取消</button></div>}
       {toast && <div className="toast">{toast}</div>}
 
       {routeKey && routeExists && (

@@ -7,6 +7,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { NAMES, METROS, HSR, TIERS } from './airport-meta.mjs';
 
+const LOCALIZED_NAMES = JSON.parse(readFileSync(new URL('./airport-names.zh-TW.json', import.meta.url), 'utf8'));
+const airportName = (code) => {
+  const name = NAMES[code] ?? LOCALIZED_NAMES[code];
+  if (!name || !/[\p{Script=Han}]/u.test(name) || /[a-z]/i.test(name)) throw new Error(`Missing Traditional Chinese airport name: ${code}`);
+  return name;
+};
+
 const RAW = new URL('../data-raw/', import.meta.url);
 
 async function fetchRaw(name, url) {
@@ -100,7 +107,7 @@ async function main() {
     if (!['large_airport', 'medium_airport', 'small_airport'].includes(a.type)) continue;
     const old = previous.get(a.iata_code), lat = Number(a.latitude_deg), lon = Number(a.longitude_deg);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    out.push({ ...old, code: a.iata_code, name: NAMES[a.iata_code] ?? a.name, country: a.iso_country, region: a.iso_region,
+    out.push({ ...old, code: a.iata_code, name: airportName(a.iata_code), country: a.iso_country, region: a.iso_region,
       metro: metros[a.iata_code] ?? a.iata_code, lat, lon,
       size: TIERS[a.iata_code] ?? (a.type === 'large_airport' ? 'large' : 'medium'),
       runwayM: Math.round(ft * 0.3048), maxClass: ft < 6600 ? 'regional' : ft < 8800 ? 'narrowbody' : 'widebody',

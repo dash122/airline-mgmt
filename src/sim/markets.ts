@@ -1,7 +1,7 @@
 // Market model: weekly travel demand between every pair of airports, scaled from catchment population,
 // travel propensity, tourism pull and distance, then calibrated to a few national air-travel totals.
 // Deterministic: same data in, same markets out.
-import { AIRPORTS, type Airport } from '../data/airports';
+import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { hasCompetitorRoute } from '../data/competitor-network';
 import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
@@ -142,6 +142,36 @@ function buildMarkets(): Map<string, Market> {
       rivalFreq: b.freq,
       ground: r.ground,
     });
+  }
+  // Simulated destination budgets keep potential demand separate from nonstop service.
+  const limits = { hub: 100, major: 60, large: 30, medium: 12, small: 4 };
+  const degree = new Map<string, number>();
+  const candidates = [...out.values()].filter(m => m.rivalFreq > 0)
+    .sort((a, b) => b.airDemand - a.airDemand || pairKey(a.a, a.b).localeCompare(pairKey(b.a, b.b)));
+  for (const m of candidates) {
+    const a = AIRPORT_BY_CODE[m.a], b = AIRPORT_BY_CODE[m.b];
+    if ((degree.get(m.a) ?? 0) >= limits[a.size] || (degree.get(m.b) ?? 0) >= limits[b.size]
+      || m.distKm > 15000
+      || (m.distKm > 4500 && ![a, b].every(x => x.size === 'hub' || x.size === 'major'))) {
+      m.rivalFreq = 0;
+      m.airDemand = 0;
+    } else {
+      degree.set(m.a, (degree.get(m.a) ?? 0) + 1);
+      degree.set(m.b, (degree.get(m.b) ?? 0) + 1);
+    }
+  }
+  // Preserve calibrated regional totals on the retained network.
+  const retained = candidates.filter(m => m.rivalFreq > 0);
+  for (let iter = 0; iter < 20; iter++) {
+    const totals: Record<string, number> = {};
+    for (const m of retained) totals[m.group] = (totals[m.group] ?? 0) + m.airDemand;
+    for (const m of retained) {
+      if (!(m.group in AIR_TARGETS_M)) continue;
+      m.potential *= Math.pow(targetWeekly(m.group) / Math.max(totals[m.group], 1), 0.7);
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground);
+      m.airDemand = b.air;
+      m.rivalFreq = b.freq;
+    }
   }
   return out;
 }

@@ -5,6 +5,19 @@ import { AIRPORTS } from '../data/airports';
 import { addRoundTrip, emptyPlan, simulate } from './simulate';
 
 describe('competitor airlines', () => {
+  test('global nonstop networks respect airport destination budgets and remain symmetric', () => {
+    const limits = { hub: 100, major: 60, large: 30, medium: 12, small: 4 };
+    const counts = new Map<string, number>();
+    for (const m of markets().values()) {
+      if (!m.rivalFreq) continue;
+      counts.set(m.a, (counts.get(m.a) ?? 0) + 1);
+      counts.set(m.b, (counts.get(m.b) ?? 0) + 1);
+      expect(m.distKm).toBeLessThanOrEqual(15000);
+      expect(marketBetween(m.b, m.a)).toBe(m);
+    }
+    for (const a of AIRPORTS) expect(counts.get(a.code) ?? 0).toBeLessThanOrEqual(limits[a.size]);
+  });
+
   test('Macau competitors use documented destinations, not every market with demand', () => {
     for (const code of ['ITM', 'TNN', 'TSA', 'HND', 'CTS']) {
       const m = marketBetween('MFM', code)!;

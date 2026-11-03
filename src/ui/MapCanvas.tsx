@@ -356,8 +356,8 @@ export default function MapCanvas(props: Props) {
       downAt = pt;
       moved = 0;
       const ap = airportAt(pt.x, pt.y);
-      mode = ap ? 'route' : 'pan';
-      if (ap) dragRef.current = { from: ap, x: pt.x, y: pt.y };
+      mode = e.pointerType === 'mouse' && e.shiftKey && ap ? 'route' : 'pan';
+      if (mode === 'route' && ap) dragRef.current = { from: ap, x: pt.x, y: pt.y };
     };
     const onMove = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
@@ -391,7 +391,7 @@ export default function MapCanvas(props: Props) {
         if (pointers.size === 0) mode = 'none';
         return;
       }
-      const tap = moved < 8;
+      const tap = moved < 8 && Math.hypot(pt.x - downAt.x, pt.y - downAt.y) < 8;
       if (mode === 'route' && dragRef.current) {
         const from = dragRef.current.from;
         dragRef.current = null;
@@ -407,6 +407,12 @@ export default function MapCanvas(props: Props) {
       }
       mode = 'none';
     };
+    const onCancel = (e: PointerEvent) => {
+      pointers.delete(e.pointerId);
+      dragRef.current = null;
+      mode = pointers.size ? 'pinch' : 'none';
+      pinchStart = null;
+    };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const pt = local(e);
@@ -417,7 +423,7 @@ export default function MapCanvas(props: Props) {
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onUp);
+    canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       cancelAnimationFrame(raf);
@@ -425,7 +431,7 @@ export default function MapCanvas(props: Props) {
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointercancel', onUp);
+      canvas.removeEventListener('pointercancel', onCancel);
       canvas.removeEventListener('wheel', onWheel);
     };
   }, []);

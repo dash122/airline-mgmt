@@ -4,6 +4,12 @@ import { localMinutes, utcFromLocal, utcOffsetMin } from '../sim/simulate';
 import { projY, zoomAt } from '../ui/projection';
 
 describe('global jet airport coverage', () => {
+  test('every airport has a Chinese display name without English fallbacks', () => {
+    for (const a of AIRPORTS) {
+      expect(a.name, a.code).toMatch(/[\p{Script=Han}]/u);
+      expect(a.name, a.code).not.toMatch(/[a-z]/i);
+    }
+  });
   test('has worldwide coverage and excludes turboprop-only airports', () => {
     expect(AIRPORTS.length).toBeGreaterThan(1000);
     expect(new Set(AIRPORTS.map(a => a.country)).size).toBeGreaterThan(150);
