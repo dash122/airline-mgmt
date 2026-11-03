@@ -1,6 +1,6 @@
 // Weekly network simulation over the player's fleet and daily schedules.
 // Pure and deterministic: the same plan always gives the same result.
-import { AIRCRAFT, classRank, type AircraftClass } from '../data/aircraft';
+import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { airChoice, groundUtility, noTravelUtility, THETA, VALUE_OF_TIME } from './choice';
 import { marketBetween, MIN_MARKET_KM, pairKey } from './markets';
@@ -18,7 +18,7 @@ export interface Leg {
 export interface Aircraft {
   id: string;
   reg: string;
-  type: AircraftClass;
+  type: AircraftModel;
   /** Daily rotation, in order. It repeats every day. */
   legs: Leg[];
 }
@@ -45,7 +45,7 @@ export const hhmm = (min: number) => {
 };
 
 /** Minutes from gate to gate, rounded to 5. */
-export function blockMinutes(a: string, b: string, type: AircraftClass): number {
+export function blockMinutes(a: string, b: string, type: AircraftModel): number {
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   const h = distanceKm(A.lat, A.lon, B.lat, B.lon) / AIRCRAFT[type].speedKmh + 0.5;
   return Math.round((h * 60) / 5) * 5;
@@ -65,7 +65,7 @@ export function timeOfDayQuality(localMin: number): number {
 
 // ---------- Validation ----------
 
-export function routeProblem(a: string, b: string, aircraft: AircraftClass): string | null {
+export function routeProblem(a: string, b: string, aircraft: AircraftModel): string | null {
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   if (!A || !B) return '找不到機場';
   if (a === b) return '同一個機場';
@@ -75,7 +75,7 @@ export function routeProblem(a: string, b: string, aircraft: AircraftClass): str
   const spec = AIRCRAFT[aircraft];
   if (d > spec.rangeKm) return `超出${spec.name}航程`;
   const maxRank = Math.min(classRank(A.maxClass), classRank(B.maxClass));
-  if (classRank(aircraft) > maxRank) return '跑道無法起降此機型';
+  if (classRank(spec.cls) > maxRank) return '跑道無法起降此機型';
   return null;
 }
 
@@ -352,11 +352,11 @@ export function simulate(plan: Plan): NetworkResult {
 
 // ---------- Plan editing helpers ----------
 
-const PREFERRED: AircraftClass[] = ['narrowbody', 'regional', 'turboprop', 'widebody'];
+const PREFERRED: AircraftModel[] = ['A20N', 'E190', 'ATR72', 'B789'];
 export const defaultAircraft = (a: string, b: string) => PREFERRED.find((c) => !routeProblem(a, b, c)) ?? null;
 
 let idCounter = 0;
-export function newAircraft(plan: Plan, type: AircraftClass): Aircraft {
+export function newAircraft(plan: Plan, type: AircraftModel): Aircraft {
   const n = plan.fleet.reduce((m, a) => Math.max(m, Number(a.reg.slice(3)) || 0), 0) + 1;
   return { id: `ac-${Date.now().toString(36)}-${idCounter++}`, reg: `WP-${String(n).padStart(3, '0')}`, type, legs: [] };
 }
@@ -381,9 +381,9 @@ export function canAddRoundTrip(ac: Aircraft, a: string, b: string): boolean {
 }
 
 /** Plan with one more daily round trip on a↔b: on an aircraft that has room, otherwise on a newly leased one. */
-export function addRoundTrip(plan: Plan, a: string, b: string, type?: AircraftClass): { plan: Plan; aircraftId: string } | { error: string } {
+export function addRoundTrip(plan: Plan, a: string, b: string, type?: AircraftModel): { plan: Plan; aircraftId: string } | { error: string } {
   const t = type ?? defaultAircraft(a, b);
-  if (!t) return { error: routeProblem(a, b, 'widebody') ?? '無法開航' };
+  if (!t) return { error: routeProblem(a, b, 'B77W') ?? '無法開航' };
   const problem = routeProblem(a, b, t);
   if (problem) return { error: problem };
   for (const c of [a, b]) if (weeklyDepartures(plan, c) + 7 > AIRPORT_BY_CODE[c].slotCap) return { error: `${AIRPORT_BY_CODE[c].name}時間帶已滿` };

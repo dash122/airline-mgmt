@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { type AircraftClass } from '../data/aircraft';
+import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { addRoundTrip, emptyPlan, newAircraft, routePairs, simulate, type NetworkResult, type Plan } from '../sim/simulate';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
@@ -53,7 +53,7 @@ export default function App() {
   const update = (next: Plan) => { setPlan(next); setStale(true); };
   const select = (s: Selection | null) => { setSelection(s); setPanel(null); setConnectFrom(null); };
 
-  const addTrip = (a: string, b: string, type?: AircraftClass) => {
+  const addTrip = (a: string, b: string, type?: AircraftModel) => {
     const r = addRoundTrip(plan, a, b, type);
     if ('error' in r) { setToast(r.error); return; }
     update(r.plan);

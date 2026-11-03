@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AIRCRAFT, CLASS_ORDER, type AircraftClass } from '../data/aircraft';
+import { AIRCRAFT, CLASS_NAMES, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, modelledAnnualPax, pairKey } from '../sim/markets';
 import {
@@ -46,13 +46,13 @@ function UtilBar({ value }: { value: number }) {
 // ---------- Route ----------
 
 export function RouteSheet({ plan, routeKey, result, onFare, onAddTrip, onPickAircraft, onClose }: {
-  plan: Plan; routeKey: string; result?: RouteResult; onFare: (mult: number) => void; onAddTrip: (type: AircraftClass) => void; onPickAircraft: (id: string) => void; onClose: () => void;
+  plan: Plan; routeKey: string; result?: RouteResult; onFare: (mult: number) => void; onAddTrip: (type: AircraftModel) => void; onPickAircraft: (id: string) => void; onClose: () => void;
 }) {
   const [a, b] = routeKey.split('-');
   const m = marketBetween(a, b);
   const flights = flightsOn(plan, routeKey);
   const types = [...new Set(flights.map((f) => f.ac.type))];
-  const [type, setType] = useState<AircraftClass>(types[0] ?? 'narrowbody');
+  const [type, setType] = useState<AircraftModel>(types[0] ?? 'A20N');
   const fareMult = plan.fares[routeKey] ?? 1;
   return (
     <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里 · 每日 ${flights.length} 班（雙向）`} onClose={onClose}>
@@ -88,8 +88,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAddTrip, onPickAi
         ))}
       </ul>
       <div className="row">
-        <select value={type} onChange={(e) => setType(e.target.value as AircraftClass)} aria-label="機型">
-          {CLASS_ORDER.map((c) => <option key={c} value={c} disabled={!!routeProblem(a, b, c)}>{AIRCRAFT[c].name}</option>)}
+        <select value={type} onChange={(e) => setType(e.target.value as AircraftModel)} aria-label="機型">
+          {MODEL_ORDER.map((c) => <option key={c} value={c} disabled={!!routeProblem(a, b, c)}>{AIRCRAFT[c].name}</option>)}
         </select>
         <button className="primary grow" onClick={() => onAddTrip(type)}>每日加一班來回</button>
       </div>
@@ -188,7 +188,7 @@ function earliestMorning(code: string) {
 // ---------- Fleet ----------
 
 export function FleetSheet({ plan, result, stale, onPick, onLease, onClose }: {
-  plan: Plan; result: NetworkResult | null; stale: boolean; onPick: (id: string) => void; onLease: (type: AircraftClass) => void; onClose: () => void;
+  plan: Plan; result: NetworkResult | null; stale: boolean; onPick: (id: string) => void; onLease: (type: AircraftModel) => void; onClose: () => void;
 }) {
   const avg = plan.fleet.length ? plan.fleet.reduce((s, a) => s + rotationInfo(a).utilisation, 0) / plan.fleet.length : 0;
   return (
@@ -208,7 +208,7 @@ export function FleetSheet({ plan, result, stale, onPick, onLease, onClose }: {
       </ul>
       <h4>租賃新飛機（停在基地 {AIRPORT_BY_CODE[plan.base].name}）</h4>
       <div className="chips">
-        {CLASS_ORDER.map((c) => <button key={c} className="chip" onClick={() => onLease(c)}>{AIRCRAFT[c].name} · {money(AIRCRAFT[c].ownershipPerWeek)}/週</button>)}
+        {MODEL_ORDER.map((c) => <button key={c} className="chip" onClick={() => onLease(c)}>{AIRCRAFT[c].name} · {money(AIRCRAFT[c].ownershipPerWeek)}/週</button>)}
       </div>
     </Sheet>
   );
@@ -221,7 +221,7 @@ export function AirportSheet({ plan, code, onConnect, onOpen, onClose }: { plan:
   const used = weeklyDepartures(plan, code);
   const top = topMarketsFrom(code, plan);
   return (
-    <Sheet title={`${a.name} ${a.code}`} sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${AIRCRAFT[a.maxClass].name}）${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
+    <Sheet title={`${a.name} ${a.code}`} sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
       <button className="primary wide" onClick={onConnect}>從這裡開新航線</button>
       <h4>最大市場（每週單向航空旅客）</h4>
       <ul className="markets">
