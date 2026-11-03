@@ -99,8 +99,9 @@ export default function MapCanvas(props: Props) {
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
       if (!viewRef.current) {
-        const v = fitView(rect.width, rect.height, 20, 112, 44, 146);
-        viewRef.current = { ...v, cy: projY(31) };
+        const a = AIRPORT_BY_CODE[propsRef.current.plan.base];
+        const v = fitView(rect.width, rect.height, a.lat - 15, a.lon - 20, a.lat + 15, a.lon + 20);
+        viewRef.current = v;
       }
     };
     resize();
@@ -175,7 +176,7 @@ export default function MapCanvas(props: Props) {
           const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
           const freq = r.services.reduce((s, x) => s + x.freq, 0);
           ctx.beginPath();
-          pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
           ctx.strokeStyle = top.airline.color;
           ctx.globalAlpha = 0.45;
           ctx.lineWidth = Math.min(4, 0.8 + Math.sqrt(freq) / 4);
@@ -193,7 +194,7 @@ export default function MapCanvas(props: Props) {
         const res = p.result?.routes[r.key];
         const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
         ctx.beginPath();
-        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
         ctx.lineCap = 'round';
         if (selected) {
           ctx.strokeStyle = pal.sel;

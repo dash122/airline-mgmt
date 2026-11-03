@@ -43,7 +43,9 @@ type Overlay =
 export default function App() {
   const [plan, setPlan] = useState<Plan | null>(() => {
     const p = load<Plan>(SAVE_KEY);
-    return p && p.version === 2 ? p : null;
+    if (!p || p.version !== 2 || !AIRPORT_BY_CODE[p.base]) return null;
+    return { ...p, hub: p.hub && AIRPORT_BY_CODE[p.hub] ? p.hub : undefined,
+      fleet: p.fleet.map(ac => ({ ...ac, legs: ac.legs.filter(l => AIRPORT_BY_CODE[l.from] && AIRPORT_BY_CODE[l.to]) })) };
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -278,7 +280,7 @@ export default function App() {
   );
 }
 
-const utcMorning = (code: string) => 7 * 60 - (AIRPORT_BY_CODE[code].country === 'JP' ? 9 : 8) * 60;
+const utcMorning = (code: string) => utcFromLocal(code, 7 * 60);
 
 function TabIcon({ tab }: { tab: Panel }) {
   const d = {
@@ -319,7 +321,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
     <div className="start">
       <div className="start-card">
         <div className="logo">航點<span>Waypoint</span></div>
-        <p>在真實的東亞地圖上規劃你的航線網。旅客會比較票價、時間與班次，在你的航班、其他航空、高鐵新幹線之間選擇。租飛機、排每日班表，讓每架飛機多飛、每班多載。時間會自己流動，每天結算一次。目標：讓收入打平成本，越高越好。</p>
+        <p>在真實的全球地圖上規劃你的航線網。旅客會比較票價、時間與班次，在你的航班、其他航空、高鐵新幹線之間選擇。租飛機、排每日班表，讓每架飛機多飛、每班多載。時間會自己流動，每天結算一次。目標：讓收入打平成本，越高越好。</p>
         <h2>選擇你的基地</h2>
         <div className="base-grid">
           {BASES.map((c) => (
