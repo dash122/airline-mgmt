@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from '../sim/markets';
+import { byAirport, timeline, type ClockBasis } from '../sim/airports';
 import {
   gapAt, insertRoundTrip, insertWindow, leaseFor, pickTime, placementOptions, removeUnit, shiftUnit, shiftWindow, slotProblem, typesFor,
   unitOf, type Placement, type Unit,
 } from '../sim/schedule';
 import {
-  blockMinutes, DAY, routePairs, routeProblem, rotationInfo, topMarketsFrom, utcFromLocal,
+  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, topMarketsFrom, utcFromLocal,
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
@@ -54,10 +55,21 @@ export function RoutesPanel({ plan, result, onOpen, onAdd, onRemoveOne, onClose 
 
 // ---------- Schedule ----------
 
-export function SchedulePanel({ plan, result, now, selected, onPickLeg, onGap, onClose }: {
-  plan: Plan; result: NetworkResult | null; now: number; selected: { acId: string; legs: number[] } | null;
+type SchedView = 'time' | 'airport' | 'aircraft';
+const VIEW_KEY = 'waypoint.schedview';
+function loadView(): SchedView {
+  try { const v = localStorage.getItem(VIEW_KEY); return v === 'time' || v === 'airport' || v === 'aircraft' ? v : 'aircraft'; } catch { return 'aircraft'; }
+}
+
+export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, onGap, onClose }: {
+  plan: Plan; result: NetworkResult | null; now: number; selected: { acId: string; legs: number[] } | null; preset?: { airport: string } | null;
   onPickLeg: (acId: string, leg: number) => void; onGap: (acId: string, t: number) => void; onClose: () => void;
 }) {
+  const [view, setViewState] = useState<SchedView>(() => (preset ? 'time' : loadView()));
+  const setView = (v: SchedView) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* storage unavailable */ } };
+  const [mode, setMode] = useState<'dep' | 'arr'>('dep');
+  const [basis, setBasis] = useState<ClockBasis>('local');
+  const [airport, setAirport] = useState<string | null>(preset?.airport ?? null);
   const start0 = dayStart(plan.base);
   const nowPct = ((((now - start0) % DAY) + DAY) % DAY) / DAY * 100;
   const tapGap = (ac: Aircraft, e: React.MouseEvent<HTMLDivElement>) => {
@@ -66,9 +78,18 @@ export function SchedulePanel({ plan, result, now, selected, onPickLeg, onGap, o
     onGap(ac.id, start0 + minute);
   };
   return (
-    <Sheet size="full" title="班表" sub={`${AIRPORT_BY_CODE[plan.base].name}時間 · 點航班可調整，點空白處可加班`} onClose={onClose}>
+    <Sheet size="full" title="班表" sub={view === 'aircraft' ? `${AIRPORT_BY_CODE[plan.base].name}時間 · 點航班可調整，點空白處可加班` : '點航班可調整'} onClose={onClose}>
+      <div className="seg three" role="tablist" aria-label="班表檢視">
+        {([['time', '時間順序'], ['airport', '按機場'], ['aircraft', '按飛機']] as [SchedView, string][]).map(([v, label]) => (
+          <button key={v} role="tab" className={view === v ? 'on' : ''} onClick={() => setView(v)}>{label}</button>
+        ))}
+      </div>
+      {view !== 'aircraft' && (
+        <ScheduleLists plan={plan} view={view} mode={mode} basis={basis} airport={airport}
+          onMode={setMode} onBasis={setBasis} onAirport={setAirport} onPickLeg={onPickLeg} />
+      )}
       {plan.fleet.length === 0 && <div className="hint center">還沒有飛機。在地圖上拖曳開航，或到「機隊」租飛機。</div>}
-      <div className="gantt">
+      {view === 'aircraft' && <div className="gantt">
         <div className="g-row g-hours">
           <span />
           <div className="g-track plain">{[0, 6, 12, 18].map((h) => <span key={h} style={{ left: `${(h / 24) * 100}%` }}>{h}</span>)}<span style={{ right: 0 }}>24</span></div>
@@ -93,11 +114,64 @@ export function SchedulePanel({ plan, result, now, selected, onPickLeg, onGap, o
             </div>
           );
         })}
-      </div>
-      {result && plan.fleet.length > 0 && (
+      </div>}
+      {view === 'aircraft' && result && plan.fleet.length > 0 && (
         <div className="hint">平均利用率 {pct(result.avgUtilisation)}。斜線是飛機停在地面的時間；把空檔填滿，租金就攤得更薄。</div>
       )}
     </Sheet>
+  );
+}
+
+function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAirport, onPickLeg }: {
+  plan: Plan; view: SchedView; mode: 'dep' | 'arr'; basis: ClockBasis; airport: string | null;
+  onMode: (m: 'dep' | 'arr') => void; onBasis: (b: ClockBasis) => void; onAirport: (a: string | null) => void; onPickLeg: (acId: string, leg: number) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const served = useMemo(() => [...new Set(plan.fleet.flatMap((ac) => ac.legs.flatMap((l) => [l.from, l.to])))].sort(), [plan]);
+  const rowsOf = (r: ReturnType<typeof timeline>[number]) => (
+    <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
+      <span className="t">{hhmm(r.time)}</span>
+      <span className="name">
+        {`${r.from} → ${r.to}`}
+        <small>{mode === 'dep' ? `抵達 ${hhmm(r.other)}` : `${hhmm(r.other)} 出發`} · {r.ac.reg} · {AIRCRAFT[r.ac.type].name}</small>
+      </span>
+      <span className="chev">調整 ›</span>
+    </li>
+  );
+  const basisHint = basis === 'base' ? `${AIRPORT_BY_CODE[plan.base].name}時間` : '各機場當地時間';
+  const list = view === 'time' ? timeline(plan, { mode, basis, airport: airport ?? undefined }) : null;
+  const groups = view === 'airport' ? byAirport(plan, { mode, basis, order: 'busy' }).filter((g) => !airport || g.code === airport) : null;
+  return (
+    <>
+      <div className="viewopts">
+        <div className="seg two" aria-label="出發或抵達">
+          <button className={mode === 'dep' ? 'on' : ''} onClick={() => onMode('dep')}>出發</button>
+          <button className={mode === 'arr' ? 'on' : ''} onClick={() => onMode('arr')}>抵達</button>
+        </div>
+        <div className="seg two" aria-label="時間基準">
+          <button className={basis === 'local' ? 'on' : ''} onClick={() => onBasis('local')}>當地時間</button>
+          <button className={basis === 'base' ? 'on' : ''} onClick={() => onBasis('base')}>基地時間</button>
+        </div>
+      </div>
+      {served.length > 1 && (
+        <div className="chips scroll" aria-label="機場篩選">
+          <button className={`chip${airport === null ? ' strong' : ''}`} onClick={() => onAirport(null)}>全部</button>
+          {served.map((c) => <button key={c} className={`chip${airport === c ? ' strong' : ''}`} onClick={() => onAirport(airport === c ? null : c)}>{c}</button>)}
+        </div>
+      )}
+      <div className="hint">{basisHint} · 每個航班每天飛一次，每週 7 天。</div>
+      {list && (list.length === 0 ? <div className="hint center">沒有符合的航班。</div> : <ul className="timetable">{list.map(rowsOf)}</ul>)}
+      {groups && (groups.length === 0 ? <div className="hint center">沒有符合的航班。</div> : groups.map((g) => (
+        <div key={g.code} className="group">
+          <button className="group-head" onClick={() => setCollapsed({ ...collapsed, [g.code]: !collapsed[g.code] })} aria-expanded={!collapsed[g.code]}>
+            <span className="grow">{AIRPORT_BY_CODE[g.code].name} {g.code}</span>
+            <small>{mode === 'dep' ? '出發' : '抵達'} {g.rows.length} 班/日</small>
+            <span className="chev">{collapsed[g.code] ? '展開' : '收合'}</span>
+          </button>
+          {!collapsed[g.code] && <ul className="timetable">{g.rows.map(rowsOf)}</ul>}
+        </div>
+      )))}
+    </>
   );
 }
 

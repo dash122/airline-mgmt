@@ -203,7 +203,7 @@ button.primary { background: var(--accent); color: var(--accent-text); padding: 
 .tabbar {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
   height: calc(var(--tabbar) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
-  display: grid; grid-template-columns: repeat(5, 1fr); background: var(--panel); border-top: 1px solid var(--line); backdrop-filter: blur(8px);
+  display: grid; grid-template-columns: repeat(6, 1fr); background: var(--panel); border-top: 1px solid var(--line); backdrop-filter: blur(8px);
 }
 .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--muted); position: relative; }
 .tabbar button.on { color: var(--accent); font-weight: 700; }
@@ -295,3 +295,45 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .lease-foot { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
 .chips.scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
 .chips.scroll .chip { white-space: nowrap; flex-shrink: 0; }
+
+/* Airport views */
+.seg.two { grid-template-columns: repeat(2, 1fr); }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+.seg.two button, .seg.three button { flex-direction: row; justify-content: center; font-size: 13px; padding: 8px 4px; }
+.viewopts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.group { display: flex; flex-direction: column; }
+.group-head { display: flex; align-items: baseline; gap: 8px; text-align: left; padding: 8px 0; border-bottom: 2px solid var(--line); font-weight: 700; }
+.group-head small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.tapli { cursor: pointer; }
+.radial { width: 100%; max-height: 240px; touch-action: manipulation; }
+.radial .ring { fill: none; stroke: var(--line); stroke-dasharray: 3 4; }
+.radial .spoke { cursor: pointer; color: var(--accent); }
+.radial .spoke.good { color: var(--good); } .radial .spoke.warn { color: var(--warn); } .radial .spoke.bad { color: var(--bad); } .radial .spoke.idle { color: var(--muted); }
+.radial .line { stroke: currentColor; stroke-linecap: round; opacity: 0.85; }
+.radial .spoke.idle .line { stroke-dasharray: 5 4; }
+.radial .hit { stroke: transparent; stroke-width: 22; }
+.radial .node { fill: var(--panel); stroke: currentColor; stroke-width: 2; }
+.radial text { font-size: 10px; fill: var(--text); font-weight: 700; }
+.radial text.sm { font-size: 8.5px; fill: var(--muted); font-weight: 400; }
+.radial .center { fill: var(--sel); }
+.radial .center-t { font-size: 11px; }
+.daystrip .cols { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 64px; }
+.daystrip .col { display: grid; grid-template-rows: 1fr 1fr; gap: 1px; }
+.daystrip .up, .daystrip .down { display: flex; }
+.daystrip .up { align-items: flex-end; } .daystrip .down { align-items: flex-start; }
+.daystrip i { display: block; width: 100%; border-radius: 2px; min-height: 0; }
+.daystrip .up i { background: var(--accent); } .daystrip .down i { background: var(--sel); }
+.daystrip .hours { position: relative; height: 12px; font-size: 10px; color: var(--muted); }
+.daystrip .hours span { position: absolute; }
+.daystrip .legend { display: flex; gap: 10px; font-size: 11px; color: var(--muted); }
+.daystrip .legend .d { color: var(--accent); } .daystrip .legend .a { color: var(--sel); }
+.hubbox { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.hubbox small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.hubbox button { white-space: nowrap; }
+.stations { list-style: none; margin: 0; padding: 0; }
+.stations li { padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; display: flex; flex-direction: column; gap: 5px; }
+.st-top { display: flex; align-items: center; gap: 8px; }
+.st-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 600; }
+.st-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.st-top .name .chip { padding: 1px 7px; font-size: 11px; font-weight: 400; }
+.stations small { color: var(--muted); font-size: 11px; font-weight: 400; }

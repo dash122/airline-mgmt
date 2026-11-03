@@ -184,9 +184,16 @@ export default function MapCanvas(props: Props) {
         }
         ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
         ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
+        // With an airport selected, show its direct routes and fade the rest.
+        const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
+        if (focus) {
+          if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
+          else ctx.globalAlpha = 0.18;
+        }
         if (!res) ctx.setLineDash([6, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
       }
 
       // Aircraft, placed by the game clock.

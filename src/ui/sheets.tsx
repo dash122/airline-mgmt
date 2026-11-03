@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { AIRCRAFT, CLASS_NAMES } from '../data/aircraft';
+import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
-import { marketBetween, modelledAnnualPax, pairKey } from '../sim/markets';
+import { marketBetween, pairKey } from '../sim/markets';
 import { units } from '../sim/schedule';
 import {
-  blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, topMarketsFrom, utcFromLocal, weeklyDepartures,
+  blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
@@ -149,6 +149,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} />
         </div>
       )}
+      {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客只付直飛票價的 85%，且需要接得上：看「機場」的轉機分頁。</div>}
       {result && result.spill > 1 && <div className="hint">有旅客買不到位子：加一班或換大一點的飛機。</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint">載客率偏低：減一班或降低票價。</div>}
       <div className="fare">
@@ -246,29 +247,6 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
       </ul>
       <button className="primary" onClick={() => onAddHere(ac.legs.length)}>從{AIRPORT_BY_CODE[here].name}加一班來回</button>
       <Confirm label="退租這架飛機" confirm={`退租 ${ac.reg}，取消它的 ${ac.legs.length} 個航班？`} onYes={onRemove} />
-    </Sheet>
-  );
-}
-
-// ---------- Airport ----------
-
-export function AirportSheet({ plan, code, onConnect, onOpen, onClose }: { plan: Plan; code: string; onConnect: () => void; onOpen: (to: string) => void; onClose: () => void }) {
-  const a = AIRPORT_BY_CODE[code];
-  const used = weeklyDepartures(plan, code);
-  const top = topMarketsFrom(code, plan);
-  return (
-    <Sheet title={`${a.name} ${a.code}`} sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
-      <button className="primary wide" onClick={onConnect}>從這裡開新航線</button>
-      <h4>最大市場（每週單向航空旅客）</h4>
-      <ul className="markets">
-        {top.map((m) => (
-          <li key={m.to}>
-            <span className="name">{AIRPORT_BY_CODE[m.to].name} <small>{m.to} · {count(m.distKm)} 公里</small></span>
-            <span className="num">{count(m.airDemand)}</span>
-            {m.served ? <span className="tag">已開航</span> : <button onClick={() => onOpen(m.to)}>開航</button>}
-          </li>
-        ))}
-      </ul>
     </Sheet>
   );
 }

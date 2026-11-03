@@ -3,7 +3,7 @@ import { AIRPORTS } from '../data/airports';
 import { marketBetween, markets, modelledAnnualPax } from './markets';
 import { AIR_TARGETS_M } from '../data/calibration';
 import {
-  addRoundTrip, emptyPlan, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
+  addRoundTrip, blockMinutes, CONNECT_FARE_SHARE, detourOk, emptyPlan, HUB_COST_PER_WEEK, minConnect, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
 } from './simulate';
 
 const must = (r: ReturnType<typeof addRoundTrip>) => {
@@ -128,5 +128,63 @@ describe('economics', () => {
   });
   test('a 777-300ER on a short domestic route loses money', () => {
     expect(build('TPE', 'KHH', 'B77W', 3).costRecovery).toBeLessThan(1);
+  });
+});
+
+describe('transfers', () => {
+  const base = emptyPlan('TPE');
+  const ac = (id: string, type: Parameters<typeof newAircraft>[1], legs: { from: string; to: string; h: number }[]) =>
+    ({ ...newAircraft(base, type), id, reg: id, legs: legs.map((l) => ({ from: l.from, to: l.to, dep: utcFromLocal(l.from, l.h * 60) })) });
+  const hkgTpe = (id = 'a') => ac(id, 'A20N', [{ from: 'HKG', to: 'TPE', h: 8 }]);
+  const withOnward = (h: number, hub?: string): Plan => ({ ...base, hub, fleet: [hkgTpe(), ac('b', 'A20N', [{ from: 'TPE', to: 'NRT', h }])] });
+
+  test('international transfers need longer than domestic ones, and a hub shortens them', () => {
+    expect(minConnect('TPE', 'HKG', 'NRT')).toBeGreaterThan(minConnect('KHH', 'TSA', 'TPE'));
+    expect(minConnect('TPE', 'HKG', 'NRT', 'TPE')).toBeLessThan(minConnect('TPE', 'HKG', 'NRT'));
+  });
+  test('a connection just under the minimum is missed, and the hub setting catches it', () => {
+    // The inbound lands at TPE; leave 75 min later: under the 80 min international minimum, over the hub's 70.
+    const land = 8 * 60 + blockMinutes('HKG', 'TPE', 'A20N');
+    const h = (land + 75) / 60;
+    expect(simulate(withOnward(h)).connectingPax).toBe(0);
+    expect(simulate(withOnward(h, 'TPE')).connectingPax).toBeGreaterThan(0);
+  });
+  test('the hub setting costs money each week and appears in total cost', () => {
+    const r = simulate(withOnward(11, 'TPE'));
+    expect(r.hubCost).toBe(HUB_COST_PER_WEEK);
+    expect(r.cost).toBeCloseTo(r.flyingCost + r.ownershipCost + HUB_COST_PER_WEEK);
+    expect(simulate(withOnward(11)).hubCost).toBe(0);
+  });
+  test('one-stop travellers pay less than the nonstop fare', () => {
+    const r = simulate(withOnward(11));
+    expect(r.connectingPax).toBeGreaterThan(0);
+    const direct = marketBetween('HKG', 'NRT')!.refFare;
+    const fares = Object.values(r.routes).reduce((s, x) => s + x.revenue, 0);
+    const local = Object.values(r.routes).reduce((s, x) => s + x.localPax, 0);
+    expect(fares).toBeGreaterThan(0);
+    expect(CONNECT_FARE_SHARE).toBeLessThan(1);
+    expect(direct).toBeGreaterThan(0);
+    expect(local).toBeGreaterThan(0);
+  });
+  test('detours are rejected', () => {
+    expect(detourOk(1000, 1500)).toBe(true);
+    expect(detourOk(1000, 1700)).toBe(false);
+    expect(detourOk(500, 950)).toBe(true);
+    expect(detourOk(500, 1100)).toBe(false);
+  });
+  test('stopping on the same aircraft counts as a through service', () => {
+    // Aircraft flies HKG→TPE then straight on to NRT after a 25 min turn.
+    const through: Plan = { ...base, fleet: [ac('t', 'A20N', [{ from: 'HKG', to: 'TPE', h: 8 }, { from: 'TPE', to: 'NRT', h: 10 }])] };
+    expect(simulate(through).connectingPax).toBeGreaterThan(0);
+  });
+  test('transfers are reported per airport with their flows', () => {
+    const r = simulate(withOnward(11));
+    expect(r.transfers.TPE.pax).toBeCloseTo(r.connectingPax);
+    expect(r.transfers.TPE.flows[0]).toMatchObject({ from: 'HKG', to: 'NRT' });
+  });
+  test('connectors keep their seat before local travellers on a full second flight', () => {
+    const full: Plan = { ...base, fleet: [hkgTpe(), ac('b', 'ATR72', [{ from: 'TPE', to: 'KHH', h: 11 }]), ac('c', 'B77W', [{ from: 'KHH', to: 'OKA', h: 14 }])] };
+    const r = simulate(full);
+    for (const x of Object.values(r.routes)) expect(x.pax).toBeLessThanOrEqual(x.seats + 1e-6);
   });
 });
