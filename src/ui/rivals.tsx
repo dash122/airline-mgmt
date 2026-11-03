@@ -39,7 +39,16 @@ export function RouteRivals({ a, b, result }: { a: string; b: string; result?: R
         const share = r && result && result.airTotal > 0 ? r.pax / result.airTotal : mine.reduce((s, x) => s + baseline[services.indexOf(x)], 0);
         const out = mine.find((s) => s.from === from);
         return (
-<li key={id}><div className="rival-heading"><AirlineName airline={al} /><span className="rival-share">{pct(share)}<small>旅客占比</small></span></div><p className="schedule-note">雙向每週 {freq} 班</p>{out ? <ServiceSchedule service={out} /> : <p className="schedule-note">此方向沒有直飛航班。</p>}</li>
+          <li key={id}>
+            <details className="competitor-details">
+              <summary>
+                <span className="name"><AirlineName airline={al} /><small>雙向每週 {freq} 班 · 查看班表</small></span>
+                <span className="rival-share">{pct(share)}<small>旅客占比</small></span>
+              </summary>
+              <p className="schedule-note">基地：{al.bases.map((code) => AIRPORT_BY_CODE[code].name + ' ' + code).join('、')}</p>
+              {out ? <ServiceSchedule service={out} /> : <p className="schedule-note">此方向沒有直飛航班。</p>}
+            </details>
+          </li>
         );
       })}
     </ul></div>
@@ -51,32 +60,58 @@ function ServiceSchedule({ service: s }: { service: RivalService }) { return <di
 /** Competitor airlines at an airport and where they fly. */
 export function AirportRivals({ code, served, onOpen }: { code: string; served: (to: string) => boolean; onOpen: (to: string) => void }) {
   const carriers = airlinesAt(code);
-  const routes = rivalsAt(code).slice(0, 12);
+  const routes = rivalsAt(code);
   if (!carriers.length) return <div className="hint center">沒有其他航空在這裡飛。</div>;
   return (
     <>
       <h4>在這裡飛的航空公司（每週出發）</h4>
-      <ul className="markets">
+      <p className="schedule-note">點選航空公司查看航點；點選航線查看班表。</p>
+      <ul className="competitor-list">
         {carriers.map((c) => (
           <li key={c.airline.id}>
-            <span className="name"><AirlineName airline={c.airline} /><small>{c.destinations} 個航點{c.airline.bases[0] === code ? ' · 主要樞紐' : c.airline.bases.includes(code) ? ' · 基地' : ''}</small></span>
-            <span className="num">{count(c.flights)}</span>
+            <details className="competitor-details">
+              <summary>
+                <span className="name"><AirlineName airline={c.airline} /><small>{c.destinations} 個航點{c.airline.bases[0] === code ? ' · 主要樞紐' : c.airline.bases.includes(code) ? ' · 基地' : ''} · 查看航線</small></span>
+                <span className="rival-share">{count(c.flights)}<small>班／週</small></span>
+              </summary>
+              <p className="schedule-note">基地：{c.airline.bases.map((base) => AIRPORT_BY_CODE[base].name + ' ' + base).join('、')}</p>
+              <ul className="competitor-list">
+                {routes.filter((r) => r.services.some((s) => s.airline.id === c.airline.id)).map((r) => (
+                  <li key={r.to}><AirportRivalRoute code={code} to={r.to} services={r.services.filter((s) => s.airline.id === c.airline.id)} served={served(r.to)} onOpen={() => onOpen(r.to)} /></li>
+                ))}
+              </ul>
+            </details>
           </li>
         ))}
       </ul>
-      <h4>最多班次的航線</h4>
-      <ul className="markets">
+      <h4>全部競爭航線 · {routes.length} 條</h4>
+      <ul className="competitor-list">
         {routes.map((r) => (
-          <li key={r.to}>
-            <span className="name">
-              {AIRPORT_BY_CODE[r.to].name} <small>{r.to} · {r.services.map((s) => `${s.airline.name} ${s.freq}`).join('、')}</small>
-            </span>
-<details className="airport-service-details"><summary>查看出發／抵達班表</summary>{r.services.map((s) => <div key={s.airline.id}><AirlineName airline={s.airline} /><ServiceSchedule service={s} /></div>)}<p className="schedule-note">各機場當地時間</p></details>
-            {served(r.to) ? <span className="tag">已開航</span> : <button onClick={() => onOpen(r.to)}>開航</button>}
-          </li>
+          <li key={r.to}><AirportRivalRoute code={code} to={r.to} services={r.services} served={served(r.to)} onOpen={() => onOpen(r.to)} /></li>
         ))}
       </ul>
       <div className="hint">競爭對手的班表固定，不會因為你開航而加班或降價。</div>
     </>
+  );
+}
+
+function AirportRivalRoute({ code, to, services, served, onOpen }: {
+  code: string; to: string; services: RivalService[]; served: boolean; onOpen: () => void;
+}) {
+  const flights = services.reduce((total, service) => total + service.freq, 0);
+  return (
+    <details className="competitor-details">
+      <summary>
+        <span className="name"><b>{AIRPORT_BY_CODE[to].name} <span className="route-code">{code} → {to}</span></b><small>{services.length} 家航空 · 每週 {flights} 班 · 查看班表</small></span>
+      </summary>
+      {services.map((service) => (
+        <section className="competitor-service" key={service.airline.id} aria-label={service.airline.name + ' 班表'}>
+          <AirlineName airline={service.airline} />
+          <ServiceSchedule service={service} />
+        </section>
+      ))}
+      <p className="schedule-note">時間為各機場當地時間 · +1 天為隔日抵達</p>
+      <div className="competitor-route-action">{served ? <span className="tag">你的航空已開航</span> : <button onClick={onOpen}>開航 {code} ⇄ {to}</button>}</div>
+    </details>
   );
 }
