@@ -3,6 +3,7 @@ import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, DAY, hhmm, localMinutes, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
+import { dayAt, type GameClock } from './clock';
 import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
@@ -15,7 +16,7 @@ export interface Selection {
 interface Props {
   plan: Plan;
   result: NetworkResult | null;
-  stale: boolean;
+  clock: GameClock;
   selection: Selection | null;
   connectFrom: string | null;
   theme: Theme;
@@ -36,7 +37,6 @@ const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;
-export const CLOCK_DAY_MS = 60_000;
 const HIT_AIRPORT_PX = 22;
 
 function arc(a: string, b: string): [number, number][] {
@@ -170,7 +170,7 @@ export default function MapCanvas(props: Props) {
       const pairs = routePairs(p.plan);
       for (const r of pairs) {
         const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-        const res = p.result && !p.stale ? p.result.routes[r.key] : undefined;
+        const res = p.result?.routes[r.key];
         const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
         ctx.beginPath();
         pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -189,8 +189,9 @@ export default function MapCanvas(props: Props) {
         ctx.setLineDash([]);
       }
 
-      // Aircraft, placed by a simulated clock running through the day (one day per CLOCK_DAY_MS).
-      const clock = ((time % CLOCK_DAY_MS) / CLOCK_DAY_MS) * DAY;
+      // Aircraft, placed by the game clock.
+      const now = p.clock.now();
+      const clock = ((now % DAY) + DAY) % DAY;
       for (const ac of p.plan.fleet) {
         const selectedAc = p.selection?.kind === 'aircraft' && p.selection.id === ac.id;
         for (const leg of ac.legs) {
@@ -279,14 +280,14 @@ export default function MapCanvas(props: Props) {
         ctx.fillText(l.text, l.x, l.y);
       }
       // Clock (local time at the base)
-      if (p.plan.fleet.length) {
-        ctx.font = '700 15px system-ui, sans-serif';
-        const label = `${AIRPORT_BY_CODE[p.plan.base].name} ${hhmm(localMinutes(p.plan.base, clock))}`;
+      {
+        ctx.font = '700 15px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
+        const label = `第 ${dayAt(p.plan.base, now)} 天 · ${AIRPORT_BY_CODE[p.plan.base].name} ${hhmm(localMinutes(p.plan.base, clock))}${p.clock.speed === 0 ? ' · 暫停' : ''}`;
         ctx.lineWidth = 4;
         ctx.strokeStyle = pal.labelHalo;
-        ctx.strokeText(label, 14, h - 40);
+        ctx.strokeText(label, 14, h - 88);
         ctx.fillStyle = pal.label;
-        ctx.fillText(label, 14, h - 40);
+        ctx.fillText(label, 14, h - 88);
       }
       raf = requestAnimationFrame(draw);
     };

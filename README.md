@@ -1,6 +1,6 @@
 # 航點 Waypoint
 
-A single-player, mobile-first airline route planning game on a real map of East Asia. You draw routes between real airports, pick aircraft, frequency and fares, then simulate a week. A deterministic demand model decides how many travellers pick your flights over other airlines, high-speed rail, ferries, or not travelling. The headline score is cost recovery (revenue / operating cost, 100% = break even).
+A single-player, mobile-first airline route planning game on a real map of East Asia. You draw routes between real airports, pick real aircraft types, frequency and fares, and watch time run: aircraft fly their schedules on the map and each day's profit or loss is booked at local midnight (pause, 1×, 4× or 12× speed). A deterministic demand model decides how many travellers pick your flights over other airlines, high-speed rail, ferries, or not travelling. The headline score is cost recovery (revenue / operating cost, 100% = break even).
 
 UI language: Traditional Chinese.
 
@@ -23,7 +23,7 @@ npm run build:data  # regenerate airports from open data
 
 ## Schedules and fleet
 
-You lease individual aircraft and give each one a daily rotation: a chain of flights with departure times, each leaving after the previous one has landed and turned around. The rotation repeats every day, so it should end where it started and fit in 24 hours. Costs are split into a weekly lease, paid whether the aircraft flies or not, and flying costs per block hour and per departure. That makes utilisation (block hours per day) matter.
+You lease individual aircraft and give each one a daily rotation: a chain of flights with departure times, each leaving after the previous one has landed and turned around. The rotation repeats every day, so it should end where it started and fit in 24 hours. Costs are split into a weekly lease, paid whether the aircraft flies or not, flying costs per block hour and per departure, and passenger costs (NT$250 per passenger per flight plus 12% of fares for sales). Aircraft are real types from the ATR 72 to the 777-300ER, with typical seat counts and rough real-world lease and operating costs. That makes utilisation (block hours per day) and matching the aircraft to the market matter: a narrowbody on a busy route can make a profit, a 777 on a short route will not.
 
 Departure time matters too. Morning and evening departures attract more travellers than midday ones, and very few want to leave at 3am. When one of your flights lands at an airport 45 minutes to 4 hours before another of your flights leaves, travellers can connect between them. Connections count as an option in the market for the whole trip.
 
