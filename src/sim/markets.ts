@@ -32,7 +32,7 @@ export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
 
-export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass);
+export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !a.landmass.startsWith('main-');
 
 /** Nearest mainland airport within ferry range of an island airport (a stand-in for the ferry port). */
 const ferryCache = new Map<string, { port: Airport; km: number } | null>();
@@ -115,13 +115,15 @@ function buildMarkets(): Map<string, Market> {
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
     for (const r of raw) {
-      if (!hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])) continue;
+      if (!(r.group in AIR_TARGETS_M) || !hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])) continue;
       const b = baseline(r.gravity * scale[r.group], refFare(r.distKm), r.distKm, r.ground);
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
-    for (const g of Object.keys(scale)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
+    for (const g of Object.keys(scale).filter(g => g in AIR_TARGETS_M)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
   }
 
+  // Uncalibrated global markets inherit the regional reference gravity scale.
+  for (const g of Object.keys(scale)) if (!(g in AIR_TARGETS_M)) scale[g] = scale['JP-TW'];
   const out = new Map<string, Market>();
   for (const r of raw) {
     const potential = r.gravity * scale[r.group];

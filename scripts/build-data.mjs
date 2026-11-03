@@ -1,16 +1,13 @@
 // Builds src/data/airports.json from open data:
-//   - OurAirports airports.csv + runways.csv (public domain): every airport with scheduled service
-//   - GeoNames cities1000 (CC BY 4.0): populations, split between nearby airports (catchments)
+//   - OurAirports airports.csv + runways.csv (public domain): major global and original regional scheduled airports
+//   - Regional GeoNames catchment seed (CC BY 4.0); global catchments are gameplay estimates
+//   - OpenFlights (ODbL/DbCL): fixed UTC offsets, estimated from longitude if absent
 //   - Natural Earth land (src/data/geo.json): which landmass each airport and town is on
 // Raw downloads are cached in data-raw/ (git-ignored). Run: npm run build:data
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
-import { NAMES, METROS, HSR, TOURISM_BY_REGION, SLOT_OVERRIDES, TIERS, BRIDGED } from './airport-meta.mjs';
+import { NAMES, METROS, HSR, TIERS } from './airport-meta.mjs';
 
 const RAW = new URL('../data-raw/', import.meta.url);
-const COUNTRIES = ['TW', 'HK', 'MO', 'JP'];
-/** National populations used to rescale GeoNames (which double counts some districts). Approximate, 2024. */
-const NATIONAL_POP = { JP: 124.0e6, TW: 23.4e6, HK: 7.5e6, MO: 0.68e6 };
 
 async function fetchRaw(name, url) {
   mkdirSync(RAW, { recursive: true });
@@ -43,12 +40,7 @@ function parseCsv(text) {
   return body.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
 }
 
-const R = 6371;
 const rad = (d) => (d * Math.PI) / 180;
-function dist(lat1, lon1, lat2, lon2) {
-  const h = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lon2 - lon1) / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
 
 // --- Landmasses from Natural Earth rings ---
 const geo = JSON.parse(readFileSync(new URL('../src/data/geo.json', import.meta.url)));
@@ -90,109 +82,36 @@ function ringOf(lat, lon) {
 async function main() {
   const airportsCsv = parseCsv(readFileSync(await fetchRaw('airports.csv', 'https://davidmegginson.github.io/ourairports-data/airports.csv'), 'utf8'));
   const runwaysCsv = parseCsv(readFileSync(await fetchRaw('runways.csv', 'https://davidmegginson.github.io/ourairports-data/runways.csv'), 'utf8'));
-  const citiesZip = await fetchRaw('cities1000.zip', 'https://download.geonames.org/export/dump/cities1000.zip');
-  const citiesTxt = new URL('cities1000.txt', RAW);
-  if (!existsSync(citiesTxt)) execSync(`unzip -o -q "${citiesZip.pathname}" -d "${RAW.pathname}"`);
-
+  const zoneRows = parseCsv('id,name,city,country,iata,icao,lat,lon,elevation,offset,dst,zone,type,source\n' + readFileSync(await fetchRaw('openflights.dat', 'https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat'), 'utf8'));
+  const zones = new Map(zoneRows.filter(r => Number.isFinite(Number(r.offset))).map(r => [r.iata, Number(r.offset) * 60]));
+  const previous = new Map(JSON.parse(readFileSync(new URL('./regional-airports.json', import.meta.url))).map(a => [a.code, a]));
   const longest = {};
   for (const r of runwaysCsv) {
-    if (r.closed === '1') continue;
-    const len = Number(r.length_ft) || 0;
-    longest[r.airport_ident] = Math.max(longest[r.airport_ident] ?? 0, len);
+    if (r.closed === '1' || !/^(ASP|CON|BIT|PEM)/i.test(r.surface)) continue;
+    longest[r.airport_ident] = Math.max(longest[r.airport_ident] ?? 0, Number(r.length_ft) || 0);
   }
-
-  const airports = airportsCsv
-    .filter((a) => COUNTRIES.includes(a.iso_country) && a.scheduled_service === 'yes' && a.iata_code && a.type !== 'heliport')
-    .filter((a) => NAMES[a.iata_code])
-    .map((a) => {
-      const lat = Number(a.latitude_deg), lon = Number(a.longitude_deg);
-      const ft = longest[a.ident] ?? 0;
-      const maxClass = ft < 5300 ? 'turboprop' : ft < 6600 ? 'regional' : ft < 8800 ? 'narrowbody' : 'widebody';
-      const size = a.type === 'large_airport' ? 'large' : a.type === 'medium_airport' ? 'medium' : 'small';
-      return { code: a.iata_code, name: NAMES[a.iata_code], country: a.iso_country, region: a.iso_region, lat, lon, size, runwayM: Math.round(ft * 0.3048), maxClass, ring: ringOf(lat, lon) };
-    });
-  const missing = Object.keys(NAMES).filter((c) => !airports.find((a) => a.code === c));
-  if (missing.length) console.warn('named but not found:', missing.join(' '));
-
-  // Landmass groups: link the main islands joined by bridges and tunnels.
-  const ringOfCode = (c) => airports.find((a) => a.code === c).ring;
-  const groupName = new Map();
-  for (const c of ['HND', 'FUK', 'MYJ', 'CTS']) groupName.set(ringOfCode(c), 'jp-main');
-  groupName.set(ringOfCode('TPE'), 'tw-main');
-  for (const a of airports) {
-    if (a.code === 'HKG' || a.code === 'MFM') a.landmass = 'prd';
-    else if (BRIDGED[a.code]) a.landmass = BRIDGED[a.code];
-    else if (a.ring >= 0 && groupName.has(a.ring)) a.landmass = groupName.get(a.ring);
-    else a.landmass = a.ring >= 0 ? `ring-${a.ring}` : `isl-${a.code}`;
+  const metros = Object.fromEntries(Object.entries(METROS).flatMap(([m, codes]) => codes.map(c => [c, m])));
+  for (const codes of [['LHR','LGW','LCY','STN','LTN'], ['JFK','EWR','LGA'], ['CDG','ORY'], ['ICN','GMP'], ['PEK','PKX'], ['PVG','SHA'], ['DXB','DWC']]) for (const c of codes) metros[c] = codes[0];
+  const out = [];
+  for (const a of airportsCsv) {
+    const ft = longest[a.ident] ?? 0;
+    if (a.scheduled_service !== 'yes' || !/^[A-Z]{3}$/.test(a.iata_code) || ft < 5300) continue;
+    if (a.type !== 'large_airport' && !previous.has(a.iata_code)) continue;
+    if (!['large_airport', 'medium_airport', 'small_airport'].includes(a.type)) continue;
+    const old = previous.get(a.iata_code), lat = Number(a.latitude_deg), lon = Number(a.longitude_deg);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    out.push({ ...old, code: a.iata_code, name: NAMES[a.iata_code] ?? a.name, country: a.iso_country, region: a.iso_region,
+      metro: metros[a.iata_code] ?? a.iata_code, lat, lon,
+      size: TIERS[a.iata_code] ?? (a.type === 'large_airport' ? 'large' : 'medium'),
+      runwayM: Math.round(ft * 0.3048), maxClass: ft < 6600 ? 'regional' : ft < 8800 ? 'narrowbody' : 'widebody',
+      catchment: old?.catchment ?? 2000000, tourism: old?.tourism ?? 1,
+      landmass: (old?.landmass && !old.landmass.startsWith('ring-') ? old.landmass : null) ?? (ringOf(lat, lon) >= 0 ? (rings[ringOf(lat, lon)].maxX - rings[ringOf(lat, lon)].minX > 30 ? 'main-' : 'ring-') + ringOf(lat, lon) : 'isl-' + a.iata_code),
+      hsr: HSR.has(a.iata_code), slotCap: old?.slotCap ?? 56,
+      utcOffset: zones.get(a.iata_code) ?? Math.round(lon / 15) * 60 });
   }
-  const metroOf = {};
-  for (const [m, codes] of Object.entries(METROS)) for (const c of codes) metroOf[c] = m;
-
-  // --- Catchments ---
-  const catchment = Object.fromEntries(airports.map((a) => [a.code, 0]));
-  catchment.HKG = NATIONAL_POP.HK;
-  catchment.MFM = NATIONAL_POP.MO;
-  const sizeW = { hub: 10, major: 3, large: 1.5, medium: 1, small: 0.5 };
-  const tierOf = (a) => TIERS[a.code] ?? a.size;
-  const cityRows = readFileSync(citiesTxt, 'utf8').split('\n');
-  const towns = { JP: [], TW: [] };
-  for (const line of cityRows) {
-    const f = line.split('\t');
-    if (!(f[8] in towns)) continue;
-    if (['PPLX', 'PPLH', 'PPLQ', 'PPLW'].includes(f[7])) continue;
-    towns[f[8]].push({ lat: Number(f[4]), lon: Number(f[5]), pop: Number(f[14]) });
-  }
-  let unserved = 0;
-  for (const [country, list] of Object.entries(towns)) {
-    const scale = NATIONAL_POP[country] / list.reduce((s, t) => s + t.pop, 0);
-    const local = airports.filter((a) => a.country === country);
-    for (const t of list) {
-      const pop = t.pop * scale;
-      const ring = ringOf(t.lat, t.lon);
-      const land = ring >= 0 && groupName.has(ring) ? groupName.get(ring) : ring >= 0 ? `ring-${ring}` : null;
-      const cands = [];
-      for (const a of local) {
-        const d = dist(t.lat, t.lon, a.lat, a.lon);
-        const sameLand = land ? a.landmass === land || (a.landmass === `isl-${a.code}` && d < 40) : d < 40;
-        if (!sameLand || d > 250) continue;
-        cands.push({ a, d, w: sizeW[tierOf(a)] * Math.exp(-d / 40) });
-      }
-      if (!cands.length) { unserved += pop; continue; }
-      const total = cands.reduce((s, c) => s + c.w, 0);
-      const nearest = Math.min(...cands.map((c) => c.d));
-      const reach = nearest <= 80 ? 1 : Math.exp(-(nearest - 80) / 120);
-      for (const c of cands) catchment[c.a.code] += (pop * reach * c.w) / total;
-      unserved += pop * (1 - reach);
-    }
-  }
-  console.log('population far from any airport (millions):', (unserved / 1e6).toFixed(1));
-
-  const out = airports
-    .map((a) => {
-      const island = a.landmass !== 'jp-main' && a.landmass !== 'tw-main' && a.landmass !== 'prd';
-      return {
-        code: a.code,
-        name: a.name,
-        country: a.country,
-        region: a.region,
-        metro: metroOf[a.code] ?? a.code,
-        lat: Math.round(a.lat * 1e4) / 1e4,
-        lon: Math.round(a.lon * 1e4) / 1e4,
-        size: tierOf(a),
-        runwayM: a.runwayM,
-        maxClass: a.maxClass,
-        landmass: a.landmass,
-        hsr: HSR.has(a.code),
-        // Small islands often have no town in GeoNames; assume at least a village-sized population.
-        catchment: Math.round(Math.max(catchment[a.code], island ? 3000 : 0)),
-        tourism: (TOURISM_BY_REGION[a.region] ?? 1) * (island ? 1.3 : 1),
-        slotCap: SLOT_OVERRIDES[a.code] ?? { hub: 140, major: 84, large: 56, medium: 35, small: 14 }[tierOf(a)],
-      };
-    })
-    .sort((x, y) => y.catchment - x.catchment);
-  writeFileSync(new URL('../src/data/airports.json', import.meta.url), JSON.stringify(out, null, 0).replace(/\},\{/g, '},\n{'));
-  console.log(out.length, 'airports');
-  for (const a of out) console.log(a.code, a.name, (a.catchment / 1e6).toFixed(2) + 'M', a.maxClass, a.landmass, a.hsr ? 'HSR' : '');
+  if (new Set(out.map(a => a.code)).size !== out.length) throw new Error('Duplicate IATA codes');
+  out.sort((a,b) => b.catchment - a.catchment || a.code.localeCompare(b.code));
+  writeFileSync(new URL('../src/data/airports.json', import.meta.url), JSON.stringify(out).replace(/\},\{/g, '},\n{'));
+  console.log(out.length, 'jet-capable airports in', new Set(out.map(a => a.country)).size, 'countries/territories');
 }
-
 main();

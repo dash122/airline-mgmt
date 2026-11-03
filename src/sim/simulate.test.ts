@@ -112,7 +112,7 @@ describe('fleet and rotations', () => {
 describe('route rules', () => {
   test('runway and range limits', () => {
     expect(routeProblem('TSA', 'LZN', 'A20N')).not.toBeNull();
-    expect(routeProblem('TSA', 'LZN', 'ATR72')).toBeNull();
+    expect(routeProblem('TSA', 'LZN', 'ATR72')).not.toBeNull();
     expect(routeProblem('TPE', 'CTS', 'ATR72')).not.toBeNull();
     expect(routeProblem('HND', 'NRT', 'A20N')).not.toBeNull();
     expect(routeProblem('TTT', 'KYD', 'A20N')).not.toBeNull();

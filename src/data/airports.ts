@@ -2,13 +2,14 @@
 import type { AircraftClass } from './aircraft';
 import data from './airports.json';
 
-export type Country = 'TW' | 'HK' | 'MO' | 'JP';
+export type Country = string;
 export type AirportSize = 'hub' | 'major' | 'large' | 'medium' | 'small';
 
 export interface Airport {
   code: string;
   name: string; // Traditional Chinese
   country: Country;
+  utcOffset: number; // fixed game UTC offset in minutes (no seasonal DST)
   region: string; // ISO 3166-2
   metro: string; // airports in one metro never form a market with each other
   lat: number;
@@ -34,4 +35,4 @@ export const AIRPORTS = (data as Airport[]).map((a) => ({ ...a, slotCap: a.slotC
 export const AIRPORT_BY_CODE: Record<string, Airport> = Object.fromEntries(AIRPORTS.map((a) => [a.code, a]));
 
 /** Bases the player can start from. */
-export const BASES = ['TPE', 'KHH', 'HKG', 'KIX', 'FUK', 'HND'];
+export const BASES = ['TPE', 'KHH', 'HKG', 'KIX', 'FUK', 'HND', 'SIN', 'DXB', 'LHR', 'CDG', 'JFK', 'LAX', 'SYD', 'JNB', 'GRU'];

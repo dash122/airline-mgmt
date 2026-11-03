@@ -7,7 +7,7 @@ export interface View {
 
 const DEG = 180 / Math.PI;
 export const projX = (lon: number) => lon;
-export const projY = (lat: number) => DEG * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+export const projY = (lat: number) => DEG * Math.log(Math.tan(Math.PI / 4 + (Math.max(-85, Math.min(85, lat)) * Math.PI) / 360));
 
 export function toScreen(view: View, w: number, h: number, lat: number, lon: number): [number, number] {
   return [w / 2 + (projX(lon) - view.cx) * view.scale, h / 2 - (projY(lat) - view.cy) * view.scale];
@@ -27,6 +27,6 @@ export function fitView(w: number, h: number, minLat: number, minLon: number, ma
 /** Zoom around a screen point. */
 export function zoomAt(view: View, w: number, h: number, x: number, y: number, factor: number): View {
   const [px, py] = screenToProj(view, w, h, x, y);
-  const scale = Math.max(4, Math.min(400, view.scale * factor));
+  const scale = Math.max(0.5, Math.min(400, view.scale * factor));
   return { scale, cx: px - (x - w / 2) / scale, cy: py + (y - h / 2) / scale };
 }

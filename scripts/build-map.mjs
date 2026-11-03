@@ -5,7 +5,7 @@ import { feature, mesh } from 'topojson-client';
 
 const require = createRequire(import.meta.url);
 const world = JSON.parse(readFileSync(require.resolve('world-atlas/countries-50m.json'), 'utf8'));
-const BBOX = [95, -5, 160, 55]; // lon/lat window
+const BBOX = [-180, -85, 180, 85]; // global lon/lat window
 
 const r = (n) => Math.round(n * 100) / 100;
 const inBox = (ring) => ring.some(([x, y]) => x >= BBOX[0] && x <= BBOX[2] && y >= BBOX[1] && y <= BBOX[3]);

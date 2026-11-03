@@ -64,7 +64,9 @@ function pickName(pool: string[], key: string, used: Set<string>): string {
     const n = pool[(start + i) % pool.length];
     if (!used.has(n)) { used.add(n); return n; }
   }
-  return `${pool[start]}${used.size}`;
+  const name = `${pool[start]}${used.size}`;
+  used.add(name);
+  return name;
 }
 
 const SIZE_WEIGHT = { hub: 5, major: 4, large: 3, medium: 2, small: 1 } as const;
