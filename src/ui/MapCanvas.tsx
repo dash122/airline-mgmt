@@ -164,6 +164,8 @@ export default function MapCanvas(props: Props) {
         let lx = -1e9, ly = -1e9, started = false;
         for (let i = 0; i < ring.length; i++) {
           const x = sx(ring[i][0]) + dx, y = sy(ring[i][1]);
+          // A ring that crosses the antimeridian jumps from +180 to -180: end that piece there instead of drawing across the map.
+          if (started && Math.abs(ring[i][0] - ring[i - 1][0]) > 180) { c.closePath(); started = false; }
           if (started && Math.abs(x - lx) < 0.8 && Math.abs(y - ly) < 0.8 && i < ring.length - 1) continue;
           if (started) c.lineTo(x, y);
           else { c.moveTo(x, y); started = true; }

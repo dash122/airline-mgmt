@@ -16,6 +16,8 @@ const clean = (ring) => {
     const last = out[out.length - 1];
     if (!last || last[0] !== p[0] || last[1] !== p[1]) out.push(p);
   }
+  // A ring crossing the antimeridian jumps from +180 to -180; make it continuous (longitudes past 180) and let the map repeat the world.
+  if (out.some((p, i) => i && Math.abs(p[0] - out[i - 1][0]) > 180)) for (const p of out) if (p[0] < 0) p[0] = r(p[0] + 360);
   return out;
 };
 
