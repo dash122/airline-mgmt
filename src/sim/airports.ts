@@ -3,7 +3,7 @@
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from './markets';
 import {
-  blockMinutes, DAY, detourOk, HUB_COST_PER_WEEK, localMinutes, MAX_CONNECT, minConnect, weeklyDepartures,
+  blockMinutes, DAY, detourOk, HUB_COST_PER_WEEK, localMinutes, minConnect, weeklyDepartures,
   type Aircraft, type Leg, type NetworkResult, type Plan,
 } from './simulate';
 import { distanceKm } from './geo';
@@ -183,4 +183,4 @@ export function stations(plan: Plan, result: NetworkResult | null): StationRow[]
   }).sort((x, y) => y.departures - x.departures || x.code.localeCompare(y.code));
 }
 
-export { HUB_COST_PER_WEEK, MAX_CONNECT };
+export { HUB_COST_PER_WEEK };
