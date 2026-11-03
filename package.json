@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "build:map": "node scripts/build-map.mjs",
-    "build:data": "node scripts/build-data.mjs"
+    "build:data": "node scripts/build-data.mjs",
+    "calibrate": "vite-node scripts/calibrate.ts"
   },
   "dependencies": {
     "react": "19.2.0",

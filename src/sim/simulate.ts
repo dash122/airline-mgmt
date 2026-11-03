@@ -35,7 +35,7 @@ export const emptyPlan = (base: string): Plan => ({ version: 2, base, fleet: [],
 
 // ---------- Time helpers ----------
 
-export const utcOffsetMin = (a: Airport) => (a.country === 'JP' ? 9 : 8) * 60;
+export const utcOffsetMin = (a: Airport) => a.utcOffset;
 const mod = (x: number, m: number) => ((x % m) + m) % m;
 export const localMinutes = (code: string, utc: number) => mod(utc + utcOffsetMin(AIRPORT_BY_CODE[code]), DAY);
 export const utcFromLocal = (code: string, local: number) => local - utcOffsetMin(AIRPORT_BY_CODE[code]);

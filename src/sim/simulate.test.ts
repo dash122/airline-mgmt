@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { AIRPORTS } from '../data/airports';
+import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, markets, modelledAnnualPax } from './markets';
 import { AIR_TARGETS_M } from '../data/calibration';
 import {
@@ -17,16 +17,16 @@ const trips = (p: Plan, a: string, b: string, n: number, type?: Parameters<typeo
 const plan = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3), 'TSA', 'MZG', 4, 'ATR72');
 
 describe('markets', () => {
-  test('modelled air travel matches each group target', () => {
+  test('modelled air travel matches each group target', { timeout: 120_000 }, () => {
     const totals: Record<string, number> = {};
     for (const m of markets().values()) totals[m.group] = (totals[m.group] ?? 0) + (m.airDemand * 104) / 1e6;
-    for (const g of ['JP-JP', 'TW-TW', 'JP-TW', 'HK-TW', 'HK-JP']) {
+    for (const g of ['JP-JP', 'TW-TW', 'JP-TW', 'HK-TW', 'HK-JP', 'US-US', 'CN-CN', 'EU-EU', 'EU-NA', 'EA-SEA']) {
       expect(totals[g] / AIR_TARGETS_M[g]).toBeGreaterThan(0.9);
       expect(totals[g] / AIR_TARGETS_M[g]).toBeLessThan(1.1);
     }
   });
   test('every airport has people and coordinates', () => {
-    expect(AIRPORTS.length).toBeGreaterThan(90);
+    expect(AIRPORTS.length).toBeGreaterThan(1000);
     for (const a of AIRPORTS) {
       expect(a.catchment).toBeGreaterThan(0);
       expect(Number.isFinite(a.lat) && Number.isFinite(a.lon)).toBe(true);
@@ -43,6 +43,29 @@ describe('markets', () => {
     expect(marketBetween('HND', 'ITM')!.ground?.name).toContain('高鐵');
     expect(marketBetween('KHH', 'MZG')!.ground?.name).toContain('渡輪');
     expect(marketBetween('TSA', 'KNH')!.ground).toBeUndefined();
+  });
+});
+
+describe('world', () => {
+  test('time zones are standard-time offsets', () => {
+    const off = (c: string) => AIRPORT_BY_CODE[c].utcOffset / 60;
+    expect([off('TPE'), off('HND'), off('LHR'), off('JFK'), off('LAX'), off('SYD'), off('DEL'), off('DXB')]).toEqual([8, 9, 0, -5, -8, 10, 5.5, 4]);
+  });
+  test('the big trunk routes exist and are bigger than thin ones', () => {
+    expect(marketBetween('LHR', 'JFK')!.airDemand).toBeGreaterThan(marketBetween('LHR', 'MAN')!.airDemand * 0.2);
+    expect(marketBetween('TPE', 'LAX')!.rivalFreq).toBeGreaterThan(0);
+    expect(marketBetween('TPE', 'LAX')!.ground).toBeUndefined();
+  });
+  test('high-speed rail beats air on short corridors in Europe and China', () => {
+    expect(marketBetween('PEK', 'SHA')!.ground?.name).toContain('高鐵');
+    expect(marketBetween('CDG', 'LYS')!.ground?.name).toContain('高鐵');
+  });
+  test('airports in one city are one metro', () => {
+    expect(marketBetween('LHR', 'LGW')).toBeUndefined();
+    expect(marketBetween('JFK', 'EWR')).toBeUndefined();
+  });
+  test('markets are built on demand and cached', () => {
+    expect(marketBetween('SIN', 'BKK')).toBe(marketBetween('BKK', 'SIN'));
   });
 });
 

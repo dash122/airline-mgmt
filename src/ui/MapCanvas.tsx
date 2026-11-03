@@ -37,12 +37,40 @@ const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;
+/** Wrap-around: the world is drawn once on each side so the Pacific can be crossed. */
+const WORLD_COPIES = [-1, 0, 1];
+/** Zoom (pixels per degree) at which each airport size starts to show; below that only bigger ones do. */
+const SHOW_FROM = { hub: 0, major: 2.4, large: 4.5, medium: 9, small: 18 } as const;
+/** Label thresholds, same idea. */
+const LABEL_FROM = { hub: 2.2, major: 7, large: 14, medium: 26, small: 40 } as const;
+/** Airports closer than this on screen (px) are grouped under the biggest one. */
+const CLUSTER_PX = 26;
+const BY_PRIORITY = [...AIRPORTS].sort((a, b) => SIZE_PRIORITY[a.size] - SIZE_PRIORITY[b.size] || b.catchment - a.catchment);
+const RING_BOX: number[][] = (geo.land as number[][][]).map((ring) => {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [x, y] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return [x0, y0, x1, y1];
+});
+const PROJ_Y: Record<string, number> = Object.fromEntries(AIRPORTS.map((a) => [a.code, projY(a.lat)]));
+
+interface Visible { code: string; x: number; y: number; hidden: number }
 const HIT_AIRPORT_PX = 22;
 
 function arc(a: string, b: string): [number, number][] {
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   const pts: [number, number][] = [];
   for (let i = 0; i <= ARC_STEPS; i++) pts.push(greatCirclePoint(A.lat, A.lon, B.lat, B.lon, i / ARC_STEPS));
+  return pts;
+}
+
+/** Great-circle path with longitudes made continuous, so a Pacific route does not jump across the map. */
+function arcUnwrapped(a: string, b: string): [number, number][] {
+  const pts = arc(a, b);
+  let prev = pts[0][1];
+  for (const p of pts) {
+    p[1] += 360 * Math.round((prev - p[1]) / 360);
+    prev = p[1];
+  }
   return pts;
 }
 
@@ -58,8 +86,9 @@ export default function MapCanvas(props: Props) {
   propsRef.current = props;
   const viewRef = useRef<View | null>(null);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
-  const dragRef = useRef<{ from: string; x: number; y: number } | null>(null);
+  const dragRef = useRef<{ from: string; x: number; y: number; sx: number; sy: number } | null>(null);
   const landCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
+  const visibleRef = useRef<Visible[]>([]);
   const panTarget = useRef<{ cx: number; cy: number } | null>(null);
 
   // Keep the selected airport or route visible above the bottom sheet on phones.
@@ -98,8 +127,10 @@ export default function MapCanvas(props: Props) {
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
       if (!viewRef.current) {
-        const v = fitView(rect.width, rect.height, 20, 112, 44, 146);
-        viewRef.current = { ...v, cy: projY(31) };
+        // Start on the home base, about 4,000 km across (a region), with the whole world a pinch away.
+        const b = AIRPORT_BY_CODE[propsRef.current.plan.base];
+        const v = fitView(rect.width, rect.height, b.lat - 14, b.lon - 20, b.lat + 14, b.lon + 20);
+        viewRef.current = { ...v, cx: b.lon, cy: projY(b.lat) };
       }
     };
     resize();
@@ -127,24 +158,52 @@ export default function MapCanvas(props: Props) {
       c.fillRect(0, 0, w, h);
       const sx = (lon: number) => w / 2 + (projX(lon) - v.cx) * v.scale;
       const sy = (lat: number) => h / 2 - (projY(lat) - v.cy) * v.scale;
-      c.beginPath();
-      for (const ring of geo.land as number[][][]) {
-        ring.forEach(([lon, lat], i) => (i ? c.lineTo(sx(lon), sy(lat)) : c.moveTo(sx(lon), sy(lat))));
+      const copies = WORLD_COPIES.filter((k) => sx(-180 + 360 * k) < w && sx(180 + 360 * k) > 0);
+      const lineRing = (ring: number[][], dx: number) => {
+        let lx = -1e9, ly = -1e9, started = false;
+        for (let i = 0; i < ring.length; i++) {
+          const x = sx(ring[i][0]) + dx, y = sy(ring[i][1]);
+          if (started && Math.abs(x - lx) < 0.8 && Math.abs(y - ly) < 0.8 && i < ring.length - 1) continue;
+          if (started) c.lineTo(x, y);
+          else { c.moveTo(x, y); started = true; }
+          lx = x; ly = y;
+        }
         c.closePath();
+      };
+      const wrapPx = 360 * v.scale;
+      c.beginPath();
+      for (const k of copies) {
+        for (let r = 0; r < RING_BOX.length; r++) {
+          const bx = RING_BOX[r];
+          const x0 = sx(bx[0]) + k * wrapPx, x1 = sx(bx[2]) + k * wrapPx, y0 = sy(bx[3]), y1 = sy(bx[1]);
+          if (x1 < 0 || x0 > w || y1 < 0 || y0 > h || (x1 - x0 < 1.2 && y1 - y0 < 1.2)) continue;
+          lineRing(geo.land[r] as number[][], k * wrapPx);
+        }
       }
       c.fillStyle = pal.land;
       c.fill();
       c.strokeStyle = pal.coast;
       c.lineWidth = 0.8;
       c.stroke();
-      c.beginPath();
-      for (const line of geo.borders as number[][][]) {
-        line.forEach(([lon, lat], i) => (i ? c.lineTo(sx(lon), sy(lat)) : c.moveTo(sx(lon), sy(lat))));
+      if (v.scale > 2.5) {
+        c.beginPath();
+        for (const k of copies) {
+          for (const line of geo.borders as number[][][]) {
+            let started = false, lx = -1e9, ly = -1e9;
+            for (let i = 0; i < line.length; i++) {
+              const x = sx(line[i][0]) + k * wrapPx, y = sy(line[i][1]);
+              if (started && Math.abs(x - lx) < 1 && Math.abs(y - ly) < 1) continue;
+              if (started) c.lineTo(x, y);
+              else { c.moveTo(x, y); started = true; }
+              lx = x; ly = y;
+            }
+          }
+        }
+        c.setLineDash([3, 3]);
+        c.strokeStyle = pal.border;
+        c.stroke();
+        c.setLineDash([]);
       }
-      c.setLineDash([3, 3]);
-      c.strokeStyle = pal.border;
-      c.stroke();
-      c.setLineDash([]);
       landCache.current = { key, canvas: off };
       return off;
     };
@@ -166,27 +225,34 @@ export default function MapCanvas(props: Props) {
       ctx.drawImage(drawLand(pal), 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Routes
+      // Routes and aircraft, drawn once per visible copy of the world.
       const pairs = routePairs(p.plan);
+      const wrapPx = 360 * v.scale;
+      const copies = WORLD_COPIES.filter((k) => ((-180 + 360 * k - v.cx) * v.scale + w / 2) < w && ((180 + 360 * k - v.cx) * v.scale + w / 2) > 0);
+      const pathPx = (pts: [number, number][], k: number) => pts.map(([la, lo]) => { const [x, y] = screen(la, lo); return [x + k * wrapPx, y] as [number, number]; });
       for (const r of pairs) {
-        const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
+        const unwrapped = arcUnwrapped(r.a, r.b);
         const res = p.result?.routes[r.key];
         const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
-        ctx.beginPath();
-        pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.lineCap = 'round';
-        if (selected) {
-          ctx.strokeStyle = pal.sel;
-          ctx.lineWidth = 9;
-          ctx.globalAlpha = 0.35;
+        for (const k of [-2, -1, 0, 1, 2]) {
+          const pts = pathPx(unwrapped, k);
+          if (pts.every(([x]) => x < -20) || pts.every(([x]) => x > w + 20)) continue;
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.lineCap = 'round';
+          if (selected) {
+            ctx.strokeStyle = pal.sel;
+            ctx.lineWidth = 9;
+            ctx.globalAlpha = 0.35;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+          ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
+          ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
+          if (!res) ctx.setLineDash([6, 5]);
           ctx.stroke();
-          ctx.globalAlpha = 1;
+          ctx.setLineDash([]);
         }
-        ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
-        ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
-        if (!res) ctx.setLineDash([6, 5]);
-        ctx.stroke();
-        ctx.setLineDash([]);
       }
 
       // Aircraft, placed by the game clock.
@@ -198,34 +264,35 @@ export default function MapCanvas(props: Props) {
           const block = blockMinutes(leg.from, leg.to, ac.type);
           const t = (((clock - leg.dep) % DAY) + DAY) % DAY;
           if (t >= block) continue;
-          const pts = arc(leg.from, leg.to);
+          const pts = arcUnwrapped(leg.from, leg.to);
           const f = (t / block) * ARC_STEPS;
           const i = Math.min(ARC_STEPS - 1, Math.floor(f));
-          const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
-          const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
-          ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
-          ctx.fillStyle = selectedAc ? pal.sel : pal.plane;
-          const s = selectedAc ? 1.6 : 1;
-          ctx.beginPath();
-          ctx.moveTo(6 * s, 0);
-          ctx.lineTo(-4 * s, -4 * s);
-          ctx.lineTo(-2 * s, 0);
-          ctx.lineTo(-4 * s, 4 * s);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
+          for (const k of [-2, -1, 0, 1, 2]) {
+            const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
+            const x = x0 + (x1 - x0) * (f - i) + k * wrapPx, y = y0 + (y1 - y0) * (f - i);
+            if (x < -20 || x > w + 20) continue;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
+            ctx.fillStyle = selectedAc ? pal.sel : pal.plane;
+            const sc = selectedAc ? 1.6 : 1;
+            ctx.beginPath();
+            ctx.moveTo(6 * sc, 0);
+            ctx.lineTo(-4 * sc, -4 * sc);
+            ctx.lineTo(-2 * sc, 0);
+            ctx.lineTo(-4 * sc, 4 * sc);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
         }
       }
 
       // Rubber band while dragging a new route
       const drag = dragRef.current;
       if (drag) {
-        const A = AIRPORT_BY_CODE[drag.from];
-        const [ax, ay] = screen(A.lat, A.lon);
         ctx.beginPath();
-        ctx.moveTo(ax, ay);
+        ctx.moveTo(drag.sx, drag.sy);
         ctx.lineTo(drag.x, drag.y);
         ctx.strokeStyle = pal.sel;
         ctx.lineWidth = 3;
@@ -234,17 +301,41 @@ export default function MapCanvas(props: Props) {
         ctx.setLineDash([]);
       }
 
-      // Airports
+      // Airports. Small ones appear as you zoom in, and nearby ones are grouped under the biggest.
       const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
       ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
       ctx.textBaseline = 'middle';
       const labels: { prio: number; text: string; x: number; y: number }[] = [];
-      for (const a of AIRPORTS) {
-        const [x, y] = screen(a.lat, a.lon);
-        if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
+      const cells = new Map<number, Visible>();
+      const visible: Visible[] = [];
+      const cols = Math.ceil(w / CLUSTER_PX) + 2;
+      const sel = p.selection?.kind === 'airport' ? p.selection.id : null;
+      const baseY = h / 2 + v.cy * v.scale;
+      for (const a of BY_PRIORITY) {
+        const must = inPlan.has(a.code) || a.code === p.plan.base || a.code === sel || a.code === p.connectFrom;
+        if (!must && v.scale < SHOW_FROM[a.size]) continue;
+        const y = baseY - PROJ_Y[a.code] * v.scale;
+        if (y < -40 || y > h + 40) continue;
+        for (const k of copies) {
+          const x = w / 2 + (a.lon - v.cx) * v.scale + k * wrapPx;
+          if (x < -40 || x > w + 40) continue;
+          if (!must) {
+            const cell = Math.floor((x + CLUSTER_PX) / CLUSTER_PX) + Math.floor((y + CLUSTER_PX) / CLUSTER_PX) * cols;
+            const rep = cells.get(cell);
+            if (rep) { rep.hidden++; continue; }
+            const item = { code: a.code, x, y, hidden: 0 };
+            cells.set(cell, item);
+            visible.push(item);
+          } else visible.push({ code: a.code, x, y, hidden: 0 });
+        }
+      }
+      visibleRef.current = visible;
+      for (const it of visible) {
+        const a = AIRPORT_BY_CODE[it.code];
+        const { x, y } = it;
         const r = SIZE_RADIUS[a.size];
         const isBase = a.code === p.plan.base;
-        const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
+        const selected = a.code === sel || p.connectFrom === a.code;
         if (selected) {
           ctx.beginPath();
           ctx.arc(x, y, r + 7 + Math.sin(time / 250) * 1.5, 0, Math.PI * 2);
@@ -253,17 +344,26 @@ export default function MapCanvas(props: Props) {
           ctx.fill();
           ctx.globalAlpha = 1;
         }
+        const grouped = it.hidden > 0;
         ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.arc(x, y, grouped ? r + 3 : r, 0, Math.PI * 2);
         ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.airport : pal.land;
         ctx.fill();
-        ctx.lineWidth = 2;
+        ctx.lineWidth = grouped ? 3 : 2;
         ctx.strokeStyle = isBase ? pal.sel : pal.airport;
         ctx.stroke();
-        const showLabel = a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
+        if (grouped) {
+          ctx.save();
+          ctx.font = '700 9px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.land : pal.airport;
+          ctx.fillText(String(Math.min(99, it.hidden + 1)), x, y + 0.5);
+          ctx.restore();
+        }
+        const showLabel = v.scale >= LABEL_FROM[a.size] || inPlan.has(a.code) || selected || isBase;
         if (showLabel) {
           const prio = selected || isBase ? 0 : inPlan.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
-          labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
+          labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4 + (grouped ? 3 : 0), y });
         }
       }
       // Labels, most important first, skipping any that would overlap one already placed.
@@ -294,20 +394,23 @@ export default function MapCanvas(props: Props) {
       const rect = canvas.getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
-    const airportAt = (x: number, y: number): string | null => {
-      let best: string | null = null, bestD = HIT_AIRPORT_PX;
-      for (const a of AIRPORTS) {
-        const [ax, ay] = screen(a.lat, a.lon);
-        const d = Math.hypot(ax - x, ay - y);
-        if (d < bestD) { bestD = d; best = a.code; }
+    const airportAt = (x: number, y: number): Visible | null => {
+      let best: Visible | null = null, bestD = HIT_AIRPORT_PX;
+      for (const it of visibleRef.current) {
+        const d = Math.hypot(it.x - x, it.y - y);
+        if (d < bestD) { bestD = d; best = it; }
       }
       return best;
     };
     const routeAt = (x: number, y: number): string | null => {
+      const v = viewRef.current!;
       for (const r of routePairs(propsRef.current.plan)) {
-        const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-        for (let i = 0; i < pts.length - 1; i++) {
-          if (distToSegment(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 12) return r.key;
+        const unwrapped = arcUnwrapped(r.a, r.b);
+        for (const k of [-2, -1, 0, 1, 2]) {
+          const pts = unwrapped.map(([la, lo]) => { const [px, py] = screen(la, lo); return [px + k * 360 * v.scale, py]; });
+          for (let i = 0; i < pts.length - 1; i++) {
+            if (distToSegment(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) < 12) return r.key;
+          }
         }
       }
       return null;
@@ -329,7 +432,7 @@ export default function MapCanvas(props: Props) {
       moved = 0;
       const ap = airportAt(pt.x, pt.y);
       mode = ap ? 'route' : 'pan';
-      if (ap) dragRef.current = { from: ap, x: pt.x, y: pt.y };
+      if (ap) dragRef.current = { from: ap.code, x: pt.x, y: pt.y, sx: ap.x, sy: ap.y };
     };
     const onMove = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
@@ -349,7 +452,8 @@ export default function MapCanvas(props: Props) {
       moved = Math.max(moved, Math.hypot(pt.x - downAt.x, pt.y - downAt.y));
       if (mode === 'pan') {
         const v = viewRef.current!;
-        viewRef.current = { ...v, cx: v.cx - (pt.x - prev.x) / v.scale, cy: v.cy + (pt.y - prev.y) / v.scale };
+        const cx = v.cx - (pt.x - prev.x) / v.scale;
+        viewRef.current = { ...v, cx: ((((cx + 180) % 360) + 360) % 360) - 180, cy: Math.max(projY(-65), Math.min(projY(80), v.cy + (pt.y - prev.y) / v.scale)) };
       } else if (mode === 'route' && dragRef.current) {
         dragRef.current = { ...dragRef.current, x: pt.x, y: pt.y };
       }
@@ -365,12 +469,17 @@ export default function MapCanvas(props: Props) {
       }
       const tap = moved < 8;
       if (mode === 'route' && dragRef.current) {
-        const from = dragRef.current.from;
+        const { from, sx: fx, sy: fy } = dragRef.current;
         dragRef.current = null;
-        if (tap) p.onTapAirport(from);
+        const group = tap ? visibleRef.current.find((it) => it.code === from && it.hidden > 0) : undefined;
+        if (group && viewRef.current!.scale < 60) {
+          // Tapping a group zooms in on it.
+          const { w, h } = sizeRef.current;
+          viewRef.current = zoomAt(viewRef.current!, w, h, fx, fy, 2.2);
+        } else if (tap) p.onTapAirport(from);
         else {
           const to = airportAt(pt.x, pt.y);
-          if (to && to !== from) p.onDragRoute(from, to);
+          if (to && to.code !== from) p.onDragRoute(from, to.code);
         }
       } else if (mode === 'pan' && tap) {
         const rid = routeAt(pt.x, pt.y);

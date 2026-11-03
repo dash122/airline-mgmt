@@ -27,6 +27,6 @@ export function fitView(w: number, h: number, minLat: number, minLon: number, ma
 /** Zoom around a screen point. */
 export function zoomAt(view: View, w: number, h: number, x: number, y: number, factor: number): View {
   const [px, py] = screenToProj(view, w, h, x, y);
-  const scale = Math.max(4, Math.min(400, view.scale * factor));
+  const scale = Math.max(0.9, Math.min(400, view.scale * factor));
   return { scale, cx: px - (x - w / 2) / scale, cy: py + (y - h / 2) / scale };
 }

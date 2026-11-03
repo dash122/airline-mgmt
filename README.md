@@ -1,8 +1,10 @@
 # 航點 Waypoint
 
-A single-player, mobile-first airline route planning game on a real map of East Asia. You draw routes between real airports, pick real aircraft types, frequency and fares, and watch time run: aircraft fly their schedules on the map and each day's profit or loss is booked at local midnight (pause, 1×, 4× or 12× speed). A deterministic demand model decides how many travellers pick your flights over other airlines, high-speed rail, ferries, or not travelling. The headline score is cost recovery (revenue / operating cost, 100% = break even).
+A single-player, mobile-first airline route planning game on a real map of the world: about 1,400 airports, all open from the start. You draw routes between real airports, pick real aircraft types, frequency and fares, and watch time run: aircraft fly their schedules on the map and each day's profit or loss is booked at local midnight (pause, 1×, 4× or 12× speed). A deterministic demand model decides how many travellers pick your flights over other airlines, high-speed rail, ferries, or not travelling. The headline score is cost recovery (revenue / operating cost, 100% = break even).
 
 UI language: Traditional Chinese.
+
+Long-haul note: a rotation still has to fit in 24 hours, so very long routes are out of reach for now. Multi-day rotations are planned.
 
 ## Run
 
@@ -11,7 +13,8 @@ npm install
 npm run dev      # local dev server
 npm test         # simulation tests
 npm run build    # static build in dist/
-npm run build:data  # regenerate airports from open data
+npm run build:data  # regenerate airports from open data (about 5 minutes; downloads are cached in data-raw/)
+npm run calibrate   # re-solve the demand scales in src/data/scales.json after the airports change
 ```
 
 ## Layout
@@ -41,12 +44,15 @@ Schedule editing helpers live in `src/sim/schedule.ts`.
 
 There is no booking data, so demand is scaled from population and airport size:
 
-1. **Airports** are every airport with scheduled service in Taiwan, Hong Kong, Macau and Japan ([OurAirports](https://ourairports.com/data/)). The longest runway sets the largest aircraft that can land.
-2. **Catchments.** Every town in [GeoNames](https://www.geonames.org/) (rescaled to national population) is shared between airports on the same landmass within 250 km. The split weights airport size against distance.
+1. **Airports.** Taiwan, Hong Kong, Macau and Japan have every airport with scheduled service, hand-named and grouped. The rest of the world has the roughly 1,200 airports with the biggest catchments plus the busiest airport of every country ([OurAirports](https://ourairports.com/data/)); Chinese names come from Wikidata. The longest runway sets the largest aircraft that can land. Each airport has a standard-time UTC offset (no daylight saving) and a world region. Airports within 70 km of each other in one country are one metro and never form a market with each other.
+2. **Catchments.** Every town in [GeoNames](https://www.geonames.org/) (rescaled to national population from GeoNames country data) is shared between airports on the same landmass within 250 km. The split weights airport size against distance.
 3. **Trips.** Each pair of airports gets a pool of potential travellers from a gravity model: (catchment × travel propensity × tourism pull × island factor)^0.85 for each end, divided by distance^0.9.
 4. **Mode choice.** Travellers pick between flying, ground travel and not travelling, using a nested logit on generalized cost. Ground travel is rail or road on the same landmass (high-speed where both ends have it), the Hong Kong–Macau bridge, or a ferry from islands near the mainland. Among airlines, each one's share is proportional to its flights, adjusted for fare.
-5. **Calibration.** Only a few numbers are set by hand: the yearly air passengers for each country-pair group in `src/data/calibration.ts`. A scale per group is solved so the model reproduces them. Other airlines' frequencies follow from the resulting demand.
+5. **Calibration.** Only a few numbers are set by hand: the yearly air passengers for each group in `src/data/calibration.ts`. Groups are country pairs for the four hand-kept places, domestic markets of big countries (US, China, India, Brazil, Russia, Indonesia), and pairs of world regions for everything else. `npm run calibrate` solves a scale per group (saved in `src/data/scales.json`) so the model reproduces them. Other airlines' frequencies follow from the resulting demand.
+6. **On demand.** There are about a million airport pairs, so a market is worked out the first time something asks for it (`marketBetween`, `marketsFrom`) and then cached.
+
+Ground travel: high-speed rail where both cities have it (Japan, Taiwan, China, Korea, much of Western Europe, Turkey, the US Northeast and a few others, see `scripts/world-meta.mjs`), otherwise rail or road on one landmass, ferries from islands near the mainland, and nothing across oceans.
 
 All calibration targets are approximate and should be replaced with sourced statistics.
 
-Data: OurAirports (public domain), GeoNames (CC BY 4.0), Natural Earth (public domain).
+Data: OurAirports (public domain), GeoNames (CC BY 4.0), Wikidata (CC0), Natural Earth (public domain).

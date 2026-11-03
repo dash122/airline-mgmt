@@ -263,7 +263,7 @@ export default function App() {
   );
 }
 
-const utcMorning = (code: string) => 7 * 60 - (AIRPORT_BY_CODE[code].country === 'JP' ? 9 : 8) * 60;
+const utcMorning = (code: string) => 7 * 60 - AIRPORT_BY_CODE[code].utcOffset;
 
 function TabIcon({ tab }: { tab: Panel }) {
   const d = {
@@ -303,7 +303,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
     <div className="start">
       <div className="start-card">
         <div className="logo">航點<span>Waypoint</span></div>
-        <p>在真實的東亞地圖上規劃你的航線網。旅客會比較票價、時間與班次，在你的航班、其他航空、高鐵新幹線之間選擇。租飛機、排每日班表，讓每架飛機多飛、每班多載。時間會自己流動，每天結算一次。目標：讓收入打平成本，越高越好。</p>
+        <p>在真實的世界地圖上規劃你的航線網，全球約 1,400 個機場從第一天起全部開放。旅客會比較票價、時間與班次，在你的航班、其他航空、高鐵之間選擇。租飛機、排每日班表，讓每架飛機多飛、每班多載。時間會自己流動，每天結算一次。目標：讓收入打平成本，越高越好。</p>
         <h2>選擇你的基地</h2>
         <div className="base-grid">
           {BASES.map((c) => (
@@ -313,7 +313,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
             </button>
           ))}
         </div>
-        <p className="fine">需求由人口與機場規模推估，僅供遊戲使用。資料來源：OurAirports、GeoNames（CC BY 4.0）、Natural Earth。</p>
+        <p className="fine">需求由人口與機場規模推估，僅供遊戲使用。資料來源：OurAirports、GeoNames（CC BY 4.0）、Wikidata（CC0）、Natural Earth。</p>
       </div>
     </div>
   );
