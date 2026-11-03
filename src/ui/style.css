@@ -142,3 +142,38 @@ input[type='range'] { width: 100%; accent-color: var(--accent); height: 28px; }
 .base-grid button { background: var(--line); border-radius: 14px; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
 .base-grid button span { color: var(--muted); font-size: 12px; }
 .fine { font-size: 11px !important; text-align: center; margin-bottom: 0; }
+
+/* Fleet and schedules */
+.fab-row .fab { padding: 0 14px; }
+.row { display: flex; gap: 8px; align-items: stretch; }
+.row select { border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 0 8px; font: inherit; }
+.primary.grow, .grow { flex: 1; }
+button.primary { background: var(--accent); color: var(--accent-text); padding: 12px; border-radius: 12px; font-weight: 700; }
+.ghost { padding: 8px; border-radius: 12px; border: 1px dashed var(--line); color: var(--muted); }
+.timetable { list-style: none; margin: 0; padding: 0; }
+.timetable li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.timetable .t { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; min-width: 48px; }
+.timetable .name { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14px; }
+.timetable small, .fleet small { color: var(--muted); font-size: 11px; }
+.timetable .tag { font-size: 11px; min-width: 0; text-align: right; }
+.mini { display: flex; gap: 4px; }
+.mini button { background: var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--line); border-radius: 16px; padding: 7px 12px; font-size: 13px; }
+.chip.strong { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+.util { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.util-fill { height: 100%; border-radius: 4px; }
+.util-fill.good { background: var(--good); }
+.util-fill.warn { background: var(--warn); }
+.util-fill.bad { background: var(--bad); }
+.util-row .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.daybar { position: relative; height: 34px; background: var(--line); border-radius: 8px; margin-bottom: 14px; }
+.daybar .seg { position: absolute; top: 4px; bottom: 4px; background: var(--accent); color: var(--accent-text); border-radius: 4px; font-size: 10px; font-weight: 700; display: grid; place-items: center; overflow: hidden; }
+.daybar .tick { position: absolute; top: 0; bottom: -14px; border-left: 1px dashed var(--muted); opacity: 0.6; }
+.daybar .tick span { position: absolute; bottom: 0; left: 2px; font-size: 9px; color: var(--muted); }
+.warn-box { background: color-mix(in srgb, var(--warn) 18%, transparent); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.fleet { list-style: none; margin: 0; padding: 0; }
+.fleet li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.fleet .name { flex: 1; display: flex; flex-direction: column; min-width: 0; font-weight: 600; }
+.util-col { width: 70px; display: flex; flex-direction: column; gap: 2px; text-align: right; }
+.sheet-body > * { flex-shrink: 0; }

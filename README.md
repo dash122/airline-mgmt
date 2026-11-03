@@ -21,6 +21,12 @@ npm run build:data  # regenerate airports from open data
 - `src/ui/` React UI and the Canvas map.
 - `scripts/build-data.mjs` regenerates `src/data/airports.json` from open data (`npm run build:data`). Hand-kept facts the datasets lack (Chinese names, metro groups, rail access, tourism pull, size tiers) live in `scripts/airport-meta.mjs`.
 
+## Schedules and fleet
+
+You lease individual aircraft and give each one a daily rotation: a chain of flights with departure times, each leaving after the previous one has landed and turned around. The rotation repeats every day, so it should end where it started and fit in 24 hours. Costs are split into a weekly lease, paid whether the aircraft flies or not, and flying costs per block hour and per departure. That makes utilisation (block hours per day) matter.
+
+Departure time matters too. Morning and evening departures attract more travellers than midday ones, and very few want to leave at 3am. When one of your flights lands at an airport 45 minutes to 4 hours before another of your flights leaves, travellers can connect between them. Connections count as an option in the market for the whole trip.
+
 ## Demand model
 
 There is no booking data, so demand is scaled from population and airport size:
