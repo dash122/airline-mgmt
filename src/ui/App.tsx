@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AIRCRAFT, CLASS_ORDER, type AircraftClass } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { routeProblem, simulate, simulateRoute, topMarketsFrom, weeklyDepartures, type NetworkResult, type Plan, type Route } from '../sim/simulate';
-import { marketBetween } from '../sim/markets';
+import { marketBetween, modelledAnnualPax } from '../sim/markets';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
 import { count, money, pct } from './format';
 
@@ -149,7 +149,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
             </button>
           ))}
         </div>
-        <p className="fine">數據為約略值，僅供遊戲使用。</p>
+        <p className="fine">需求由人口與機場規模推估，僅供遊戲使用。資料來源：OurAirports、GeoNames（CC BY 4.0）、Natural Earth。</p>
       </div>
     </div>
   );
@@ -235,8 +235,9 @@ function RouteSheet({ plan, route, result, onChange, onDelete, onClose }: {
       </div>
       <div className="competition">
         <span>其他航空 {m?.rivalFreq ? `每週 ${m.rivalFreq} 班` : '無直飛'}</span>
-        {m?.surface && <span>{m.surface.name} {m.surface.hours} 小時 · NT${count(m.surface.fare)}</span>}
+        {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
         <span>市場航空旅客 每週 {count(m?.airDemand ?? 0)}</span>
+        <span>潛在旅次 每週 {count(m?.potential ?? 0)}</span>
       </div>
       {result ? (
         <div className="stats">
@@ -272,7 +273,7 @@ function AirportSheet({ plan, code, onConnect, onOpen, onClose }: { plan: Plan; 
   const used = weeklyDepartures(plan, code);
   const top = topMarketsFrom(code, plan);
   return (
-    <Sheet title={`${a.name} ${a.code}`} sub={`年旅客約 ${a.annualPaxM} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 最大機型 ${AIRCRAFT[a.maxClass].name}${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
+    <Sheet title={`${a.name} ${a.code}`} sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${AIRCRAFT[a.maxClass].name}）${code === plan.base ? ' · 你的基地' : ''}`} onClose={onClose}>
       <button className="primary wide" onClick={onConnect}>從這裡開新航線</button>
       <h4>最大市場（每週單向航空旅客）</h4>
       <ul className="markets">

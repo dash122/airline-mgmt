@@ -1,107 +1,140 @@
-// Market model: weekly one-way travel demand between every pair of airports.
+// Market model: weekly travel demand between every pair of airports, scaled from catchment population,
+// travel propensity, tourism pull and distance, then calibrated to a few national air-travel totals.
 // Deterministic: same data in, same markets out.
 import { AIRPORTS, type Airport } from '../data/airports';
-import { surfaceBetween, type SurfaceLink } from '../data/surface';
+import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
-import { airUtility, surfaceUtility, noTravelUtility } from './choice';
+import { airUtility, groundUtility, noTravelUtility, type GroundOption } from './choice';
 
 export interface Market {
   a: string;
   b: string;
   distKm: number;
-  /** Calibrated weekly air passengers per direction today (all airlines). */
-  airDemand: number;
+  group: string;
   /** Weekly travellers per direction who would consider the trip (all modes plus not travelling). */
   potential: number;
+  /** Weekly air passengers per direction with today's service (other airlines only). */
+  airDemand: number;
   /** Reference one-way fare, NT$. */
   refFare: number;
   /** Weekly flights per direction by other airlines (0 = no existing service). */
   rivalFreq: number;
-  surface?: SurfaceLink;
+  ground?: GroundOption;
 }
 
-export const MIN_MARKET_KM = 120;
+export const MIN_MARKET_KM = 100;
+const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
+const MIN_RIVAL_FREQ = 3;
 
 export const refFare = (distKm: number) => Math.max(1200, Math.round((900 + 2.2 * distKm) / 10) * 10);
-
-function crossBorderFactor(a: Airport, b: Airport): number {
-  if (a.country === b.country) return (a.domesticWeight ?? 1) * (b.domesticWeight ?? 1);
-  const roles = (a.intlWeight ?? 1) * (b.intlWeight ?? 1);
-  if (roles === 0) return 0;
-  // Small airports see little international traffic.
-  const reach = Math.sqrt(Math.min(1, a.annualPaxM / 15) * Math.min(1, b.annualPaxM / 15));
-  return roles * reach * baseCrossBorder(a, b);
-}
-
-function baseCrossBorder(a: Airport, b: Airport): number {
-  const pair = [a.country, b.country].sort().join('-');
-  const table: Record<string, number> = { 'JP-TW': 0.6, 'HK-TW': 0.7, 'MO-TW': 0.5, 'HK-JP': 0.45, 'JP-MO': 0.2, 'HK-MO': 0.8 };
-  return table[pair] ?? 0.4;
-}
-
-function railPenalty(s?: SurfaceLink): number {
-  if (!s) return 1;
-  return Math.min(1, Math.max(0.02, Math.pow(Math.max(0, s.hours - 1.5) / 6, 1.5)));
-}
-
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
+
+export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass);
+
+/** Nearest mainland airport within ferry range of an island airport (a stand-in for the ferry port). */
+const ferryCache = new Map<string, { port: Airport; km: number } | null>();
+function ferryPort(isl: Airport) {
+  if (!ferryCache.has(isl.code)) {
+    let best: { port: Airport; km: number } | null = null;
+    for (const p of AIRPORTS) {
+      if (p.country !== isl.country || isIsland(p)) continue;
+      const km = distanceKm(isl.lat, isl.lon, p.lat, p.lon);
+      if (km <= GROUND.ferry.maxKm && (!best || km < best.km)) best = { port: p, km };
+    }
+    ferryCache.set(isl.code, best);
+  }
+  return ferryCache.get(isl.code)!;
+}
+
+function landOption(a: Airport, b: Airport, distKm: number): GroundOption | undefined {
+  if (a.landmass !== b.landmass) return undefined;
+  if (a.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
+  const km = distKm * GROUND.detour;
+  const mode = a.hsr && b.hsr ? GROUND.hsr : GROUND.conventional;
+  return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
+}
+
+/** Best way to make the trip without flying: rail/road, a bridge, or a ferry then rail/road. */
+export function groundOption(a: Airport, b: Airport, distKm: number): GroundOption | undefined {
+  let opt = landOption(a, b, distKm);
+  if (!opt && isIsland(a) !== isIsland(b)) {
+    const [isl, other] = isIsland(a) ? [a, b] : [b, a];
+    const f = ferryPort(isl);
+    if (f) {
+      const ferry = { name: GROUND.ferry.name, hours: (f.km * GROUND.detour) / GROUND.ferry.speed + 0.5, fare: f.km * GROUND.detour * GROUND.ferry.farePerKm, comfort: GROUND.ferry.comfort };
+      if (other.metro === f.port.metro) opt = ferry;
+      else {
+        const onward = landOption(f.port, other, distanceKm(f.port.lat, f.port.lon, other.lat, other.lon));
+        if (onward) opt = { name: `${ferry.name}+${onward.name}`, hours: ferry.hours + onward.hours, fare: ferry.fare + onward.fare, comfort: ferry.comfort };
+      }
+    }
+  }
+  return opt && { ...opt, hours: Math.round(opt.hours * 10) / 10, fare: Math.round(opt.fare / 10) * 10 };
+}
+
+/** Air share and rival frequency for a market of given size, with only other airlines flying. */
+function baseline(potential: number, fare: number, distKm: number, ground?: GroundOption) {
+  const uGround = ground ? Math.exp(groundUtility(ground)) : 0;
+  const uNone = Math.exp(noTravelUtility(fare, distKm));
+  let freq = 7;
+  let air = 0;
+  for (let i = 0; i < 8; i++) {
+    const uAir = Math.exp(airUtility(fare, distKm, freq));
+    air = (potential * uAir) / (uAir + uGround + uNone);
+    const next = air / SEATS_PER_RIVAL_FLIGHT;
+    if (next < MIN_RIVAL_FREQ) return { air: 0, freq: 0 };
+    freq = next;
+  }
+  return { air, freq: Math.round(freq) };
+}
 
 function buildMarkets(): Map<string, Market> {
-  const n = AIRPORTS.length;
-  // Gravity weights.
-  const G: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-  const D: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
+  const mass = AIRPORTS.map((a) =>
+    Math.pow(a.catchment * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism * (isIsland(a) ? ISLAND_PROPENSITY : 1), MASS_EXPONENT),
+  );
+  const raw: { i: number; j: number; distKm: number; gravity: number; group: string; ground?: GroundOption }[] = [];
+  for (let i = 0; i < AIRPORTS.length; i++) {
+    for (let j = i + 1; j < AIRPORTS.length; j++) {
       const a = AIRPORTS[i], b = AIRPORTS[j];
-      if (a.city === b.city) continue;
-      const d = distanceKm(a.lat, a.lon, b.lat, b.lon);
-      if (d < MIN_MARKET_KM) continue;
-      const g = crossBorderFactor(a, b) * railPenalty(surfaceBetween(a.city, b.city)) * Math.pow(d, -1.2);
-      G[i][j] = G[j][i] = g;
+      if (a.metro === b.metro) continue;
+      const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
+      if (distKm < MIN_MARKET_KM) continue;
+      const gravity = (mass[i] * mass[j]) / Math.pow(Math.max(distKm, 150) / 100, DISTANCE_EXPONENT);
+      raw.push({ i, j, distKm, gravity, group: groupOf(a, b), ground: groundOption(a, b, distKm) });
     }
   }
-  // Target weekly departing O&D passengers inside the map per airport.
-  const target = AIRPORTS.map((a) => (a.annualPaxM * 1e6 * a.inRegionShare) / 2 / 52);
-  // Symmetric balancing: D_ij = k_i * k_j * G_ij with sum_j D_ij ~= target_i.
-  const k = new Array(n).fill(1);
-  for (let iter = 0; iter < 200; iter++) {
-    for (let i = 0; i < n; i++) {
-      let s = 0;
-      for (let j = 0; j < n; j++) s += k[i] * k[j] * G[i][j];
-      if (s > 0) k[i] *= Math.sqrt(target[i] / s);
+  // Calibrate one scale per group so modelled air travel matches the group's target.
+  const scale: Record<string, number> = {};
+  const totalGravity: Record<string, number> = {};
+  for (const r of raw) totalGravity[r.group] = (totalGravity[r.group] ?? 0) + r.gravity;
+  const targetWeekly = (g: string) => ((AIR_TARGETS_M[g] ?? 0.1) * 1e6) / 52 / 2;
+  for (const g of Object.keys(totalGravity)) scale[g] = (targetWeekly(g) * 3) / totalGravity[g];
+  for (let iter = 0; iter < 30; iter++) {
+    const air: Record<string, number> = {};
+    for (const r of raw) {
+      const b = baseline(r.gravity * scale[r.group], refFare(r.distKm), r.distKm, r.ground);
+      air[r.group] = (air[r.group] ?? 0) + b.air;
     }
+    for (const g of Object.keys(scale)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
   }
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) D[i][j] = k[i] * k[j] * G[i][j];
 
   const out = new Map<string, Market>();
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (G[i][j] === 0) continue;
-      const a = AIRPORTS[i], b = AIRPORTS[j];
-      const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
-      const airDemand = D[i][j];
-      const fare = refFare(distKm);
-      const surface = surfaceBetween(a.city, b.city);
-      let rivalFreq = Math.round(airDemand / (180 * 0.8));
-      if (rivalFreq < 3) rivalFreq = 0;
-      // Infer the full travel potential so that, with today's service, air carries airDemand.
-      const refFreq = rivalFreq || 7;
-      const uAir = Math.exp(airUtility(fare, distKm, refFreq));
-      const uSurf = surface ? Math.exp(surfaceUtility(surface)) : 0;
-      const uNone = Math.exp(noTravelUtility(fare, distKm));
-      const airShare = uAir / (uAir + uSurf + uNone);
-      out.set(pairKey(a.code, b.code), {
-        a: a.code,
-        b: b.code,
-        distKm,
-        airDemand,
-        potential: airDemand / airShare,
-        refFare: fare,
-        rivalFreq,
-        surface,
-      });
-    }
+  for (const r of raw) {
+    const potential = r.gravity * scale[r.group];
+    const fare = refFare(r.distKm);
+    const b = baseline(potential, fare, r.distKm, r.ground);
+    out.set(pairKey(AIRPORTS[r.i].code, AIRPORTS[r.j].code), {
+      a: AIRPORTS[r.i].code,
+      b: AIRPORTS[r.j].code,
+      distKm: r.distKm,
+      group: r.group,
+      potential,
+      airDemand: b.air,
+      refFare: fare,
+      rivalFreq: b.freq,
+      ground: r.ground,
+    });
   }
   return out;
 }
@@ -114,4 +147,11 @@ export function markets(): Map<string, Market> {
 
 export function marketBetween(a: string, b: string): Market | undefined {
   return markets().get(pairKey(a, b));
+}
+
+/** Modelled annual air passengers at an airport today (both directions). */
+export function modelledAnnualPax(code: string): number {
+  let weekly = 0;
+  for (const m of markets().values()) if (m.a === code || m.b === code) weekly += 2 * m.airDemand;
+  return weekly * 52;
 }

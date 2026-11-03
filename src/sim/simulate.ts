@@ -1,7 +1,7 @@
 // Weekly network simulation. Pure and deterministic: the same plan always gives the same result.
 import { AIRCRAFT, classRank, type AircraftClass } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
-import { airUtility, surfaceUtility, noTravelUtility, blockHours } from './choice';
+import { airChoice, groundUtility, noTravelUtility, blockHours } from './choice';
 import { marketBetween, MIN_MARKET_KM } from './markets';
 import { distanceKm } from './geo';
 
@@ -36,7 +36,7 @@ export interface RouteResult {
   cost: number;
   aircraftNeeded: number;
   rivalFreq: number;
-  surfaceName?: string;
+  groundName?: string;
 }
 
 export interface NetworkResult {
@@ -59,7 +59,7 @@ export function routeProblem(a: string, b: string, aircraft: AircraftClass): str
   const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
   if (!A || !B) return '找不到機場';
   if (a === b) return '同一個機場';
-  if (A.city === B.city) return '同一城市的機場';
+  if (A.metro === B.metro) return '同一城市的機場';
   const d = distanceKm(A.lat, A.lon, B.lat, B.lon);
   if (d < MIN_MARKET_KM) return '距離太近';
   const spec = AIRCRAFT[aircraft];
@@ -86,13 +86,12 @@ export function simulateRoute(r: Route): RouteResult {
   let demandPerDir = 0;
   let airTotal = 0;
   if (m && r.freq > 0) {
-    const uMe = Math.exp(airUtility(fare, distKm, r.freq));
-    const uRival = m.rivalFreq > 0 ? Math.exp(airUtility(m.refFare, distKm, m.rivalFreq)) : 0;
-    const uSurf = m.surface ? Math.exp(surfaceUtility(m.surface)) : 0;
+    const air = airChoice([{ freq: r.freq, fare }, { freq: m.rivalFreq, fare: m.refFare }], distKm);
+    const uAir = Math.exp(air.utility);
+    const uGround = m.ground ? Math.exp(groundUtility(m.ground)) : 0;
     const uNone = Math.exp(noTravelUtility(m.refFare, distKm));
-    const total = uMe + uRival + uSurf + uNone;
-    demandPerDir = (m.potential * uMe) / total;
-    airTotal = (m.potential * (uMe + uRival)) / total;
+    airTotal = (m.potential * uAir) / (uAir + uGround + uNone);
+    demandPerDir = airTotal * air.shares[0];
   }
   const paxPerDir = Math.min(demandPerDir, seatsPerDir);
   const spillPerDir = demandPerDir - paxPerDir;
@@ -115,7 +114,7 @@ export function simulateRoute(r: Route): RouteResult {
     cost,
     aircraftNeeded,
     rivalFreq: m?.rivalFreq ?? 0,
-    surfaceName: m?.surface?.name,
+    groundName: m?.ground?.name,
   };
 }
 

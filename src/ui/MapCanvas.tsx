@@ -30,6 +30,8 @@ const PALETTE = {
   night: { sea: '#0c1620', land: '#17232e', coast: '#2b3a47', border: '#33424f', label: '#d6e2ea', labelHalo: '#0c1620', airport: '#d6e2ea', route: '#5fb0ff', idle: '#5d6f7d', plane: '#ffffff', sel: '#ff9a5a' },
 };
 
+const SIZE_RADIUS = { hub: 7, major: 5, large: 4.5, medium: 3.5, small: 3 } as const;
+const SIZE_PRIORITY = { hub: 2, major: 3, large: 4, medium: 5, small: 6 } as const;
 const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
@@ -233,10 +235,11 @@ export default function MapCanvas(props: Props) {
       const inPlan = new Set(p.plan.routes.flatMap((r) => [r.a, r.b]));
       ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
       ctx.textBaseline = 'middle';
+      const labels: { prio: number; text: string; x: number; y: number }[] = [];
       for (const a of AIRPORTS) {
         const [x, y] = screen(a.lat, a.lon);
         if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
-        const r = 3 + Math.sqrt(a.annualPaxM) * 0.6;
+        const r = SIZE_RADIUS[a.size];
         const isBase = a.code === p.plan.base;
         const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
         if (selected) {
@@ -254,15 +257,24 @@ export default function MapCanvas(props: Props) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = isBase ? pal.sel : pal.airport;
         ctx.stroke();
-        const showLabel = v.scale > 30 || a.annualPaxM >= 20 || inPlan.has(a.code) || selected || isBase;
+        const showLabel = a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
         if (showLabel) {
-          const label = v.scale > 45 ? `${a.name} ${a.code}` : a.name;
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = pal.labelHalo;
-          ctx.strokeText(label, x + r + 4, y);
-          ctx.fillStyle = pal.label;
-          ctx.fillText(label, x + r + 4, y);
+          const prio = selected || isBase ? 0 : inPlan.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
+          labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
         }
+      }
+      // Labels, most important first, skipping any that would overlap one already placed.
+      labels.sort((l1, l2) => l1.prio - l2.prio);
+      const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+      ctx.lineWidth = 3;
+      for (const l of labels) {
+        const box = { x0: l.x - 2, y0: l.y - 8, x1: l.x + ctx.measureText(l.text).width + 2, y1: l.y + 8 };
+        if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
+        placed.push(box);
+        ctx.strokeStyle = pal.labelHalo;
+        ctx.strokeText(l.text, l.x, l.y);
+        ctx.fillStyle = pal.label;
+        ctx.fillText(l.text, l.x, l.y);
       }
       raf = requestAnimationFrame(draw);
     };
