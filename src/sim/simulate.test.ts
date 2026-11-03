@@ -3,7 +3,7 @@ import { AIRPORTS } from '../data/airports';
 import { marketBetween, markets, modelledAnnualPax } from './markets';
 import { AIR_TARGETS_M } from '../data/calibration';
 import {
-  addRoundTrip, blockMinutes, CONNECT_FARE_SHARE, detourOk, emptyPlan, HUB_COST_PER_WEEK, minConnect, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
+  addRoundTrip, blockMinutes, CONNECT_FARE_SHARE, connectFareShare, detourOk, emptyPlan, HUB_COST_PER_WEEK, minConnect, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
 } from './simulate';
 
 const must = (r: ReturnType<typeof addRoundTrip>) => {
@@ -79,7 +79,9 @@ describe('simulate', () => {
     const timed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 11 * 60) }] }] };
     const untimed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 19 * 60) }] }] };
     expect(simulate(timed).connectingPax).toBeGreaterThan(0);
-    expect(simulate(untimed).connectingPax).toBe(0);
+    // A 9 hour layover is still possible, just far less popular.
+    expect(simulate(untimed).connectingPax).toBeGreaterThan(0);
+    expect(simulate(untimed).connectingPax).toBeLessThan(simulate(timed).connectingPax / 5);
   });
   test('an idle aircraft still costs its lease', () => {
     const idle = { ...emptyPlan('TPE'), fleet: [newAircraft(emptyPlan('TPE'), 'A20N')] };
@@ -166,11 +168,11 @@ describe('transfers', () => {
     expect(direct).toBeGreaterThan(0);
     expect(local).toBeGreaterThan(0);
   });
-  test('detours are rejected', () => {
-    expect(detourOk(1000, 1500)).toBe(true);
-    expect(detourOk(1000, 1700)).toBe(false);
-    expect(detourOk(500, 950)).toBe(true);
-    expect(detourOk(500, 1100)).toBe(false);
+  test('only extreme detours are rejected', () => {
+    expect(detourOk(1000, 2400)).toBe(true);
+    expect(detourOk(1000, 2600)).toBe(false);
+    expect(detourOk(500, 1400)).toBe(true);
+    expect(detourOk(500, 1600)).toBe(false);
   });
   test('stopping on the same aircraft counts as a through service', () => {
     // Aircraft flies HKG→TPE then straight on to NRT after a 25 min turn.
@@ -186,5 +188,19 @@ describe('transfers', () => {
     const full: Plan = { ...base, fleet: [hkgTpe(), ac('b', 'ATR72', [{ from: 'TPE', to: 'KHH', h: 11 }]), ac('c', 'B77W', [{ from: 'KHH', to: 'OKA', h: 14 }])] };
     const r = simulate(full);
     for (const x of Object.values(r.routes)) expect(x.pax).toBeLessThanOrEqual(x.seats + 1e-6);
+  });
+  test('long layovers are possible but pay less and carry fewer travellers', () => {
+    const at = (h: number) => simulate(withOnward(h));
+    const land = 8 * 60 + blockMinutes('HKG', 'TPE', 'A20N');
+    const short = at((land + 100) / 60), long = at((land + 8 * 60) / 60);
+    expect(long.connectingPax).toBeGreaterThan(0);
+    expect(long.connectingPax).toBeLessThan(short.connectingPax);
+  });
+  test('the connecting fare share falls with the layover down to a floor', () => {
+    expect(connectFareShare(90)).toBe(CONNECT_FARE_SHARE);
+    expect(connectFareShare(180)).toBe(CONNECT_FARE_SHARE);
+    expect(connectFareShare(360)).toBeLessThan(CONNECT_FARE_SHARE);
+    expect(connectFareShare(360)).toBeGreaterThan(connectFareShare(600));
+    expect(connectFareShare(2000)).toBeGreaterThanOrEqual(0.55);
   });
 });

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
@@ -34,7 +34,7 @@ function save(key: string, value: unknown) {
 type Panel = 'routes' | 'airports' | 'schedule' | 'fleet' | 'report' | null;
 type Overlay =
   | { kind: 'edit'; acId: string; leg: number }
-  | { kind: 'add'; key: string }
+  | { kind: 'add'; key: string; prefer?: { from: string; dep: number } }
   | { kind: 'move'; acId: string; unit: Unit; key: string }
   | { kind: 'gap'; acId: string; t: number }
   | { kind: 'lease' }
@@ -202,6 +202,8 @@ export default function App() {
         <AirportSheet key={airport} plan={plan} result={result} code={airport}
           onConnect={() => { setSelection(null); setConnectFrom(airport); }}
           onOpen={(to: string) => addTrip(airport, to)}
+          onOpenPair={(a: string, b: string) => addTrip(a, b)}
+          onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'add', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } })}
           onOpenRoute={(key) => select({ kind: 'route', id: key })}
           onToggleHub={() => {
             const on = plan.hub === airport;
@@ -238,7 +240,7 @@ export default function App() {
           onClose={() => setOverlay(null)} />
       )}
       {(overlay?.kind === 'add' || overlay?.kind === 'move') && (
-        <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined}
+        <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined} prefer={overlay.kind === 'add' ? overlay.prefer : undefined}
           onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
           onClose={() => setOverlay(null)} />
       )}

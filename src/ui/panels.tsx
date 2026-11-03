@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from '../sim/markets';
-import { byAirport, timeline, type ClockBasis } from '../sim/airports';
+import { byAirport, dayMark, timeline, zoneDiffHours, type ClockBasis } from '../sim/airports';
 import {
   gapAt, insertRoundTrip, insertWindow, leaseFor, pickTime, placementOptions, removeUnit, shiftUnit, shiftWindow, slotProblem, typesFor,
   unitOf, type Placement, type Unit,
@@ -128,16 +128,26 @@ function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAi
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const served = useMemo(() => [...new Set(plan.fleet.flatMap((ac) => ac.legs.flatMap((l) => [l.from, l.to])))].sort(), [plan]);
-  const rowsOf = (r: ReturnType<typeof timeline>[number]) => (
-    <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
-      <span className="t">{hhmm(r.time)}</span>
-      <span className="name">
-        {`${r.from} → ${r.to}`}
-        <small>{mode === 'dep' ? `抵達 ${hhmm(r.other)}` : `${hhmm(r.other)} 出發`} · {r.ac.reg} · {AIRCRAFT[r.ac.type].name}</small>
-      </span>
-      <span className="chev">調整 ›</span>
-    </li>
-  );
+  const rowsOf = (r: ReturnType<typeof timeline>[number]) => {
+    const mark = dayMark(r.shift);
+    const zone = basis === 'local' && r.zone !== 0 ? ` · 時差 ${r.zone > 0 ? '+' : ''}${r.zone} 小時` : '';
+    const flying = `飛行 ${dur(r.durMin)}`;
+    return (
+      <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
+        <span className="t">{hhmm(r.time)}{mode === 'arr' && mark && <sup className="daymark" title="出發在前一天">{mark}</sup>}</span>
+        <span className="name">
+          {r.from} → {r.to}
+          <small>
+            {mode === 'dep'
+              ? <>抵達 {hhmm(r.other)}{mark && <sup className="daymark" title={r.shift > 0 ? '隔天抵達' : '前一天抵達'}>{mark}</sup>}</>
+              : <>{hhmm(r.other)} 出發{r.shift > 0 ? '（前一天）' : r.shift < 0 ? '（後一天）' : ''}</>}
+            {` · ${flying}${zone} · ${r.ac.reg} · ${AIRCRAFT[r.ac.type].name}`}
+          </small>
+        </span>
+        <span className="chev">調整 ›</span>
+      </li>
+    );
+  };
   const basisHint = basis === 'base' ? `${AIRPORT_BY_CODE[plan.base].name}時間` : '各機場當地時間';
   const list = view === 'time' ? timeline(plan, { mode, basis, airport: airport ?? undefined }) : null;
   const groups = view === 'airport' ? byAirport(plan, { mode, basis, order: 'busy' }).filter((g) => !airport || g.code === airport) : null;
@@ -159,12 +169,12 @@ function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAi
           {served.map((c) => <button key={c} className={`chip${airport === c ? ' strong' : ''}`} onClick={() => onAirport(airport === c ? null : c)}>{c}</button>)}
         </div>
       )}
-      <div className="hint">{basisHint} · 每個航班每天飛一次，每週 7 天。</div>
+      <div className="hint">{basisHint} · 每個航班每天飛一次，每週 7 天。<b className="daymark">+1</b> 表示隔天抵達（含時差），<b className="daymark">-1</b> 表示抵達當地日期比出發早一天。</div>
       {list && (list.length === 0 ? <div className="hint center">沒有符合的航班。</div> : <ul className="timetable">{list.map(rowsOf)}</ul>)}
       {groups && (groups.length === 0 ? <div className="hint center">沒有符合的航班。</div> : groups.map((g) => (
         <div key={g.code} className="group">
           <button className="group-head" onClick={() => setCollapsed({ ...collapsed, [g.code]: !collapsed[g.code] })} aria-expanded={!collapsed[g.code]}>
-            <span className="grow">{AIRPORT_BY_CODE[g.code].name} {g.code}</span>
+            <span className="grow">{AIRPORT_BY_CODE[g.code].name} {g.code}{basis === 'local' && g.code !== plan.base && <small className="tz"> · 比{plan.base}{zoneDiffHours(plan.base, g.code) >= 0 ? '快' : '慢'} {Math.abs(zoneDiffHours(plan.base, g.code))} 小時</small>}</span>
             <small>{mode === 'dep' ? '出發' : '抵達'} {g.rows.length} 班/日</small>
             <span className="chev">{collapsed[g.code] ? '展開' : '收合'}</span>
           </button>
@@ -319,8 +329,8 @@ export function FlightEditor({ plan, acId, leg, onChange, onMove, onClose }: {
 
 // ---------- Add a round trip on a route, or move one to another aircraft ----------
 
-export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
-  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit };
+export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }: {
+  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit }; prefer?: { from: string; dep: number };
   onDone: (plan: Plan, msg: string, acId: string) => void; onClose: () => void;
 }) {
   const [a, b] = routeKey.split('-');
@@ -328,8 +338,8 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
   const srcLeg = src && move ? src.legs[move.unit.start] : undefined;
   const opts = useMemo(() => {
     const pool = move ? { ...plan, fleet: plan.fleet.filter((x) => x.id !== move.acId) } : plan;
-    return placementOptions(pool, a, b, srcLeg?.dep);
-  }, [plan, a, b, move, srcLeg?.dep]);
+    return placementOptions(pool, a, b, srcLeg?.dep ?? prefer?.dep);
+  }, [plan, a, b, move, srcLeg?.dep, prefer?.dep]);
   const types = typesFor(plan, a, b);
   const firstOk = opts.findIndex((o) => o.placement);
   const [choice, setChoice] = useState<number | 'lease'>(firstOk >= 0 ? firstOk : 'lease');
@@ -337,7 +347,13 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
   const chosen: Placement | null = choice === 'lease' ? null : opts[choice]?.placement ?? null;
   const [dep, setDep] = useState<number | null>(null);
   const leaseFrom = b === plan.base ? b : a;
-  const defaultLeaseDep = srcLeg ? srcLeg.dep : utcFromLocal(leaseFrom, 7 * 60);
+  // A suggested departure is for the leg that leaves `prefer.from`; a new aircraft starting at the other end leaves earlier.
+  const leaseDepFor = (t: AircraftModel | undefined) => {
+    if (!prefer) return utcFromLocal(leaseFrom, 7 * 60);
+    if (leaseFrom === prefer.from || !t) return prefer.dep;
+    return Math.floor((prefer.dep - blockMinutes(a, b, t) - AIRCRAFT[t].turnMin) / 5) * 5;
+  };
+  const defaultLeaseDep = srcLeg ? srcLeg.dep : leaseDepFor(leaseType);
   const cur = chosen ? Math.max(chosen.lo, Math.min(chosen.hi, dep ?? chosen.dep)) : dep ?? defaultLeaseDep;
   const slot = move ? null : slotProblem(plan, a, b);
   const from = chosen ? chosen.from : srcLeg?.from ?? leaseFrom;
@@ -386,6 +402,7 @@ export function AddFlightSheet({ plan, routeKey, move, onDone, onClose }: {
         <div className="label">從{AIRPORT_BY_CODE[from].name}出發時間（當地）</div>
         <TimeStepper code={from} dep={cur} lo={chosen ? chosen.lo : -Infinity} hi={chosen ? chosen.hi : Infinity} onChange={setDep} />
         <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '新飛機全天都可以'}。早上 7–10 點與傍晚 4–8 點的航班最好賣。</div>
+        {prefer && <div className="hint">建議從{AIRPORT_BY_CODE[prefer.from].name} {at(prefer.from, prefer.dep)} 出發，這樣才接得上轉機。</div>}
       </div>
     </Sheet>
   );

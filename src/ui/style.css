@@ -337,3 +337,21 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .st-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .st-top .name .chip { padding: 1px 7px; font-size: 11px; font-weight: 400; }
 .stations small { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+.daymark { color: var(--sel); font-weight: 700; font-size: 0.72em; margin-left: 2px; vertical-align: super; line-height: 0; font-variant-numeric: tabular-nums; }
+b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
+.timetable .t sup.daymark { font-size: 11px; }
+.group-head small.tz { font-weight: 400; }
+
+.links { list-style: none; margin: 0; padding: 0; }
+.link { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.link-top { display: flex; align-items: center; gap: 8px; }
+.link-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.link .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.link .split i { display: block; height: 100%; }
+.split .nonstop, .k.nonstop { background: var(--accent); color: var(--accent); }
+.split .via, .k.via { background: var(--good); color: var(--good); }
+.split .lost, .k.lost { background: var(--line); color: var(--muted); }
+.k { background: none !important; }
+.link small { color: var(--muted); font-size: 11px; }
+.link .why { color: var(--text); font-size: 12px; }
