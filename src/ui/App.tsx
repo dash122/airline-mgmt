@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
-import { addRoundTrip, emptyPlan, newAircraft, routePairs, simulate, type NetworkResult, type Plan } from '../sim/simulate';
+import { AIRCRAFT } from '../data/aircraft';
+import { addRoundTrip, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, type NetworkResult, type Plan } from '../sim/simulate';
+import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
-import { AircraftSheet, AirportSheet, FleetSheet, ResultsSheet, RouteSheet } from './sheets';
+import { AircraftSheet, AirportSheet, ResultsSheet, RouteSheet } from './sheets';
+import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { count, money, pct } from './format';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type GameState, type Speed } from './clock';
 
@@ -27,7 +30,14 @@ function save(key: string, value: unknown) {
   }
 }
 
-type Panel = 'fleet' | 'report' | null;
+type Panel = 'routes' | 'schedule' | 'fleet' | 'report' | null;
+type Overlay =
+  | { kind: 'edit'; acId: string; leg: number }
+  | { kind: 'add'; key: string }
+  | { kind: 'move'; acId: string; unit: Unit; key: string }
+  | { kind: 'gap'; acId: string; t: number }
+  | { kind: 'lease' }
+  | null;
 
 export default function App() {
   const [plan, setPlan] = useState<Plan | null>(() => {
@@ -48,6 +58,7 @@ export default function App() {
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>(null);
+  const [overlay, setOverlay] = useState<Overlay>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => { if (plan) save(SAVE_KEY, plan); }, [plan]);
@@ -112,7 +123,8 @@ export default function App() {
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setPanel(null); setConnectFrom(null); };
+  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); };
+  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); };
 
   const addTrip = (a: string, b: string, type?: AircraftModel) => {
     const r = addRoundTrip(plan, a, b, type);
@@ -120,14 +132,24 @@ export default function App() {
     update(r.plan);
     const isNew = !plan.fleet.some((ac) => ac.id === r.aircraftId);
     const reg = r.plan.fleet.find((ac) => ac.id === r.aircraftId)!.reg;
-    setToast(isNew ? `租了新飛機 ${reg}，每日來回一班` : `由 ${reg} 加飛一班來回`);
+    setToast(isNew ? `租了新飛機 ${reg}，每日來回一班。可在「班表」調整時間` : `由 ${reg} 加飛一班來回`);
     select({ kind: 'route', id: [a, b].sort().join('-') });
+  };
+  const removeOne = (key: string) => {
+    const next = removeOneRoundTrip(plan, key, localMinutes);
+    if (!next) { setToast('這條航線沒有完整的來回航班，請在班表中調整'); return; }
+    update(next);
+    setToast('已減一班來回');
   };
 
   const routeKey = selection?.kind === 'route' ? selection.id : undefined;
   const routeExists = routeKey && routePairs(plan).some((r) => r.key === routeKey);
   const aircraft = selection?.kind === 'aircraft' ? plan.fleet.find((a) => a.id === selection.id) : undefined;
   const airport = selection?.kind === 'airport' ? selection.id : undefined;
+  const editing = overlay?.kind === 'edit' ? plan.fleet.find((a) => a.id === overlay.acId) : undefined;
+  const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
+  const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
+  const showPanel = !selection && panel;
 
   return (
     <div className="app">
@@ -135,7 +157,7 @@ export default function App() {
         plan={plan}
         result={result}
         clock={clock}
-        selection={selection}
+        selection={selection ?? (editing ? { kind: 'aircraft', id: editing.id } : null)}
         connectFrom={connectFrom}
         theme={theme}
         onTapAirport={(code) => {
@@ -143,41 +165,34 @@ export default function App() {
           else select({ kind: 'airport', id: code });
         }}
         onTapRoute={(key) => select({ kind: 'route', id: key })}
-        onTapEmpty={() => select(null)}
+        onTapEmpty={() => { if (selection || connectFrom) select(null); else openTab(null); }}
         onDragRoute={(a, b) => addTrip(a, b)}
       />
 
       <TopBar result={result} balance={game?.balance ?? 0} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReset={() => {
-          if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
+          if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
+      <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
 
       {connectFrom && <div className="banner">點選目的地機場，從{AIRPORT_BY_CODE[connectFrom].name}開航<button onClick={() => setConnectFrom(null)}>取消</button></div>}
       {toast && <div className="toast">{toast}</div>}
 
-      <div className="fab-row">
-        <div className="speed" role="group" aria-label="時間速度">
-          {SPEEDS.map((sp) => (
-            <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => setSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>
-              {sp === 0 ? '❚❚' : sp === 1 ? '▶' : sp === 4 ? '▶▶' : '▶▶▶'}
-            </button>
-          ))}
-        </div>
-        <button className="fab secondary" onClick={() => { setSelection(null); setPanel(panel === 'fleet' ? null : 'fleet'); }}>機隊 {plan.fleet.length}</button>
-        <button className="fab secondary" onClick={() => { setSelection(null); setPanel(panel === 'report' ? null : 'report'); }} disabled={!result}>報表</button>
-      </div>
-
       {routeKey && routeExists && (
         <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={result?.routes[routeKey]}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
-          onAddTrip={(type) => { const [a, b] = routeKey.split('-'); addTrip(a, b, type); }}
-          onPickAircraft={(id) => select({ kind: 'aircraft', id })}
+          onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
+          onRemoveOne={() => removeOne(routeKey)}
+          onEditFlight={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
+          onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛這條航線，飛機的其他航班不受影響'); select(null); }}
           onClose={() => select(null)} />
       )}
       {aircraft && (
         <AircraftSheet key={aircraft.id} plan={plan} ac={aircraft} result={result?.aircraft[aircraft.id]}
           onChange={(ac) => update({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) })}
-          onRemove={() => { update({ ...plan, fleet: plan.fleet.filter((x) => x.id !== aircraft.id) }); select(null); }}
+          onRemove={() => { update({ ...plan, fleet: plan.fleet.filter((x) => x.id !== aircraft.id) }); setToast(`已退租 ${aircraft.reg}`); select(null); }}
+          onEditFlight={(leg) => setOverlay({ kind: 'edit', acId: aircraft.id, leg })}
+          onAddHere={() => setOverlay({ kind: 'gap', acId: aircraft.id, t: aircraft.legs.length ? aircraft.legs[aircraft.legs.length - 1].dep + 60 : utcMorning(plan.base) })}
           onClose={() => select(null)} />
       )}
       {airport && (
@@ -186,15 +201,95 @@ export default function App() {
           onOpen={(to) => addTrip(airport, to)}
           onClose={() => select(null)} />
       )}
-      {panel === 'fleet' && (
-        <FleetSheet plan={plan} result={result}
-          onPick={(id) => select({ kind: 'aircraft', id })}
-          onLease={(type) => { const ac = newAircraft(plan, type); update({ ...plan, fleet: [...plan.fleet, ac] }); select({ kind: 'aircraft', id: ac.id }); }}
-          onClose={() => setPanel(null)} />
+      {showPanel === 'routes' && (
+        <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })}
+          onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
-      {panel === 'report' && result && (
-        <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={(key) => select({ kind: 'route', id: key })} onClose={() => setPanel(null)} />
+      {showPanel === 'schedule' && (
+        <SchedulePanel plan={plan} result={result} now={clock.now()} selected={schedSel}
+          onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
+          onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
+          onClose={() => openTab(null)} />
       )}
+      {showPanel === 'fleet' && (
+        <FleetPanel plan={plan} result={result} onPick={(id) => select({ kind: 'aircraft', id })} onLease={() => setOverlay({ kind: 'lease' })} onClose={() => openTab(null)} />
+      )}
+      {showPanel === 'report' && result && (
+        <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={(key) => select({ kind: 'route', id: key })} onClose={() => openTab(null)} />
+      )}
+
+      {overlay?.kind === 'edit' && (
+        <FlightEditor plan={plan} acId={overlay.acId} leg={overlay.leg}
+          onChange={(next, msg) => { update(next); if (msg) setToast(msg); }}
+          onMove={(acId, unit) => { const l = plan.fleet.find((x) => x.id === acId)!.legs[unit.start]; setOverlay({ kind: 'move', acId, unit, key: [l.from, l.to].sort().join('-') }); }}
+          onClose={() => setOverlay(null)} />
+      )}
+      {(overlay?.kind === 'add' || overlay?.kind === 'move') && (
+        <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined}
+          onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
+          onClose={() => setOverlay(null)} />
+      )}
+      {overlay?.kind === 'gap' && (
+        <GapSheet plan={plan} acId={overlay.acId} t={overlay.t}
+          onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
+          onClose={() => setOverlay(null)} />
+      )}
+      {overlay?.kind === 'lease' && (
+        <LeaseSheet plan={plan} onClose={() => setOverlay(null)}
+          onLease={(type, to) => {
+            if (to) {
+              const r = leaseFor(plan, plan.base, to, type);
+              update(r.plan);
+              setToast(`租了 ${r.plan.fleet.find((x) => x.id === r.aircraftId)!.reg}（${AIRCRAFT[type].name}），每日來回${AIRPORT_BY_CODE[to].name}`);
+            } else {
+              const ac = newAircraft(plan, type);
+              update({ ...plan, fleet: [...plan.fleet, ac] });
+              setToast(`租了 ${ac.reg}，到「班表」點它的空白處排航班`);
+            }
+            setOverlay(null);
+          }} />
+      )}
+
+      <nav className="tabbar">
+        {([[null, '地圖'], ['routes', `航線`], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
+          <button key={label} className={(selection ? false : panel === p) ? 'on' : ''} onClick={() => openTab(panel === p && p !== null && !selection ? null : p)}
+            disabled={p === 'report' && !result}>
+            <TabIcon tab={p} />
+            <span>{label}{p === 'routes' && routePairs(plan).length ? ` ${routePairs(plan).length}` : ''}{p === 'fleet' && plan.fleet.length ? ` ${plan.fleet.length}` : ''}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+const utcMorning = (code: string) => 7 * 60 - (AIRPORT_BY_CODE[code].country === 'JP' ? 9 : 8) * 60;
+
+function TabIcon({ tab }: { tab: Panel }) {
+  const d = {
+    map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14',
+    routes: 'M5 18c4-10 10-10 14-12 M5 18a2 2 0 1 0 0.01 0 M19 6a2 2 0 1 0 0.01 0',
+    schedule: 'M3 6h18 M3 12h18 M3 18h18 M6 4v4 M12 10v4 M9 16v4 M17 4v4 M15 10v4',
+    fleet: 'M2 13l8-2 2-7h2l-1 7 8 1v2l-8 1 1 4-2 1-3-4-7-1z',
+    report: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
+  }[tab ?? 'map'];
+  return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void }) {
+  const [, setTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 500); return () => clearInterval(id); }, []);
+  const now = clock.now();
+  return (
+    <div className="clockbar">
+      <span className="when">第 {dayAt(base, now)} 天 <b>{hhmm(localMinutes(base, now))}</b></span>
+      <div className="speed" role="group" aria-label="時間速度">
+        {SPEEDS.map((sp) => (
+          <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>
+            {sp === 0 ? '❚❚' : `${sp}×`}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

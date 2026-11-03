@@ -27,6 +27,16 @@ You lease individual aircraft and give each one a daily rotation: a chain of fli
 
 Departure time matters too. Morning and evening departures attract more travellers than midday ones, and very few want to leave at 3am. When one of your flights lands at an airport 45 minutes to 4 hours before another of your flights leaves, travellers can connect between them. Connections count as an option in the market for the whole trip.
 
+### Managing them
+
+The map is where you open routes: drag from one airport to another. Everything after that lives in the tab bar at the bottom:
+
+- **航線** lists every route with its profit and a daily round-trip stepper. **＋** asks which aircraft should fly the new round trip and when, and only leases a new aircraft if you pick that. A route can be closed from its sheet.
+- **班表** shows every aircraft's day on one 24-hour chart in base time. Tap a flight to move it (only that round trip moves), switch it to another aircraft, or cancel it. Tap an empty stretch to add a round trip there.
+- **機隊** shows each aircraft's day bar, utilisation and profit, and compares all types before you lease one.
+
+Schedule editing helpers live in `src/sim/schedule.ts`.
+
 ## Demand model
 
 There is no booking data, so demand is scaled from population and airport size:
