@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { modelledAnnualPax } from '../sim/markets';
-import { connectionGaps, hourly, spokes, stations, type Spoke } from '../sim/airports';
+import { linkages, hourly, spokes, stations, type Linkage, type LinkStatus, type Spoke } from '../sim/airports';
+import { MAX_DETOUR, MAX_DETOUR_SHORT } from '../sim/simulate';
 import { HUB_COST_PER_WEEK, HUB_MCT_CUT, hhmm, minConnect, topMarketsFrom, weeklyDepartures, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { Sheet, Stat, tone } from './sheets';
@@ -79,10 +80,58 @@ function DayStrip({ plan, code }: { plan: Plan; code: string }) {
   );
 }
 
+const STATUS: Record<LinkStatus, { label: string; tone: 'good' | 'warn' | 'bad' | 'idle' }> = {
+  nonstop: { label: '已直飛', tone: 'good' },
+  connected: { label: '已轉機', tone: 'good' },
+  timing: { label: '時間接不上', tone: 'warn' },
+  leg: { label: '缺航線', tone: 'warn' },
+  detour: { label: '繞路太遠', tone: 'bad' },
+};
+
+function LinkRow({ hub, l, onOpen, onOpenPair, onSuggest }: {
+  hub: string; l: Linkage; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void; onSuggest: (from: string, to: string, localMin: number) => void;
+}) {
+  const st = STATUS[l.status];
+  const share = (x: number) => `${Math.min(100, (x / Math.max(1, l.demand)) * 100)}%`;
+  const name = (c: string) => AIRPORT_BY_CODE[c].name;
+  return (
+    <li className="link">
+      <div className="link-top">
+        <span className="name"><b>{l.o} ⇄ {l.d}</b><small>{name(l.o)} ⇄ {name(l.d)} · {count(l.distKm)} 公里</small></span>
+        <span className={`pill ${st.tone === 'idle' ? '' : st.tone}`}>{st.label}</span>
+      </div>
+      <div className="split" role="img" aria-label={`直飛 ${count(l.nonstopPax)}，轉機 ${count(l.viaPax)}，其他 ${count(l.lost)}`}>
+        <i className="nonstop" style={{ width: share(l.nonstopPax) }} /><i className="via" style={{ width: share(l.viaPax) }} /><i className="lost" style={{ flex: 1 }} />
+      </div>
+      <small className="nums">市場 {count(l.demand)} · 直飛 {count(l.nonstopPax)} · 經{hub} {count(l.viaPax)} · 其他 {count(l.lost)}</small>
+      {l.status === 'leg' && (
+        <>
+          <small className="why">要經{hub}轉機，還缺 {l.missing.map(name).join('、')}{'＝'}{hub} 的航線。</small>
+          <div className="chips">{l.missing.map((c) => <button key={c} className="chip strong" onClick={() => onOpen(c)}>開航 {c} ⇄ {hub}</button>)}</div>
+        </>
+      )}
+      {l.status === 'timing' && l.suggest && (
+        <>
+          <small className="why">兩段航線都有，但班次接不上：{hhmm(l.suggest.arriveLocal)} 抵達{hub}後，{l.suggest.bestWait === null ? '沒有能接的班' : `下一班要等 ${Math.floor(l.suggest.bestWait / 60)} 小時 ${l.suggest.bestWait % 60} 分`}。</small>
+          <div className="chips"><button className="chip strong" onClick={() => onSuggest(hub, l.suggest!.to, l.suggest!.local)}>排入 {hhmm(l.suggest.local)} {hub} → {l.suggest.to}</button></div>
+        </>
+      )}
+      {l.status === 'timing' && !l.suggest && <small className="why">兩段航線都有，但時間接不上。到「班表」調整其中一班。</small>}
+      {l.status === 'detour' && (
+        <>
+          <small className="why">經{hub}比直飛長 {pct(l.detourPct)}，超過上限（{pct(MAX_DETOUR - 1)}，800 公里內 {pct(MAX_DETOUR_SHORT - 1)}），旅客不會選。這個市場適合直飛。</small>
+          {!l.nonstopFlown && <div className="chips"><button className="chip strong" onClick={() => onOpenPair(l.o, l.d)}>開直飛 {l.o} ⇄ {l.d}</button></div>}
+        </>
+      )}
+    </li>
+  );
+}
+
 type AirportTab = 'now' | 'transfer' | 'market' | 'rivals';
 
-export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenRoute, onToggleHub, onShowSchedule, onClose }: {
-  plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenRoute: (key: string) => void;
+export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onClose }: {
+  plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
+  onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
   onToggleHub: () => void; onShowSchedule: () => void; onClose: () => void;
 }) {
   const [tab, setTab] = useState<AirportTab>('now');
@@ -91,7 +140,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenRout
   const list = spokes(plan, result, code);
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
-  const gaps = connectionGaps(plan, code);
+  const links = linkages(plan, result, code);
   const top = topMarketsFrom(code, plan);
   const served = used > 0;
   return (
@@ -145,29 +194,22 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenRout
             <>
               <h4>在這裡換機的旅客（每週）</h4>
               <ul className="markets">
-                {transfer.flows.slice(0, 8).map((f) => (
+                {transfer.flows.filter((f) => f.pax >= 0.5).slice(0, 8).map((f) => (
                   <li key={`${f.from}${f.to}`}><span className="name">{f.from} → {code} → {f.to}<small>{AIRPORT_BY_CODE[f.from].name} → {AIRPORT_BY_CODE[f.to].name}</small></span><span className="num good">{count(f.pax)}</span></li>
                 ))}
               </ul>
             </>
           )}
-          {served && gaps.length > 0 && (
+          {served && links.length > 0 && (
             <>
-              <h4>接不上的轉機（航班時間對不上）</h4>
-              <ul className="markets">
-                {gaps.map((g) => (
-                  <li key={`${g.from}${g.to}`}>
-                    <span className="name">{g.from} → {code} → {g.to}
-                      <small>{hhmm(g.arriveLocal)} 抵達，{g.bestWait === null ? '沒有可轉的班' : `下一班要等 ${Math.floor(g.bestWait / 60)} 小時 ${g.bestWait % 60} 分`}。試試 {hhmm(g.suggest)} 左右從{code}飛{g.to}。</small>
-                    </span>
-                    <span className="num warn" title="這個市場每週單向航空旅客">{count(g.demand)}</span>
-                  </li>
-                ))}
+              <h4>經{code}轉機的市場（每週兩個方向）</h4>
+              <ul className="links">
+                {links.map((l) => <LinkRow key={`${l.o}${l.d}`} hub={code} l={l} onOpen={onOpen} onOpenPair={onOpenPair} onSuggest={onSuggest} />)}
               </ul>
-              <div className="hint">右邊是該市場每週單向航空旅客；轉機只會拿到其中一小部分。在「班表」調整時間即可。</div>
+              <div className="hint"><span className="k nonstop">■</span> 直飛 <span className="k via">■</span> 經{code}轉機 <span className="k lost">■</span> 其他航空或沒搭到。轉機旅客只拿到市場的一部分，班次越密、等待越短，拿到越多。</div>
             </>
           )}
-          {served && gaps.length === 0 && !transfer && <div className="hint center">這裡還沒有轉機。把進出航班的時間排在 1 到 2.5 小時內，旅客就能轉機。</div>}
+          {served && links.length === 0 && !transfer && <div className="hint center">這裡還沒有轉機。把進出航班的時間排在 1 到 2.5 小時內，旅客就能轉機。</div>}
         </>
       )}
 

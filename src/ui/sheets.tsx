@@ -3,6 +3,7 @@ import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { units } from '../sim/schedule';
+import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
   blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
@@ -15,6 +16,11 @@ export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} �
 export const tone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
 /** Clock time at an airport, from UTC minutes. */
 export const at = (code: string, utc: number) => hhmm(localMinutes(code, utc));
+/** Arrival clock time at the destination, with +1 / -1 when it is on another date than the departure. */
+export const arrivalAt = (from: string, depUtc: number, to: string, arrUtc: number) => {
+  const mark = dayMark(dayShiftBetween(from, to, depUtc, arrUtc));
+  return mark ? `${at(to, arrUtc)} ${mark}` : at(to, arrUtc);
+};
 export const arrival = (ac: Aircraft, i: number) => {
   const l = ac.legs[i];
   return l.dep + blockMinutes(l.from, l.to, ac.type);
@@ -179,7 +185,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
               {dir.map(({ ac, index, leg }) => (
                 <li key={`${ac.id}-${index}`} onClick={() => onEditFlight(ac.id, index)} className="tap">
                   <span className="t">{at(leg.from, leg.dep)}</span>
-                  <span className="name">抵達 {at(leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
+                  <span className="name">抵達 {arrivalAt(leg.from, leg.dep, leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
                   <span className="chev">調整 ›</span>
                 </li>
               ))}
@@ -240,7 +246,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
               <span className="t">{at(l.from, l.dep)}</span>
               <span className="name">
                 {u.count === 2 ? `${l.from} ⇄ ${l.to}` : `${l.from} → ${l.to}`}
-                <small>{u.count === 2 ? `回到 ${l.from} ${at(l.from, arrival(ac, last))}` : `抵達 ${at(l.to, arrival(ac, last))}`} · {AIRPORT_BY_CODE[l.to].name}</small>
+                <small>{u.count === 2 ? `回到 ${l.from} ${arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last))}` : `抵達 ${arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}`} · {AIRPORT_BY_CODE[l.to].name}</small>
               </span>
               <span className="chev">調整 ›</span>
             </li>

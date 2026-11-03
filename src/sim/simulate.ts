@@ -130,6 +130,7 @@ interface Flight {
 interface Itinerary {
   flights: Flight[];
   weight: number; // relative attractiveness (time of day, connection penalty)
+  fareShare: number; // of the nonstop fare that this itinerary's travellers pay
 }
 
 export interface RouteResult {
@@ -201,14 +202,30 @@ export const BIG_AIRPORT_EXTRA = 10;
 export const HUB_MCT_CUT = 10;
 /** What the hub setting costs per week, NT$. */
 export const HUB_COST_PER_WEEK = 1_200_000;
-export const MAX_CONNECT = 360;
 const CONNECTION_PENALTY_H = 1;
 /** Staying on the same aircraft is nearly as good as flying nonstop. */
 const THROUGH_PENALTY_H = 0.3;
-/** One-stop travellers pay this share of the nonstop fare for the same trip. */
+/** One-stop travellers pay this share of the nonstop fare for the same trip, with a layover of up to LONG_LAYOVER_MIN. */
 export const CONNECT_FARE_SHARE = 0.85;
-/** A one-stop trip may be at most this much longer than the direct distance (2× under 800 km). */
-export const MAX_DETOUR = 1.6;
+export const LONG_LAYOVER_MIN = 180;
+/** Each extra hour of layover past LONG_LAYOVER_MIN takes this much off the fare share, down to the floor. */
+export const LAYOVER_DISCOUNT_PER_HOUR = 0.04;
+export const MIN_CONNECT_FARE_SHARE = 0.55;
+
+/**
+ * Any layover is allowed. Long ones are worth less to travellers: they only take them for a bigger
+ * discount, and the time penalty in the itinerary weight already cuts the share of travellers who accept them.
+ */
+export function connectFareShare(layoverMin: number): number {
+  const extraH = Math.max(0, layoverMin - LONG_LAYOVER_MIN) / 60;
+  return Math.max(MIN_CONNECT_FARE_SHARE, CONNECT_FARE_SHARE - LAYOVER_DISCOUNT_PER_HOUR * extraH);
+}
+/**
+ * A one-stop trip may be at most this much longer than the direct distance (3x under 800 km). Detours below this
+ * are not forbidden: the extra flying time already costs the itinerary most of its travellers.
+ */
+export const MAX_DETOUR = 2.5;
+export const MAX_DETOUR_SHORT = 3;
 
 /** Shortest workable connection at `code` between a flight arriving from `from` and one leaving for `to`. */
 export function minConnect(code: string, from: string, to: string, hub?: string): number {
@@ -221,7 +238,7 @@ export function minConnect(code: string, from: string, to: string, hub?: string)
 }
 
 export function detourOk(distKm: number, legsKm: number): boolean {
-  return legsKm <= distKm * (distKm < 800 ? 2 : MAX_DETOUR);
+  return legsKm <= distKm * (distKm < 800 ? MAX_DETOUR_SHORT : MAX_DETOUR);
 }
 /** Per passenger on each flight: check-in, catering and airport passenger fees, NT$. */
 export const PAX_COST_PER_SEGMENT = 250;
@@ -254,19 +271,19 @@ export function simulate(plan: Plan): NetworkResult {
     itins.set(k, [...(itins.get(k) ?? []), it]);
   };
   for (const f1 of flights) {
-    add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) });
+    add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)), fareShare: 1 });
     for (const f2 of byFrom.get(f1.to) ?? []) {
       if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) continue;
       const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
       const wait = mod(f2.dep - f1.arr, DAY);
-      if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub)) || wait > MAX_CONNECT) continue;
+      if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub))) continue;
       const m = marketBetween(f1.from, f2.to);
       if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) continue;
       // Extra time versus flying nonstop, valued in the same units as fares.
       const total = (f1.arr - f1.dep + wait + (f2.arr - f2.dep)) / 60;
       const direct = m.distKm / 820 + 0.5;
       const penalty = Math.exp(-THETA * VALUE_OF_TIME * (total - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
-      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty });
+      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait) });
     }
   }
 
@@ -320,7 +337,7 @@ export function simulate(plan: Plan): NetworkResult {
       const n = carried.get(it) ?? 0;
       const want = demand.get(it) ?? 0;
       tripsDaily += n;
-      const fare = it.flights.length > 1 ? info.fare * CONNECT_FARE_SHARE : info.fare;
+      const fare = info.fare * it.fareShare;
       if (it.flights.length > 1) {
         connectingDaily += n;
         const tk = `${it.flights[0].to}|${it.flights[0].from}|${it.flights[1].to}`;
