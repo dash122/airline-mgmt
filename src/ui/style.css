@@ -361,3 +361,36 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .k { background: none !important; }
 .link small { color: var(--muted); font-size: 11px; }
 .link .why { color: var(--text); font-size: 12px; }
+/* Paired airport clocks share an aligned reading path in player and rival schedules. */
+.flight-times { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; }
+.flight-end { display: flex; flex-direction: column; gap: 4px; }
+.flight-end:last-child { text-align: right; }
+.flight-end small, .flight-duration small { color: var(--muted); font-size: 11px; }
+.flight-end strong { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.flight-duration { display: flex; flex-direction: column; text-align: center; color: var(--muted); gap: 4px; }
+.flight-date { font-size: 10px; color: var(--accent); margin-left: 4px; }
+.flight-edit { display: block; width: 100%; text-align: left; padding: 4px; border-radius: 6px; }
+.flight-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 11px; }
+.flight-meta > span { color: var(--accent); }
+.flight-edit:hover { background: var(--bg); }
+.flight-edit:focus-visible, .rival-directions button:focus-visible, .airport-service-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.rival-directions { display: flex; gap: 8px; }
+.rival-directions button { flex: 1; padding: 12px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.rival-directions button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.schedule-note { color: var(--muted); font-size: 12px; margin: 8px 0; line-height: 1.6; }
+.rivals, .service-times { list-style: none; margin: 0; padding: 0; }
+.rivals > li { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.rival-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rival-share { display: flex; flex-direction: column; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.rival-share small { font-size: 10px; color: var(--muted); font-weight: 400; }
+.service-times > li { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.service-times > li:last-child { border-bottom: 0; }
+.airport-rival-routes > li { flex-wrap: wrap; }
+.airport-service-details { order: 3; width: 100%; }
+.airport-service-details summary { cursor: pointer; padding: 12px 0; color: var(--accent); font-size: 12px; }
+.airport-service-details > div { padding: 12px 0; border-top: 1px solid var(--line); }
+@media (max-width: 360px) {
+  .flight-times { gap: 8px; }
+  .flight-end strong { font-size: 18px; }
+  .flight-duration small { font-size: 10px; }
+}

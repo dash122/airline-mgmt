@@ -1,3 +1,4 @@
+import { FlightTimes } from './FlightTimes';
 import { useState, type ReactNode } from 'react';
 import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
@@ -184,9 +185,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
             <ul className="timetable">
               {dir.map(({ ac, index, leg }) => (
                 <li key={`${ac.id}-${index}`} onClick={() => onEditFlight(ac.id, index)} className="tap">
-                  <span className="t">{at(leg.from, leg.dep)}</span>
-                  <span className="name">抵達 {arrivalAt(leg.from, leg.dep, leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
-                  <span className="chev">調整 ›</span>
+<button className="flight-edit" onClick={(e) => { e.stopPropagation(); onEditFlight(ac.id,index); }}><FlightTimes from={leg.from} to={leg.to} dep={leg.dep} arr={arrival(ac,index)} /><span className="flight-meta">{ac.reg} · {AIRCRAFT[ac.type].name}<span>調整 ›</span></span></button>
                 </li>
               ))}
             </ul>
