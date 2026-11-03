@@ -5,7 +5,8 @@ import { AIRCRAFT } from '../data/aircraft';
 import { addRoundTrip, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
-import { AircraftSheet, AirportSheet, ResultsSheet, RouteSheet } from './sheets';
+import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
+import { AirportSheet, AirportsPanel } from './airports';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { count, money, pct } from './format';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type GameState, type Speed } from './clock';
@@ -30,7 +31,7 @@ function save(key: string, value: unknown) {
   }
 }
 
-type Panel = 'routes' | 'schedule' | 'fleet' | 'report' | null;
+type Panel = 'routes' | 'airports' | 'schedule' | 'fleet' | 'report' | null;
 type Overlay =
   | { kind: 'edit'; acId: string; leg: number }
   | { kind: 'add'; key: string }
@@ -60,6 +61,7 @@ export default function App() {
   const [panel, setPanel] = useState<Panel>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [schedAirport, setSchedAirport] = useState<{ airport: string } | null>(null);
 
   useEffect(() => { if (plan) save(SAVE_KEY, plan); }, [plan]);
   useEffect(() => { if (game) save(GAME_KEY, game); }, [game]);
@@ -124,7 +126,7 @@ export default function App() {
 
   const update = (next: Plan) => setPlan(next);
   const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); };
-  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); };
+  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
 
   const addTrip = (a: string, b: string, type?: AircraftModel) => {
     const r = addRoundTrip(plan, a, b, type);
@@ -150,6 +152,7 @@ export default function App() {
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   const showPanel = !selection && panel;
+  const airportCount = new Set(plan.fleet.flatMap((a) => a.legs.flatMap((l) => [l.from, l.to]))).size;
 
   return (
     <div className="app">
@@ -196,17 +199,27 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {airport && (
-        <AirportSheet plan={plan} code={airport}
+        <AirportSheet key={airport} plan={plan} result={result} code={airport}
           onConnect={() => { setSelection(null); setConnectFrom(airport); }}
-          onOpen={(to) => addTrip(airport, to)}
+          onOpen={(to: string) => addTrip(airport, to)}
+          onOpenRoute={(key) => select({ kind: 'route', id: key })}
+          onToggleHub={() => {
+            const on = plan.hub === airport;
+            update({ ...plan, hub: on ? undefined : airport });
+            setToast(on ? '已取消轉運站' : `${AIRPORT_BY_CODE[airport].name}設為轉運站：轉機最短時間縮短，每週多一筆費用`);
+          }}
+          onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
           onClose={() => select(null)} />
       )}
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
+      {showPanel === 'airports' && (
+        <AirportsPanel plan={plan} result={result} onPick={(code) => select({ kind: 'airport', id: code })} onClose={() => openTab(null)} />
+      )}
       {showPanel === 'schedule' && (
-        <SchedulePanel plan={plan} result={result} now={clock.now()} selected={schedSel}
+        <SchedulePanel key={schedAirport?.airport ?? 'all'} plan={plan} result={result} now={clock.now()} selected={schedSel} preset={schedAirport}
           onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
           onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
           onClose={() => openTab(null)} />
@@ -251,11 +264,11 @@ export default function App() {
       )}
 
       <nav className="tabbar">
-        {([[null, '地圖'], ['routes', `航線`], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
+        {([[null, '地圖'], ['routes', `航線`], ['airports', '機場'], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
           <button key={label} className={(selection ? false : panel === p) ? 'on' : ''} onClick={() => openTab(panel === p && p !== null && !selection ? null : p)}
             disabled={p === 'report' && !result}>
             <TabIcon tab={p} />
-            <span>{label}{p === 'routes' && routePairs(plan).length ? ` ${routePairs(plan).length}` : ''}{p === 'fleet' && plan.fleet.length ? ` ${plan.fleet.length}` : ''}</span>
+            <span>{label}{p === 'routes' && routePairs(plan).length ? ` ${routePairs(plan).length}` : ''}{p === 'airports' && airportCount ? ` ${airportCount}` : ''}{p === 'fleet' && plan.fleet.length ? ` ${plan.fleet.length}` : ''}</span>
           </button>
         ))}
       </nav>
@@ -270,6 +283,7 @@ function TabIcon({ tab }: { tab: Panel }) {
     map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14',
     routes: 'M5 18c4-10 10-10 14-12 M5 18a2 2 0 1 0 0.01 0 M19 6a2 2 0 1 0 0.01 0',
     schedule: 'M3 6h18 M3 12h18 M3 18h18 M6 4v4 M12 10v4 M9 16v4 M17 4v4 M15 10v4',
+    airports: 'M12 3a5 5 0 0 1 5 5c0 4-5 10-5 10S7 12 7 8a5 5 0 0 1 5-5z M12 6.5a1.6 1.6 0 1 0 0.01 0 M5 21h14',
     fleet: 'M2 13l8-2 2-7h2l-1 7 8 1v2l-8 1 1 4-2 1-3-4-7-1z',
     report: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
   }[tab ?? 'map'];

@@ -29,6 +29,8 @@ export interface Plan {
   fleet: Aircraft[];
   /** Fare multiple per market (pairKey), 0.7 to 1.4. Default 1. */
   fares: Record<string, number>;
+  /** Optional transfer hub: shorter minimum connections there, for a weekly fee. */
+  hub?: string;
 }
 
 export const emptyPlan = (base: string): Plan => ({ version: 2, base, fleet: [], fares: {} });
@@ -122,6 +124,7 @@ export function weeklyDepartures(plan: Plan, code: string): number {
 
 interface Flight {
   key: string; // `${acId}#${index}`
+  idx: number; // position in the aircraft's rotation
   ac: Aircraft;
   from: string;
   to: string;
@@ -172,6 +175,9 @@ export interface NetworkResult {
   aircraft: Record<string, AircraftResult>;
   pax: number; // weekly trips (a connecting trip counts once)
   connectingPax: number;
+  /** Weekly connecting travellers per transfer airport, with their origin→destination flows. */
+  transfers: Record<string, { pax: number; flows: { from: string; to: string; pax: number }[] }>;
+  hubCost: number;
   seats: number;
   revenue: number;
   flyingCost: number;
@@ -185,8 +191,36 @@ export interface NetworkResult {
 }
 
 export const MIN_CONNECT = 45;
-export const MAX_CONNECT = 240;
+/** Minimum connection when the trip crosses a border at the transfer airport. */
+export const MIN_CONNECT_INTL = 70;
+/** Extra minutes needed at the biggest hubs (long walks, many terminals). */
+export const BIG_AIRPORT_EXTRA = 10;
+/** Minutes a transfer hub setting takes off the minimum connection. */
+export const HUB_MCT_CUT = 10;
+/** What the hub setting costs per week, NT$. */
+export const HUB_COST_PER_WEEK = 1_200_000;
+export const MAX_CONNECT = 360;
 const CONNECTION_PENALTY_H = 1;
+/** Staying on the same aircraft is nearly as good as flying nonstop. */
+const THROUGH_PENALTY_H = 0.3;
+/** One-stop travellers pay this share of the nonstop fare for the same trip. */
+export const CONNECT_FARE_SHARE = 0.85;
+/** A one-stop trip may be at most this much longer than the direct distance (2× under 800 km). */
+export const MAX_DETOUR = 1.6;
+
+/** Shortest workable connection at `code` between a flight arriving from `from` and one leaving for `to`. */
+export function minConnect(code: string, from: string, to: string, hub?: string): number {
+  const X = AIRPORT_BY_CODE[code];
+  const intl = AIRPORT_BY_CODE[from].country !== X.country || AIRPORT_BY_CODE[to].country !== X.country;
+  let m = intl ? MIN_CONNECT_INTL : MIN_CONNECT;
+  if (X.size === 'hub') m += BIG_AIRPORT_EXTRA;
+  if (hub === code) m -= HUB_MCT_CUT;
+  return m;
+}
+
+export function detourOk(distKm: number, legsKm: number): boolean {
+  return legsKm <= distKm * (distKm < 800 ? 2 : MAX_DETOUR);
+}
 /** Per passenger on each flight: check-in, catering and airport passenger fees, NT$. */
 export const PAX_COST_PER_SEGMENT = 250;
 /** Share of ticket revenue that goes on sales, distribution and card fees. */
@@ -200,7 +234,7 @@ function buildFlights(plan: Plan): Flight[] {
       const A = AIRPORT_BY_CODE[l.from], B = AIRPORT_BY_CODE[l.to];
       const bm = blockMinutes(l.from, l.to, ac.type);
       const dep = mod(l.dep, DAY);
-      out.push({ key: `${ac.id}#${i}`, ac, from: l.from, to: l.to, dep, arr: dep + bm, seats: spec.seats, blockH: bm / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon) });
+      out.push({ key: `${ac.id}#${i}`, idx: i, ac, from: l.from, to: l.to, dep, arr: dep + bm, seats: spec.seats, blockH: bm / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon) });
     });
   }
   return out;
@@ -221,14 +255,15 @@ export function simulate(plan: Plan): NetworkResult {
     add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) });
     for (const f2 of byFrom.get(f1.to) ?? []) {
       if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) continue;
+      const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
       const wait = mod(f2.dep - f1.arr, DAY);
-      if (wait < MIN_CONNECT || wait > MAX_CONNECT) continue;
+      if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub)) || wait > MAX_CONNECT) continue;
       const m = marketBetween(f1.from, f2.to);
-      if (!m) continue;
+      if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) continue;
       // Extra time versus flying nonstop, valued in the same units as fares.
       const total = (f1.arr - f1.dep + wait + (f2.arr - f2.dep)) / 60;
       const direct = m.distKm / 820 + 0.5;
-      const penalty = Math.exp(-THETA * VALUE_OF_TIME * (total - direct + CONNECTION_PENALTY_H));
+      const penalty = Math.exp(-THETA * VALUE_OF_TIME * (total - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
       add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty });
     }
   }
@@ -252,13 +287,19 @@ export function simulate(plan: Plan): NetworkResult {
     marketInfo.set(k, { airTotal, fare });
   }
 
-  // Capacity: scale itineraries down where a flight is oversold.
+  // Capacity: scale itineraries down where a flight is oversold. Travellers already holding a seat on
+  // their first flight (connectors) keep their seat on the second, so local travellers are turned away first.
   const carried = new Map(demand);
-  for (let pass = 0; pass < 3; pass++) {
-    const load = new Map<Flight, number>();
-    for (const [it, n] of carried) for (const f of it.flights) load.set(f, (load.get(f) ?? 0) + n);
+  for (let pass = 0; pass < 4; pass++) {
+    const conn = new Map<Flight, number>(), loc = new Map<Flight, number>();
+    for (const [it, n] of carried) for (const f of it.flights) (it.flights.length > 1 ? conn : loc).set(f, ((it.flights.length > 1 ? conn : loc).get(f) ?? 0) + n);
+    const connFactor = (f: Flight) => Math.min(1, f.seats / (conn.get(f) || 1));
+    const locFactor = (f: Flight) => {
+      const l = loc.get(f) ?? 0;
+      return l <= 0 ? 1 : Math.min(1, Math.max(0, f.seats - (conn.get(f) ?? 0) * connFactor(f)) / l);
+    };
     for (const [it, n] of carried) {
-      const factor = Math.min(1, ...it.flights.map((f) => f.seats / (load.get(f) || 1)));
+      const factor = Math.min(1, ...it.flights.map((f) => (it.flights.length > 1 ? connFactor(f) : locFactor(f))));
       carried.set(it, n * factor);
     }
   }
@@ -268,6 +309,7 @@ export function simulate(plan: Plan): NetworkResult {
   const flightRevenue = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
   let tripsDaily = 0, connectingDaily = 0, revenueDaily = 0;
+  const transferFlows = new Map<string, number>(); // `${via}|${o}|${d}`
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
@@ -275,12 +317,17 @@ export function simulate(plan: Plan): NetworkResult {
       const n = carried.get(it) ?? 0;
       const want = demand.get(it) ?? 0;
       tripsDaily += n;
-      if (it.flights.length > 1) connectingDaily += n;
-      revenueDaily += n * info.fare;
+      const fare = it.flights.length > 1 ? info.fare * CONNECT_FARE_SHARE : info.fare;
+      if (it.flights.length > 1) {
+        connectingDaily += n;
+        const tk = `${it.flights[0].to}|${it.flights[0].from}|${it.flights[1].to}`;
+        transferFlows.set(tk, (transferFlows.get(tk) ?? 0) + n * 7);
+      }
+      revenueDaily += n * fare;
       const dist = it.flights.reduce((s, f) => s + f.distKm, 0);
       for (const f of it.flights) {
         flightPax.set(f, (flightPax.get(f) ?? 0) + n);
-        flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (n * info.fare * f.distKm) / dist);
+        flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (n * fare * f.distKm) / dist);
         flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / it.flights.length);
       }
     }
@@ -339,12 +386,23 @@ export function simulate(plan: Plan): NetworkResult {
   const seats = sum(acs.map((a) => a.seats));
   const onboard = sum(acs.map((a) => a.pax));
   const revenue = revenueDaily * 7;
-  const cost = flyingCost + ownershipCost;
+  const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
+  const cost = flyingCost + ownershipCost + hubCost;
+  const transfers: NetworkResult['transfers'] = {};
+  for (const [k, pax] of transferFlows) {
+    const [via, from, to] = k.split('|');
+    const t = (transfers[via] ??= { pax: 0, flows: [] });
+    t.pax += pax;
+    t.flows.push({ from, to, pax });
+  }
+  for (const t of Object.values(transfers)) t.flows.sort((x, y) => y.pax - x.pax);
   return {
     routes,
     aircraft,
     pax: tripsDaily * 7,
     connectingPax: connectingDaily * 7,
+    transfers,
+    hubCost,
     seats,
     revenue,
     flyingCost,
