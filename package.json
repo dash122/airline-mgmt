@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "build:map": "node scripts/build-map.mjs"
+    "build:map": "node scripts/build-map.mjs",
+    "build:data": "node scripts/build-data.mjs"
   },
   "dependencies": {
     "react": "19.2.0",

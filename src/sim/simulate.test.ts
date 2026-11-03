@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { AIRPORTS } from '../data/airports';
-import { marketBetween, markets } from './markets';
+import { marketBetween, markets, modelledAnnualPax } from './markets';
+import { AIR_TARGETS_M } from '../data/calibration';
 import { routeProblem, simulate, simulateRoute, type Plan } from './simulate';
 
 const plan: Plan = {
@@ -13,18 +14,32 @@ const plan: Plan = {
 };
 
 describe('markets', () => {
-  test('calibrated demand roughly matches each airport target', () => {
-    const ms = [...markets().values()];
-    for (const a of AIRPORTS) {
-      const total = ms.filter((m) => m.a === a.code || m.b === a.code).reduce((s, m) => s + m.airDemand, 0);
-      const target = (a.annualPaxM * 1e6 * a.inRegionShare) / 104;
-      expect(total / target).toBeGreaterThan(0.95);
-      expect(total / target).toBeLessThan(1.05);
+  test('modelled air travel matches each group target', () => {
+    const totals: Record<string, number> = {};
+    for (const m of markets().values()) totals[m.group] = (totals[m.group] ?? 0) + (m.airDemand * 104) / 1e6;
+    for (const g of ['JP-JP', 'TW-TW', 'JP-TW', 'HK-TW', 'HK-JP']) {
+      expect(totals[g] / AIR_TARGETS_M[g]).toBeGreaterThan(0.9);
+      expect(totals[g] / AIR_TARGETS_M[g]).toBeLessThan(1.1);
     }
   });
-  test('no markets inside one city', () => {
-    expect([...markets().keys()]).not.toContain('HND-NRT');
-    expect([...markets().keys()]).not.toContain('TPE-TSA');
+  test('every airport has people and coordinates', () => {
+    expect(AIRPORTS.length).toBeGreaterThan(90);
+    for (const a of AIRPORTS) {
+      expect(a.catchment).toBeGreaterThan(0);
+      expect(Number.isFinite(a.lat) && Number.isFinite(a.lon)).toBe(true);
+    }
+  });
+  test('no markets inside one metro', () => {
+    expect(marketBetween('HND', 'NRT')).toBeUndefined();
+    expect(marketBetween('TPE', 'TSA')).toBeUndefined();
+  });
+  test('big metros fly more than small towns', () => {
+    expect(modelledAnnualPax('HND')).toBeGreaterThan(modelledAnnualPax('KUH') * 20);
+  });
+  test('ground travel: rail on one landmass, ferry to near islands, nothing to far islands', () => {
+    expect(marketBetween('HND', 'ITM')!.ground?.name).toContain('高鐵');
+    expect(marketBetween('KHH', 'MZG')!.ground?.name).toContain('渡輪');
+    expect(marketBetween('TSA', 'KNH')!.ground).toBeUndefined();
   });
 });
 
@@ -43,12 +58,11 @@ describe('simulate', () => {
     const base = { id: 'x', a: 'TPE', b: 'OKA', aircraft: 'narrowbody' as const, freq: 7 };
     expect(simulateRoute({ ...base, fareMult: 0.8 }).demandPerDir).toBeGreaterThan(simulateRoute({ ...base, fareMult: 1.2 }).demandPerDir);
   });
-  test('most Taipei-Kaohsiung travellers take high-speed rail', () => {
-    const khh = marketBetween('TSA', 'KHH')!;
-    const mzg = marketBetween('TSA', 'MZG')!;
-    expect(khh.surface).toBeDefined();
-    expect(khh.airDemand / khh.potential).toBeLessThan(0.5);
-    expect(mzg.airDemand / mzg.potential).toBeGreaterThan(0.8);
+  test('high-speed rail takes most short trips', () => {
+    const m = marketBetween('HND', 'NGO')!;
+    expect(m.airDemand / m.potential).toBeLessThan(0.3);
+    const far = marketBetween('HND', 'OKA')!;
+    expect(far.airDemand / far.potential).toBeGreaterThan(0.9);
   });
 });
 
@@ -58,5 +72,6 @@ describe('route rules', () => {
     expect(routeProblem('TSA', 'LZN', 'turboprop')).toBeNull();
     expect(routeProblem('TPE', 'CTS', 'turboprop')).not.toBeNull();
     expect(routeProblem('HND', 'NRT', 'narrowbody')).not.toBeNull();
+    expect(routeProblem('TTT', 'KYD', 'narrowbody')).not.toBeNull();
   });
 });
