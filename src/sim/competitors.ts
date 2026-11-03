@@ -4,7 +4,7 @@
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { timeOfDayQuality } from './choice';
-import { marketBetween, markets, pairKey, type Market } from './markets';
+import { marketBetween, marketsAt, pairKey, type Market } from './markets';
 
 export type AirlineKind = 'full' | 'low' | 'regional';
 
@@ -212,11 +212,12 @@ export function rivalsBetween(a: string, b: string): RivalService[] {
 /** Competitor services from one airport to another, one direction. */
 export const rivalsFrom = (from: string, to: string): RivalService[] => rivalsBetween(from, to).filter((s) => s.from === from);
 
-/** The markets at an airport. One place to swap in a faster lookup when the airport set grows. */
-const marketsAt = (code: string): Market[] => [...markets().values()].filter((m) => m.a === code || m.b === code);
+const airportRivals = new Map<string, { to: string; services: RivalService[] }[]>();
 
 /** Every competitor departure from an airport, grouped by destination, busiest first. */
 export function rivalsAt(code: string): { to: string; services: RivalService[] }[] {
+  const cached = airportRivals.get(code);
+  if (cached) return cached;
   const out: { to: string; services: RivalService[] }[] = [];
   for (const m of marketsAt(code)) {
     if (m.rivalFreq <= 0) continue;
@@ -224,7 +225,9 @@ export function rivalsAt(code: string): { to: string; services: RivalService[] }
     const services = rivalsFrom(code, to);
     if (services.length) out.push({ to, services });
   }
-  return out.sort((x, y) => sumFreq(y.services) - sumFreq(x.services));
+  out.sort((x, y) => sumFreq(y.services) - sumFreq(x.services));
+  airportRivals.set(code, out);
+  return out;
 }
 
 /** Airlines flying from an airport, with weekly departures and destinations. */

@@ -4,7 +4,7 @@ import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { airChoice, groundUtility, noTravelUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
 import { rivalsFrom } from './competitors';
-import { marketBetween, MIN_MARKET_KM, pairKey } from './markets';
+import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey } from './markets';
 import { distanceKm } from './geo';
 
 export const DAY = 1440;
@@ -529,10 +529,9 @@ export function flightsOn(plan: Plan, key: string) {
 export function topMarketsFrom(code: string, plan: Plan, limit = 8) {
   const served = new Set(routePairs(plan).filter((r) => r.a === code || r.b === code).map((r) => (r.a === code ? r.b : r.a)));
   const list: { to: string; airDemand: number; distKm: number; served: boolean }[] = [];
-  for (const other of Object.keys(AIRPORT_BY_CODE)) {
-    if (other === code) continue;
-    const m = marketBetween(code, other);
-    if (m) list.push({ to: other, airDemand: m.airDemand, distKm: m.distKm, served: served.has(other) });
+  for (const m of marketsAt(code)) {
+    const other = m.a === code ? m.b : m.a;
+    list.push({ to: other, airDemand: m.airDemand, distKm: m.distKm, served: served.has(other) });
   }
   return list.sort((x, y) => y.airDemand - x.airDemand).slice(0, limit);
 }

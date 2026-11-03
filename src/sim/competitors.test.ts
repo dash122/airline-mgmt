@@ -1,10 +1,25 @@
 import { describe, expect, test } from 'vitest';
-import { airlines, airlinesAt, rivalsBetween, rivalsFrom } from './competitors';
-import { marketBetween, markets } from './markets';
+import { airlines, airlinesAt, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
+import { marketBetween, markets, marketsAt, modelledAnnualPax } from './markets';
 import { AIRPORTS } from '../data/airports';
 import { addRoundTrip, emptyPlan, simulate } from './simulate';
 
 describe('competitor airlines', () => {
+  test('airport indexes preserve the global market totals and competitor services', () => {
+    for (const code of ['TPE', 'LHR', 'MFM']) {
+      const expected = [...markets().values()].filter(m => m.a === code || m.b === code);
+      expect(marketsAt(code)).toEqual(expected);
+      expect(modelledAnnualPax(code)).toBeCloseTo(expected.reduce((sum, m) => sum + 104 * m.airDemand, 0), 5);
+      const rivals = rivalsAt(code);
+      expect(rivalsAt(code)).toBe(rivals);
+      expect(rivals.map(r => r.to).sort()).toEqual(expected.filter(m => {
+        const to = m.a === code ? m.b : m.a;
+        return m.rivalFreq > 0 && rivalsFrom(code, to).length > 0;
+      }).map(m => m.a === code ? m.b : m.a).sort());
+    }
+    expect(marketsAt('UNKNOWN')).toEqual([]);
+    expect(modelledAnnualPax('UNKNOWN')).toBe(0);
+  });
   test('global nonstop networks respect airport destination budgets and remain symmetric', () => {
     const limits = { hub: 100, major: 60, large: 30, medium: 12, small: 4 };
     const counts = new Map<string, number>();
