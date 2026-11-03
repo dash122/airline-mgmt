@@ -336,8 +336,10 @@ export default function MapCanvas(props: Props) {
     };
     const airportAt = (x: number, y: number): string | null => {
       let best: string | null = null, bestD = HIT_AIRPORT_PX;
+      const v = viewRef.current!;
+      const pointerLon = v.cx + (x - sizeRef.current.w / 2) / v.scale;
       for (const a of AIRPORTS) {
-        const [ax, ay] = screen(a.lat, nearestLongitude(a.lon, viewRef.current!.cx));
+        const [ax, ay] = screen(a.lat, nearestLongitude(a.lon, pointerLon));
         const d = Math.hypot(ax - x, ay - y);
         if (d < bestD) { bestD = d; best = a.code; }
       }
@@ -415,9 +417,13 @@ export default function MapCanvas(props: Props) {
           if (to && to !== from) p.onDragRoute(from, to);
         }
       } else if (mode === 'pan' && tap) {
-        const rid = routeAt(pt.x, pt.y);
-        if (rid) p.onTapRoute(rid);
-        else p.onTapEmpty();
+        const ap = airportAt(pt.x, pt.y);
+        if (ap) p.onTapAirport(ap);
+        else {
+          const rid = routeAt(pt.x, pt.y);
+          if (rid) p.onTapRoute(rid);
+          else p.onTapEmpty();
+        }
       }
       mode = 'none';
     };
