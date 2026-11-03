@@ -1,9 +1,40 @@
 import { describe, expect, test } from 'vitest';
 import { airlines, airlinesAt, rivalsBetween, rivalsFrom } from './competitors';
-import { markets } from './markets';
+import { marketBetween, markets } from './markets';
+import { AIRPORTS } from '../data/airports';
 import { addRoundTrip, emptyPlan, simulate } from './simulate';
 
 describe('competitor airlines', () => {
+  test('Macau competitors use documented destinations, not every market with demand', () => {
+    for (const code of ['ITM', 'TNN', 'TSA', 'HND', 'CTS']) {
+      const m = marketBetween('MFM', code)!;
+      expect(m.potential).toBeGreaterThan(0);
+      expect(m.rivalFreq).toBe(0);
+      expect(m.airDemand).toBe(0);
+      expect(rivalsBetween('MFM', code)).toEqual([]);
+      expect(rivalsBetween(code, 'MFM')).toEqual([]);
+    }
+    for (const code of ['TPE', 'KHH', 'RMQ', 'NRT', 'KIX', 'FUK']) {
+      expect(rivalsFrom('MFM', code).length).toBeGreaterThan(0);
+      expect(rivalsFrom(code, 'MFM').length).toBeGreaterThan(0);
+    }
+  });
+
+  test('Itami has domestic competitors but no international competitors', () => {
+    for (const a of AIRPORTS.filter((a) => a.country !== 'JP')) {
+      expect(rivalsBetween('ITM', a.code)).toEqual([]);
+    }
+    expect(rivalsFrom('ITM', 'HND').length).toBeGreaterThan(0);
+  });
+
+  test('an unserved Macau market still supports new player service', () => {
+    const r = addRoundTrip(emptyPlan('MFM'), 'MFM', 'TNN', 'A20N');
+    if ('error' in r) throw new Error(r.error);
+    const route = simulate(r.plan).routes['MFM-TNN'];
+    expect(route.rivals).toEqual([]);
+    expect(route.localPax).toBeGreaterThan(0);
+  });
+
   test('names are unique and every country has a full-service airline', () => {
     const all = airlines();
     expect(new Set(all.map((a) => a.name)).size).toBe(all.length);

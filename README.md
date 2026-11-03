@@ -43,6 +43,8 @@ Other airlines are fictional and generated from the airport data (`src/sim/compe
 
 ## Demand model
 
+Existing competitor service also respects the maintained network rules in `src/data/competitor-network.ts`: Macau uses documented destinations within the game's coverage, and Itami has domestic service only. These rules apply during baseline calibration, so excluded routes have zero competitor flights and baseline air passengers while retaining potential demand for player service. Other routes still use the demand-based approximation; this is not a complete real-world timetable. Sources are recorded beside the network rules.
+
 There is no booking data, so demand is scaled from population and airport size:
 
 1. **Airports** are every airport with scheduled service in Taiwan, Hong Kong, Macau and Japan ([OurAirports](https://ourairports.com/data/)). The longest runway sets the largest aircraft that can land.
