@@ -4,6 +4,7 @@ import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
+import { rivalsAt } from '../sim/competitors';
 import { fitView, projX, projY, toScreen, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
@@ -165,6 +166,25 @@ export default function MapCanvas(props: Props) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(drawLand(pal), 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
+      const rivalFocus = p.selection?.kind === 'airport' ? p.selection.id : null;
+      if (rivalFocus) {
+        for (const r of rivalsAt(rivalFocus)) {
+          const pts = arc(rivalFocus, r.to).map(([la, lo]) => screen(la, lo));
+          const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
+          const freq = r.services.reduce((s, x) => s + x.freq, 0);
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.strokeStyle = top.airline.color;
+          ctx.globalAlpha = 0.45;
+          ctx.lineWidth = Math.min(4, 0.8 + Math.sqrt(freq) / 4);
+          ctx.setLineDash([2, 4]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+      }
 
       // Routes
       const pairs = routePairs(p.plan);

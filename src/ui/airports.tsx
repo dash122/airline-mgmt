@@ -7,6 +7,7 @@ import { MAX_DETOUR, MAX_DETOUR_SHORT } from '../sim/simulate';
 import { HUB_COST_PER_WEEK, HUB_MCT_CUT, hhmm, minConnect, topMarketsFrom, weeklyDepartures, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { Sheet, Stat, tone } from './sheets';
+import { AirportRivals } from './rivals';
 
 const lfClass = (lf: number | null) => (lf === null ? 'idle' : lf >= 0.8 ? 'good' : lf >= 0.6 ? 'warn' : 'bad');
 
@@ -126,7 +127,7 @@ function LinkRow({ hub, l, onOpen, onOpenPair, onSuggest }: {
   );
 }
 
-type AirportTab = 'now' | 'transfer' | 'market';
+type AirportTab = 'now' | 'transfer' | 'market' | 'rivals';
 
 export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onClose }: {
   plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
@@ -145,8 +146,8 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   return (
     <Sheet title={`${a.name} ${a.code}`} onClose={onClose}
       sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}${isHub ? ' · 轉運站' : ''}`}>
-      <div className="seg three" role="tablist">
-        {([['now', '航線'], ['transfer', '轉機'], ['market', '市場']] as [AirportTab, string][]).map(([t, label]) => (
+      <div className="seg four" role="tablist">
+        {([['now', '航線'], ['transfer', '轉機'], ['market', '市場'], ['rivals', '對手']] as [AirportTab, string][]).map(([t, label]) => (
           <button key={t} role="tab" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{label}{t === 'transfer' && transfer ? ` ${count(transfer.pax)}` : ''}</button>
         ))}
       </div>
@@ -211,6 +212,8 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
           {served && links.length === 0 && !transfer && <div className="hint center">這裡還沒有轉機。把進出航班的時間排在 1 到 2.5 小時內，旅客就能轉機。</div>}
         </>
       )}
+
+      {tab === 'rivals' && <AirportRivals code={code} served={(to) => top.some((m) => m.to === to && m.served) || list.some((x) => x.other === to)} onOpen={onOpen} />}
 
       {tab === 'market' && (
         <>

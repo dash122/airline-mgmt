@@ -9,6 +9,7 @@ import {
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
+import { RouteRivals } from './rivals';
 import type { DayRecord } from './clock';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
@@ -169,10 +170,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </div>
       </div>
       <div className="competition">
-        <span>其他航空 {m?.rivalFreq ? `每週 ${m.rivalFreq} 班` : '無直飛'}</span>
         {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
-        <span>航空旅客 每週 {count(m?.airDemand ?? 0)}</span>
+        <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
       </div>
+      <h4>競爭對手（右邊是搭機旅客占比）</h4>
+      <RouteRivals a={a} b={b} result={result} />
       {[[a, b], [b, a]].map(([from, to]) => {
         const dir = flights.filter((f) => f.leg.from === from);
         if (!dir.length) return null;

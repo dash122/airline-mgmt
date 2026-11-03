@@ -33,6 +33,8 @@ export function airUtility(fare: number, distKm: number, freq: number): number {
 export interface AirOffer {
   freq: number;
   fare: number;
+  /** Product quality in NT$ per trip (positive = travellers would pay more for it). */
+  quality?: number;
 }
 
 /**
@@ -43,7 +45,7 @@ export interface AirOffer {
 export function airChoice(offers: AirOffer[], distKm: number): { utility: number; shares: number[] } {
   const total = offers.reduce((s, o) => s + o.freq, 0);
   if (total <= 0) return { utility: -Infinity, shares: offers.map(() => 0) };
-  const w = offers.map((o) => o.freq * Math.exp(-THETA * o.fare));
+  const w = offers.map((o) => o.freq * Math.exp(-THETA * (o.fare - (o.quality ?? 0))));
   const W = w.reduce((s, x) => s + x, 0);
   const timeCost = VALUE_OF_TIME * (AIR_ACCESS_HOURS + blockHours(distKm) + scheduleDelay(total));
   return { utility: -THETA * timeCost + Math.log(W / total), shares: w.map((x) => x / W) };
@@ -56,4 +58,16 @@ export function groundUtility(g: GroundOption): number {
 /** Not travelling: anchored to a reference weekly air service so demand responds to price and service. */
 export function noTravelUtility(refFare: number, distKm: number): number {
   return -THETA * airGeneralizedCost(refFare, distKm, 7) * 1.35;
+}
+
+/** How attractive a departure time is to travellers (local minutes after midnight). */
+export function timeOfDayQuality(localMin: number): number {
+  const h = localMin / 60;
+  if (h < 6) return 0.15;
+  if (h < 7) return 0.8;
+  if (h < 10) return 1.35;
+  if (h < 16) return 0.85;
+  if (h < 20) return 1.3;
+  if (h < 22) return 0.75;
+  return 0.25;
 }
