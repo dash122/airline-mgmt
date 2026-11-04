@@ -6,6 +6,7 @@ import { hasCompetitorRoute } from '../data/competitor-network';
 import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
 import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
+import { classRank, type AircraftClass } from '../data/aircraft';
 import { airUtility, groundUtility, noTravelUtility, type GroundOption } from './choice';
 
 export interface Market {
@@ -25,32 +26,35 @@ export interface Market {
 }
 
 export const MIN_MARKET_KM = 100;
+const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
 const MIN_RIVAL_FREQ = 3;
 
+/** Most travellers one competitor flight carries at the smaller end's biggest aircraft class (seats at about 80% full). */
+const MAX_PAX_BY_CLASS: Record<AircraftClass, number> = { turboprop: 60, regional: 80, narrowbody: 175, widebody: 300 };
+
 /**
- * Travellers per competitor flight. Up to 5,000 a week each way a route is flown with narrowbodies about 80% full
- * (120 travellers); busier routes get bigger aircraft, as airlines do, so frequency grows slower than traffic.
- * Hong Kong–Taipei (about 19,000 a week each way) gets about 180 per flight instead of 120.
+ * Travellers on an average competitor flight. Airlines grow aircraft size as well as frequency on busy routes, so the
+ * gauge rises with demand: about 110 a flight at 1,000 travellers a week, 230 at 20,000 (Hong Kong-Taipei) and the
+ * widebody limit near 70,000 (Singapore-Kuala Lumpur). Long-haul needs a widebody whatever the demand.
  */
-export const rivalLoad = (weeklyAir: number) => Math.min(300, 120 * Math.max(1, Math.pow(weeklyAir / 5000, 0.3)));
+export function rivalPaxPerFlight(weeklyAir: number, distKm: number, maxPax = MAX_PAX_BY_CLASS.widebody): number {
+  const gauge = 110 * Math.pow(Math.max(weeklyAir, 1) / 1000, 0.25);
+  const floor = distKm > 4500 ? 230 : 50;
+  return Math.min(maxPax, Math.max(floor, gauge));
+}
+const maxPaxBetween = (a: Airport, b: Airport) => MAX_PAX_BY_CLASS[classRank(a.maxClass) < classRank(b.maxClass) ? a.maxClass : b.maxClass];
 
 /** Average one-way fare across all cabins and booking classes, NT$. */
 export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6 * distKm) / 10) * 10);
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
 
-/**
- * Land links the coastline data misses: Hong Kong and Macau are joined to the mainland by the high-speed rail and
- * the bridge, and Xiamen and Zhuhai by bridges and tunnels.
- */
-const LAND_LINKS: Record<string, string> = { prd: 'main-0', 'ring-1016': 'main-0', 'isl-ZUH': 'main-0' };
+/** Land links the coastline data misses: Xiamen and Zhuhai are joined to the mainland by bridges and tunnels. */
+const LAND_LINKS: Record<string, string> = { 'ring-1016': 'main-0', 'isl-ZUH': 'main-0' };
 /** The landmass an airport can reach by rail or road. */
 export const landOf = (a: Airport) => LAND_LINKS[a.landmass] ?? a.landmass;
-/**
- * High-speed rail at this end. China's network reaches nearly every city with a big airport, and Hong Kong
- * (West Kowloon) and Macau (via Zhuhai) connect into it.
- */
-export const hasHsr = (a: Airport) => a.hsr || a.country === 'CN' || a.country === 'HK' || a.country === 'MO';
+/** High-speed rail at this end. China's network reaches nearly every city with a big airport. */
+export const hasHsr = (a: Airport) => a.hsr || a.country === 'CN';
 
 export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !landOf(a).startsWith('main-');
 
@@ -69,9 +73,19 @@ function ferryPort(isl: Airport) {
   return ferryCache.get(isl.code)!;
 }
 
+/** Hong Kong and Macau are tied to the mainland China rail network (Express Rail Link, Zhuhai), across a border. */
+const isPrdMainlandLink = (a: Airport, b: Airport) => {
+  const [prd, other] = a.landmass === 'prd' ? [a, b] : [b, a];
+  return prd.landmass === 'prd' && other.landmass !== 'prd' && other.country === 'CN' && other.landmass.startsWith('main-');
+};
+
 function landOption(a: Airport, b: Airport, distKm: number): GroundOption | undefined {
+  if (isPrdMainlandLink(a, b)) {
+    const km = distKm * GROUND.detour, mode = GROUND.hsr;
+    return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
+  }
   if (landOf(a) !== landOf(b)) return undefined;
-  if (a.landmass === 'prd' && b.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
+  if (a.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
   const km = distKm * GROUND.detour;
   const mode = hasHsr(a) && hasHsr(b) ? GROUND.hsr : GROUND.conventional;
   return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
@@ -96,7 +110,14 @@ export function groundOption(a: Airport, b: Airport, distKm: number): GroundOpti
 }
 
 /** Air share and rival frequency for a market of given size, with only other airlines flying. */
-function baseline(potential: number, fare: number, distKm: number, ground?: GroundOption) {
+/**
+ * Airlines stop flying where fast rail or a bridge does the trip in this many hours or less (Tokyo-Nagoya,
+ * Taipei-Kaohsiung, Hong Kong-Guangzhou). Tokyo-Osaka, at about three hours, keeps its flights.
+ */
+export const RAIL_ONLY_HOURS = 2.5;
+
+function baseline(potential: number, fare: number, distKm: number, ground?: GroundOption, maxPax?: number) {
+  if (ground && ground.comfort > 0 && ground.hours <= RAIL_ONLY_HOURS) return { air: 0, freq: 0 };
   const uGround = ground ? Math.exp(groundUtility(ground)) : 0;
   const uNone = Math.exp(noTravelUtility(fare, distKm));
   let freq = 7;
@@ -104,9 +125,9 @@ function baseline(potential: number, fare: number, distKm: number, ground?: Grou
   for (let i = 0; i < 8; i++) {
     const uAir = Math.exp(airUtility(fare, distKm, freq));
     air = (potential * uAir) / (uAir + uGround + uNone);
-    const next = air / rivalLoad(air);
-    if (next < MIN_RIVAL_FREQ) return { air: 0, freq: 0 };
-    freq = next;
+    // Too few travellers for a regular service (a few flights a week on a mid-sized jet).
+    if (air < MIN_RIVAL_FREQ * SEATS_PER_RIVAL_FLIGHT) return { air: 0, freq: 0 };
+    freq = Math.max(MIN_RIVAL_FREQ, air / rivalPaxPerFlight(air, distKm, maxPax));
   }
   return { air, freq: Math.round(freq) };
 }
@@ -139,7 +160,7 @@ function buildMarkets(): Map<string, Market> {
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
     for (const r of calibrated) {
-      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground);
+      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground, maxPaxBetween(AIRPORTS[r.i], AIRPORTS[r.j]));
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
     for (const g of Object.keys(scale).filter(g => g in AIR_TARGETS_M)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
@@ -152,7 +173,7 @@ function buildMarkets(): Map<string, Market> {
     const potential = r.gravity * scale[r.group];
     const fare = refFare(r.distKm);
     const b = hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
-      ? baseline(potential, fare, r.distKm, r.ground)
+      ? baseline(potential, fare, r.distKm, r.ground, maxPaxBetween(AIRPORTS[r.i], AIRPORTS[r.j]))
       : { air: 0, freq: 0 };
     out.set(pairKey(AIRPORTS[r.i].code, AIRPORTS[r.j].code), {
       a: AIRPORTS[r.i].code,
@@ -202,7 +223,7 @@ function buildMarkets(): Map<string, Market> {
     for (const m of retained) {
       if (m.group in AIR_TARGETS_M) continue;
       m.potential *= Math.pow((factors[m.a] ?? 1) * (factors[m.b] ?? 1), 0.35);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground);
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, maxPaxBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b]));
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }
@@ -213,7 +234,7 @@ function buildMarkets(): Map<string, Market> {
     for (const m of retained) {
       if (!(m.group in AIR_TARGETS_M)) continue;
       m.potential *= Math.pow(targetWeekly(m.group) / Math.max(totals[m.group], 1), 0.7);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground);
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, maxPaxBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b]));
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }
