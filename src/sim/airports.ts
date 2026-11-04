@@ -1,11 +1,13 @@
 // Per-airport views of the player's network: spokes, departure boards, connection banks and gaps.
 // Reads the plan (and a simulation result when given). Never loops over all airports, only the player's flights.
+import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
-import { marketBetween, pairKey } from './markets';
+import { marketBetween, marketsAt, pairKey } from './markets';
 import {
-  blockMinutes, DAY, detourOk, HUB_COST_PER_WEEK, localMinutes, minConnect, topMarketsFrom, utcOffsetMin, weeklyDepartures,
-  type Aircraft, type Leg, type NetworkResult, type Plan,
+  blockMinutes, competitionFor, connectionWeight, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
+  topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
+import { airChoice, blockHours } from './choice';
 import { distanceKm } from './geo';
 
 export interface BoardFlight {
@@ -158,7 +160,7 @@ export function connectionGaps(plan: Plan, code: string, limit = 5): ConnectionG
       if (!m || !detourOk(m.distKm, hop1 + hop2)) continue;
       const mct = minConnect(code, a.from, to, plan.hub);
       const waits = departures.filter((d) => d.to === to).map((d) => mod(d.depUtc - a.arrUtc, DAY));
-      const ok = waits.filter((w) => w >= mct && w <= 150);
+      const ok = waits.filter((w) => w >= mct && w <= LONG_LAYOVER_MIN);
       if (ok.length) continue; // already a good connection
       const key = `${a.from}>${to}`;
       const nearest = waits.length ? Math.min(...waits.filter((w) => w >= mct), Infinity) : Infinity;
@@ -175,15 +177,18 @@ export function connectionGaps(plan: Plan, code: string, limit = 5): ConnectionG
 
 export type LinkStatus =
   | 'nonstop' // you already fly it nonstop
-  | 'connected' // travellers already change planes at this airport
-  | 'timing' // both legs flown, but the flights miss each other
+  | 'connected' // travellers change planes here within 3 hours
+  | 'long' // both legs flown, but the best connection is a long layover or a stopover
+  | 'timing' // both legs flown, but the flights do not connect at all
   | 'leg' // one or both legs are not flown yet
   | 'detour'; // going through this airport is too far out of the way
 
 export interface Linkage {
   o: string;
   d: string;
-  demand: number; // weekly air travellers between the two, both directions, all airlines
+  demand: number; // weekly air travellers between the two today, both directions, all airlines
+  /** Weekly travellers (both directions) you could carry through the hub with one well-timed daily connection. */
+  est: number;
   distKm: number;
   nonstopPax: number;
   viaPax: number; // weekly, changing planes at the hub
@@ -191,60 +196,240 @@ export interface Linkage {
   status: LinkStatus;
   /** Legs to open (the other end of each hub spoke that is missing). */
   missing: string[];
-  /** For 'detour': how much longer than flying nonstop the trip through the hub is (0.9 = 90% longer). */
+  /** How much longer than flying nonstop the trip through the hub is (0.9 = 90% longer). */
   detourPct: number;
-  /** For 'timing': a departure from the hub that would connect. */
-  suggest?: { from: string; to: string; local: number; arriveLocal: number; bestWait: number | null };
+  /** Both legs flown: the longest of the two directions' best layovers, in minutes (null = no connection). */
+  wait: number | null;
+  /** A departure from the hub that would make a quick connection. */
+  /** A flight to add that would make a quick connection: by default out of the hub, or into it (`before` = the hub departure it feeds). */
+  suggest?: { from: string; to: string; local: number; arriveLocal: number; bestWait: number | null; before?: number };
   nonstopFlown: boolean;
 }
+
+const km = (a: string, b: string) => {
+  const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
+  return distanceKm(A.lat, A.lon, B.lat, B.lon);
+};
+
+/**
+ * Weekly travellers one way from `o` to `d` that the player would win with `dailyWeight` daily flights
+ * (1 = one nonstop at an average time; a connection counts for less). Mirrors the demand step in simulate().
+ */
+function takeOneWay(plan: Plan, o: string, d: string, dailyWeight: number, fareMult = fareMultOf(plan, pairKey(o, d))): number {
+  const m = marketBetween(o, d);
+  if (!m || dailyWeight <= 0) return 0;
+  const comp = competitionFor(o, d);
+  const air = airChoice([{ freq: 7 * dailyWeight, fare: m.refFare * fareMult }, ...comp.offers], m.distKm, m.refFare);
+  return respondingAirTotal(m, air.utility, comp) * air.shares[0];
+}
+
+/** Seats a week, both directions, on one daily round trip with the usual aircraft for the route (0 if none can fly it). */
+export function dailySeats(a: string, b: string): number {
+  const t = defaultAircraft(a, b);
+  return t ? AIRCRAFT[t].seats * 14 : 0;
+}
+
+/** Weekly travellers (both directions) a daily nonstop between a and b would carry, before seat limits. */
+export const estimateNonstop = (plan: Plan, a: string, b: string) => takeOneWay(plan, a, b, 1) + takeOneWay(plan, b, a, 1);
+
+/** Weekly travellers (both directions) between o and d through `hub`, with one well-timed daily connection each way. */
+export function estimateVia(plan: Plan, o: string, hub: string, d: string): number {
+  const m = marketBetween(o, d);
+  if (!m || AIRPORT_BY_CODE[o].metro === AIRPORT_BY_CODE[d].metro) return 0;
+  const l1 = km(o, hub), l2 = km(hub, d);
+  if (!detourOk(m.distKm, l1 + l2)) return 0;
+  const blockH = blockHours(l1) + blockHours(l2);
+  const w1 = connectionWeight(blockH, minConnect(hub, o, d, plan.hub) + 30, hub, m.distKm);
+  const mult = (fareMultOf(plan, pairKey(o, hub)) * l1 + fareMultOf(plan, pairKey(hub, d)) * l2) / (l1 + l2);
+  return takeOneWay(plan, o, d, w1, mult) + takeOneWay(plan, d, o, w1, mult);
+}
+
+/** Shortest workable layover at `hub` from a flight arriving from `o` to one leaving for `d`. */
+function bestWait(flights: BoardFlight[], plan: Plan, o: string, hub: string, d: string) {
+  const mct = minConnect(hub, o, d, plan.hub);
+  let best: { wait: number; arr: BoardFlight } | null = null;
+  let anyArr: BoardFlight | null = null;
+  for (const a of flights) {
+    if (a.from !== o || a.to !== hub) continue;
+    anyArr ??= a;
+    for (const f of flights) {
+      if (f.from !== hub || f.to !== d) continue;
+      const through = f.ac === a.ac && f.index === a.index + 1;
+      const wait = mod(f.depUtc - a.arrUtc, DAY);
+      if (wait < (through ? 0 : mct)) continue;
+      if (!best || wait < best.wait) best = { wait: through ? 0 : wait, arr: a };
+    }
+  }
+  return { best, arr: best?.arr ?? anyArr, mct };
+}
+
+interface PairContext {
+  plan: Plan;
+  result: NetworkResult | null;
+  hub: string;
+  flights: BoardFlight[];
+  flownSet: Set<string>;
+  flows: TransferFlow[];
+}
+
+function pairContext(plan: Plan, result: NetworkResult | null, hub: string): PairContext {
+  const flights = allFlights(plan);
+  const flownSet = new Set<string>();
+  for (const f of flights) { if (f.from === hub) flownSet.add(f.to); if (f.to === hub) flownSet.add(f.from); }
+  return { plan, result, hub, flights, flownSet, flows: result?.transfers[hub]?.flows ?? [] };
+}
+
+/** How the market o-d stands for travel through the hub. Null when it is not a market at all. */
+function classify(c: PairContext, o: string, d: string): Linkage | null {
+  const { plan, result, hub } = c;
+  if (o === d || o === hub || d === hub || AIRPORT_BY_CODE[o].metro === AIRPORT_BY_CODE[d].metro) return null;
+  const m = marketBetween(o, d);
+  if (!m) return null;
+  const demand = m.airDemand * 2;
+  const legs = km(o, hub) + km(hub, d);
+  const nonstopFlown = c.flights.some((f) => pairKey(f.from, f.to) === pairKey(o, d));
+  const nonstopPax = result?.routes[pairKey(o, d)]?.localPax ?? 0;
+  const viaPax = c.flows.filter((f) => (f.from === o && f.to === d) || (f.from === d && f.to === o)).reduce((s, f) => s + f.pax, 0);
+  const missing = [o, d].filter((x) => !c.flownSet.has(x));
+  const ok = detourOk(m.distKm, legs);
+  const est = ok ? estimateVia(plan, o, hub, d) : 0;
+  let status: LinkStatus;
+  let wait: number | null = null;
+  let suggest: Linkage['suggest'];
+  if (nonstopFlown && nonstopPax > 0) status = 'nonstop';
+  else if (!ok) status = 'detour';
+  else if (missing.length) status = 'leg';
+  else {
+    // Both legs flown: look at both directions and report the worse one, which is the one to fix.
+    // A direction with no flight on one of its legs is skipped (one-way flying), unless neither direction has both.
+    const dirs = [{ ...bestWait(c.flights, plan, o, hub, d), from: o, to: d }, { ...bestWait(c.flights, plan, d, hub, o), from: d, to: o }];
+    const flownBoth = dirs.filter((x) => x.arr && c.flights.some((f) => f.from === hub && f.to === x.to));
+    const worst = (flownBoth.length ? flownBoth : dirs).reduce((p, q) => ((q.best?.wait ?? Infinity) > (p.best?.wait ?? Infinity) ? q : p));
+    wait = worst.best ? worst.best.wait : null;
+    status = wait === null ? 'timing' : layoverKind(wait) === 'quick' ? 'connected' : 'long';
+    if (status !== 'connected' && worst.arr) {
+      const arriveLocal = localMinutes(hub, worst.arr.arrUtc);
+      suggest = { from: hub, to: worst.to, local: mod(Math.ceil((arriveLocal + worst.mct + 15) / 5) * 5, DAY), arriveLocal, bestWait: wait };
+      // A connecting departure in the middle of the night sells badly: then suggest an earlier flight in instead.
+      const night = (t: number) => t < 6 * 60 || t >= 22 * 60;
+      const out = c.flights.find((f) => f.from === hub && f.to === worst.to && !night(localMinutes(hub, f.depUtc)));
+      if (night(suggest.local) && out) {
+        const block = blockMinutes(worst.from, hub, worst.arr.ac.type);
+        const depUtc = Math.floor((out.depUtc - worst.mct - 15 - block) / 5) * 5;
+        const local = localMinutes(worst.from, depUtc);
+        if (!night(local)) suggest = { from: worst.from, to: hub, local, arriveLocal: localMinutes(hub, depUtc + block), bestWait: wait, before: localMinutes(hub, out.depUtc) };
+      }
+    }
+  }
+  return {
+    o, d, demand, est, distKm: m.distKm, nonstopPax, viaPax, lost: Math.max(0, Math.max(demand, est) - nonstopPax - viaPax), status, missing,
+    detourPct: legs / m.distKm - 1, wait, suggest, nonstopFlown,
+  };
+}
+
+const LINK_RANK: Record<LinkStatus, number> = { timing: 0, long: 1, leg: 2, detour: 3, connected: 4, nonstop: 5 };
 
 /**
  * City pairs a traveller could connect between through `hub`: the airports you fly there plus the hub's biggest
  * unserved markets. Shows how much of each market you carry (nonstop, via the hub), and what is missing.
  */
 export function linkages(plan: Plan, result: NetworkResult | null, hub: string, limit = 12): Linkage[] {
-  const flown = spokes(plan, result, hub);
-  const flownSet = new Set(flown.map((s) => s.other));
-  const pool = new Set<string>(flownSet);
+  const c = pairContext(plan, result, hub);
+  const pool = new Set<string>(c.flownSet);
   for (const m of topMarketsFrom(hub, plan, 12)) pool.add(m.to);
   const cands = [...pool];
-  const gaps = connectionGaps(plan, hub, 200);
-  const flows = result?.transfers[hub]?.flows ?? [];
-  const H = AIRPORT_BY_CODE[hub];
   const out: Linkage[] = [];
   for (let i = 0; i < cands.length; i++) {
     for (let j = i + 1; j < cands.length; j++) {
-      const o = cands[i], d = cands[j];
-      if (AIRPORT_BY_CODE[o].metro === AIRPORT_BY_CODE[d].metro) continue;
-      const m = marketBetween(o, d);
-      if (!m || m.airDemand < 10) continue;
-      // The pair needs at least one leg you already fly, or be reachable by opening at most two legs.
-      const demand = m.airDemand * 2;
-      const legs = distanceKm(AIRPORT_BY_CODE[o].lat, AIRPORT_BY_CODE[o].lon, H.lat, H.lon) + distanceKm(H.lat, H.lon, AIRPORT_BY_CODE[d].lat, AIRPORT_BY_CODE[d].lon);
-      const nonstop = result?.routes[pairKey(o, d)];
-      const nonstopFlown = plan.fleet.some((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === pairKey(o, d)));
-      const nonstopPax = nonstop?.localPax ?? 0;
-      const viaPax = flows.filter((f) => (f.from === o && f.to === d) || (f.from === d && f.to === o)).reduce((s, f) => s + f.pax, 0);
-      const missing = [o, d].filter((c) => !flownSet.has(c));
-      if (missing.length === 2) continue; // opening two legs at once is too big a step to suggest
-      const ok = detourOk(m.distKm, legs);
-      const gap = gaps.filter((g) => (g.from === o && g.to === d) || (g.from === d && g.to === o)).sort((x, y) => (x.bestWait ?? Infinity) - (y.bestWait ?? Infinity))[0];
-      let status: LinkStatus;
-      if (nonstopFlown && nonstopPax > 0) status = 'nonstop';
-      else if (!ok) { if (missing.length) continue; status = 'detour'; } // only explain detours when both legs are already flown
-      else if (missing.length === 0 && gap) status = 'timing'; // flown both ways, but no short connection (long layovers may still carry a few)
-      else if (viaPax > 0.5) status = 'connected';
-      else if (missing.length === 0) status = 'timing';
-      else status = 'leg';
-      out.push({
-        o, d, demand, distKm: m.distKm, nonstopPax, viaPax, lost: Math.max(0, demand - nonstopPax - viaPax), status, missing, detourPct: legs / m.distKm - 1, nonstopFlown,
-        suggest: status === 'timing' && gap ? { from: hub, to: gap.to, local: gap.suggest, arriveLocal: gap.arriveLocal, bestWait: gap.bestWait } : undefined,
-      });
+      const l = classify(c, cands[i], cands[j]);
+      if (!l || Math.max(l.demand, l.est) < 10) continue;
+      if (l.missing.length === 2) continue; // opening two legs at once is too big a step to suggest
+      if (l.status === 'detour' && l.missing.length) continue; // only explain detours when both legs are already flown
+      out.push(l);
     }
   }
-  const rank: Record<LinkStatus, number> = { timing: 0, leg: 1, detour: 2, connected: 3, nonstop: 4 };
-  return out.sort((x, y) => rank[x.status] - rank[y.status] || y.lost - x.lost).slice(0, limit);
+  return out.sort((x, y) => LINK_RANK[x.status] - LINK_RANK[y.status] || y.lost - x.lost).slice(0, limit);
 }
+
+export interface SpokeIdea {
+  to: string;
+  distKm: number;
+  /** Weekly travellers (both directions) between the hub and `to` on a daily nonstop. */
+  local: number;
+  /** Weekly travellers (both directions) who could connect at the hub to or from your other routes. */
+  via: number;
+  markets: { d: string; est: number }[];
+  /** Seats a week, both directions, on one daily round trip with the usual aircraft for the route. */
+  seats: number;
+}
+
+/**
+ * New routes from the hub ranked by what they would bring: their own travellers plus the travellers who
+ * could change planes at the hub onto the routes you already fly.
+ */
+export function hubOpportunities(plan: Plan, hub: string, limit = 6): SpokeIdea[] {
+  const c = pairContext(plan, null, hub);
+  const flown = [...c.flownSet];
+  const pool = new Set<string>();
+  for (const m of topMarketsFrom(hub, plan, 25)) if (!m.served) pool.add(m.to);
+  for (const y of flown) {
+    const top = [...marketsAt(y)].sort((p, q) => q.airDemand - p.airDemand).slice(0, 10);
+    for (const m of top) pool.add(m.a === y ? m.b : m.a);
+  }
+  const ideas: SpokeIdea[] = [];
+  for (const x of pool) {
+    if (x === hub || c.flownSet.has(x) || AIRPORT_BY_CODE[x].metro === AIRPORT_BY_CODE[hub].metro) continue;
+    if (!defaultAircraft(hub, x)) continue;
+    const markets: SpokeIdea['markets'] = [];
+    for (const y of flown) {
+      if (c.flights.some((f) => pairKey(f.from, f.to) === pairKey(x, y))) continue;
+      const est = estimateVia(plan, x, hub, y);
+      if (est >= 1) markets.push({ d: y, est });
+    }
+    markets.sort((p, q) => q.est - p.est);
+    ideas.push({ to: x, distKm: km(hub, x), local: estimateNonstop(plan, hub, x), via: markets.reduce((s, m) => s + m.est, 0), markets, seats: dailySeats(hub, x) });
+  }
+  return ideas.sort((p, q) => q.local + q.via - (p.local + p.via)).slice(0, limit);
+}
+
+export interface HubView {
+  hub: string;
+  code: string;
+  legFlown: boolean;
+  /** Weekly travellers (both directions) on a daily nonstop between this airport and the hub. */
+  local: number;
+  /** Weekly travellers who could connect at the hub once this airport is linked to it, on routes you already fly. */
+  unlock: number;
+  unlockCount: number;
+  /** Seats a week, both directions, on one daily round trip between this airport and the hub. */
+  seats: number;
+  rows: Linkage[];
+}
+
+/**
+ * Another airport seen from the hub: where its travellers could go by changing planes at the hub,
+ * what is already carried, and which legs are missing.
+ */
+export function viewFromHub(plan: Plan, result: NetworkResult | null, hub: string, code: string, limit = 10): HubView {
+  const c = pairContext(plan, result, hub);
+  const pool = new Set<string>(c.flownSet);
+  for (const m of [...marketsAt(code)].sort((p, q) => q.airDemand - p.airDemand).slice(0, 20)) pool.add(m.a === code ? m.b : m.a);
+  const rows: Linkage[] = [];
+  for (const d of pool) {
+    const l = code === hub ? null : classify(c, code, d);
+    if (!l || l.status === 'detour' || Math.max(l.est, l.viaPax) < 1) continue;
+    rows.push(l);
+  }
+  const unlocking = rows.filter((l) => l.missing.length === 1 && l.missing[0] === code && l.status === 'leg');
+  rows.sort((x, y) => Number(x.status === 'nonstop') - Number(y.status === 'nonstop') || x.missing.length - y.missing.length || y.est - x.est);
+  return {
+    hub, code, legFlown: c.flownSet.has(code), local: code === hub ? 0 : estimateNonstop(plan, code, hub),
+    unlock: unlocking.reduce((s, l) => s + l.est, 0), unlockCount: unlocking.length, seats: code === hub ? 0 : dailySeats(code, hub), rows: rows.slice(0, limit),
+  };
+}
+
+/** The airport the player builds connections around: the transfer hub when set, otherwise the base. */
+export const hubOf = (plan: Plan) => plan.hub ?? plan.base;
 
 export interface StationRow {
   code: string;

@@ -462,3 +462,25 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .demand-bar .legend i.spill { background: var(--warn); }
 .hint.warn { color: var(--warn); }
 .fare-tip { display: block; width: 100%; text-align: left; margin-top: 6px; font-size: 12px; padding: 8px 10px; border-radius: 10px; border: 1px dashed var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+/* Transit potential seen from the hub */
+.ideas { list-style: none; margin: 0; padding: 0; }
+.ideas li { display: flex; flex-direction: column; gap: 5px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.ideas .idea-top { display: flex; align-items: center; gap: 8px; }
+.ideas .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ideas small { color: var(--muted); font-size: 11px; }
+.ideas button { background: var(--accent); color: var(--accent-text); border-radius: 10px; padding: 6px 12px; font-size: 13px; }
+.ideas .split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); }
+.ideas .split i { display: block; height: 100%; }
+.hubview { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.hubview > small { color: var(--text); font-size: 12px; }
+.hubview button { align-self: flex-start; }
+.hv-path { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.hv-path b { white-space: nowrap; }
+.hv-path i { flex: 1; height: 0; border-top: 3px solid var(--good); min-width: 16px; }
+.hv-path i.off { border-top-style: dashed; border-color: var(--sel); }
+.hv-hub { display: flex; flex-direction: column; align-items: center; background: var(--accent); color: var(--accent-text); border-radius: 10px; padding: 3px 9px; cursor: pointer; }
+.hv-hub small { font-size: 10px; font-weight: 400; opacity: 0.85; }
+.hubteaser { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: transparent; color: var(--text); }
+.hubteaser .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hubteaser small { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.hubteaser .chev { font-size: 20px; color: var(--muted); }

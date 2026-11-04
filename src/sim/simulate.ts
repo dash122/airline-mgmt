@@ -132,6 +132,7 @@ interface Itinerary {
   weight: number; // relative attractiveness (time of day, connection penalty)
   fareShare: number; // of the nonstop fare that this itinerary's travellers pay
   fareMult: number; // the player's fare setting: the route's own, or for a connection the distance-weighted mix of its legs
+  wait?: number; // layover minutes, for connections
 }
 
 export interface RouteResult {
@@ -176,13 +177,28 @@ export interface AircraftResult {
   ownershipCost: number;
 }
 
+export interface TransferFlow {
+  from: string;
+  to: string;
+  pax: number; // weekly
+  long: number; // of which with a 3 to 8 hour layover
+  stopover: number; // of which staying 8 hours or more
+}
+
+export interface TransferInfo {
+  pax: number;
+  long: number;
+  stopover: number;
+  flows: TransferFlow[];
+}
+
 export interface NetworkResult {
   routes: Record<string, RouteResult>;
   aircraft: Record<string, AircraftResult>;
   pax: number; // weekly trips (a connecting trip counts once)
   connectingPax: number;
   /** Weekly connecting travellers per transfer airport, with their origin→destination flows. */
-  transfers: Record<string, { pax: number; flows: { from: string; to: string; pax: number }[] }>;
+  transfers: Record<string, TransferInfo>;
   hubCost: number;
   seats: number;
   revenue: number;
@@ -210,18 +226,61 @@ const CONNECTION_PENALTY_H = 1;
 const THROUGH_PENALTY_H = 0.3;
 /** One-stop travellers pay this share of the nonstop fare for the same trip, with a layover of up to LONG_LAYOVER_MIN. */
 export const CONNECT_FARE_SHARE = 0.85;
+/** Up to here a layover is an ordinary connection. */
 export const LONG_LAYOVER_MIN = 180;
-/** Each extra hour of layover past LONG_LAYOVER_MIN takes this much off the fare share, down to the floor. */
-export const LAYOVER_DISCOUNT_PER_HOUR = 0.04;
-export const MIN_CONNECT_FARE_SHARE = 0.55;
+/** From here travellers leave the airport and see the city: the trip becomes a stopover. */
+export const STOPOVER_MIN = 480;
+/** Each extra hour of a long layover (past LONG_LAYOVER_MIN, before a stopover) takes this much off the fare share. */
+export const LAYOVER_DISCOUNT_PER_HOUR = 0.03;
+export const MIN_CONNECT_FARE_SHARE = 0.7;
+/** Stopover travellers pick the trip partly for the extra city, so they pay close to a normal connection. */
+export const STOPOVER_FARE_SHARE = 0.8;
+/** A long layover never feels worse than this many hours, and a stopover feels like this less the city's appeal. */
+export const MAX_LAYOVER_COST_H = 5.5;
+
+export type LayoverKind = 'quick' | 'long' | 'stopover';
+export const layoverKind = (waitMin: number): LayoverKind =>
+  waitMin <= LONG_LAYOVER_MIN ? 'quick' : waitMin < STOPOVER_MIN ? 'long' : 'stopover';
+
+/** How many hours of the trip a stopover at this airport is worth to travellers: big, popular cities are worth more. */
+export function stopoverAppealHours(code: string): number {
+  const a = AIRPORT_BY_CODE[code];
+  if (!a) return 0;
+  const big = a.catchment >= 5e6 ? 1.5 : a.catchment >= 1e6 ? 1.1 : 0.7; // a city's size, not its airport's traffic
+  return big * Math.min(2, Math.max(0.5, a.tourism));
+}
 
 /**
- * Any layover is allowed. Long ones are worth less to travellers: they only take them for a bigger
- * discount, and the time penalty in the itinerary weight already cuts the share of travellers who accept them.
+ * Hours of waiting a traveller feels at a layover of `waitMin` at `at`. The first 3 hours count in full, later
+ * hours count half (people plan around long waits), up to MAX_LAYOVER_COST_H. From STOPOVER_MIN the traveller
+ * leaves the airport, so the wait stops growing and the city's appeal makes up part of it.
+ */
+export function layoverCostHours(waitMin: number, at: string): number {
+  const h = waitMin / 60;
+  if (waitMin <= LONG_LAYOVER_MIN) return h;
+  if (waitMin < STOPOVER_MIN) return Math.min(MAX_LAYOVER_COST_H, LONG_LAYOVER_MIN / 60 + 0.5 * (h - LONG_LAYOVER_MIN / 60));
+  return Math.max(2, MAX_LAYOVER_COST_H - stopoverAppealHours(at));
+}
+
+/**
+ * Any layover is allowed. Up to 3 hours travellers pay 85% of the nonstop fare; long layovers only sell at a
+ * discount; stopovers sell close to a normal connection, because travellers pick them for the extra city.
  */
 export function connectFareShare(layoverMin: number): number {
+  const kind = layoverKind(layoverMin);
+  if (kind === 'stopover') return STOPOVER_FARE_SHARE;
   const extraH = Math.max(0, layoverMin - LONG_LAYOVER_MIN) / 60;
   return Math.max(MIN_CONNECT_FARE_SHARE, CONNECT_FARE_SHARE - LAYOVER_DISCOUNT_PER_HOUR * extraH);
+}
+
+/**
+ * Relative attractiveness of a one-stop trip compared with a nonstop at the same time of day (1 = as good).
+ * `blockH` is the hours in the air on both flights together.
+ */
+export function connectionWeight(blockH: number, waitMin: number, via: string, directKm: number, through = false): number {
+  const felt = blockH + (through ? waitMin / 60 : layoverCostHours(waitMin, via));
+  const direct = directKm / 820 + 0.5;
+  return Math.exp(-THETA * VALUE_OF_TIME * (felt - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
 }
 /**
  * A one-stop trip may be at most this much longer than the direct distance (3x under 800 km). Detours below this
@@ -360,13 +419,11 @@ export function simulate(plan: Plan): NetworkResult {
       if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub))) continue;
       const m = marketBetween(f1.from, f2.to);
       if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) continue;
-      // Extra time versus flying nonstop, valued in the same units as fares.
-      const total = (f1.arr - f1.dep + wait + (f2.arr - f2.dep)) / 60;
-      const direct = m.distKm / 820 + 0.5;
-      const penalty = Math.exp(-THETA * VALUE_OF_TIME * (total - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
+      // Extra time versus flying nonstop, valued in the same units as fares. Long waits and stopovers count less than in full.
+      const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
       // Connecting fares follow the fares the player sets on the legs, weighted by distance.
       const mult = (mult1 * f1.distKm + fareMultOf(plan, pairKey(f2.from, f2.to)) * f2.distKm) / (f1.distKm + f2.distKm);
-      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult });
+      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait });
     }
   }
 
@@ -414,7 +471,7 @@ export function simulate(plan: Plan): NetworkResult {
   const flightRevenue = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
   let tripsDaily = 0, connectingDaily = 0, revenueDaily = 0;
-  const transferFlows = new Map<string, number>(); // `${via}|${o}|${d}`
+  const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
@@ -426,7 +483,11 @@ export function simulate(plan: Plan): NetworkResult {
       if (it.flights.length > 1) {
         connectingDaily += n;
         const tk = `${it.flights[0].to}|${it.flights[0].from}|${it.flights[1].to}`;
-        transferFlows.set(tk, (transferFlows.get(tk) ?? 0) + n * 7);
+        const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
+        tf.pax += n * 7;
+        const kind = layoverKind(it.wait ?? 0);
+        if (kind !== 'quick') tf[kind] += n * 7;
+        transferFlows.set(tk, tf);
       }
       revenueDaily += n * fare;
       const dist = it.flights.reduce((s, f) => s + f.distKm, 0);
@@ -513,11 +574,13 @@ export function simulate(plan: Plan): NetworkResult {
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const cost = flyingCost + ownershipCost + hubCost;
   const transfers: NetworkResult['transfers'] = {};
-  for (const [k, pax] of transferFlows) {
+  for (const [k, tf] of transferFlows) {
     const [via, from, to] = k.split('|');
-    const t = (transfers[via] ??= { pax: 0, flows: [] });
-    t.pax += pax;
-    t.flows.push({ from, to, pax });
+    const t = (transfers[via] ??= { pax: 0, long: 0, stopover: 0, flows: [] });
+    t.pax += tf.pax;
+    t.long += tf.long;
+    t.stopover += tf.stopover;
+    t.flows.push({ from, to, ...tf });
   }
   for (const t of Object.values(transfers)) t.flows.sort((x, y) => y.pax - x.pax);
   return {
