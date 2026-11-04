@@ -75,6 +75,9 @@ export function MarketShare({ a, b, result }: { a: string; b: string; result?: R
           </li>
         )}
       </ul>
+      {result && result.pax - result.localPax >= 1 && (
+        <div className="hint">另有每週 {count(result.pax - result.localPax)} 名轉機旅客搭你的航班，他們屬於別的市場，不算在這裡的市占。客滿時，本地和轉機旅客按比例分到座位。</div>
+      )}
       <div className="hint">市占看班次多寡、起飛時段、票價和服務品質。對手的班表和票價固定，不會因為你而改變。</div>
     </div>
   );

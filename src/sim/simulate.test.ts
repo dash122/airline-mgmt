@@ -186,7 +186,7 @@ describe('transfers', () => {
     expect(r.transfers.TPE.pax).toBeCloseTo(r.connectingPax);
     expect(r.transfers.TPE.flows[0]).toMatchObject({ from: 'HKG', to: 'NRT' });
   });
-  test('connectors keep their seat before local travellers on a full second flight', () => {
+  test('a full flight never carries more than its seats', () => {
     const full: Plan = { ...base, fleet: [hkgTpe(), ac('b', 'ATR72', [{ from: 'TPE', to: 'KHH', h: 11 }]), ac('c', 'B77W', [{ from: 'KHH', to: 'OKA', h: 14 }])] };
     const r = simulate(full);
     for (const x of Object.values(r.routes)) expect(x.pax).toBeLessThanOrEqual(x.seats + 1e-6);
