@@ -58,3 +58,7 @@ All calibration targets are approximate and should be replaced with sourced stat
 Data: OurAirports (public domain), GeoNames (CC BY 4.0), Natural Earth (public domain).
 
 Global markets without a calibration target inherit the JP–TW gravity scale. Local clocks use fixed UTC offsets from [OpenFlights](https://openflights.org/data.php) (ODbL/DbCL), with longitude estimates where unavailable; seasonal DST is not simulated. Run `npm run build:map` before `npm run build:data` when regenerating global geography.
+
+## Real-world reference data
+
+`src/data/airport-reference.json` holds, for every airport, annual passengers (Wikidata, 2023-2024 or 85% of the best of 2016-2019) and the people living within 40 km in the same country (GeoNames towns, at least the city served in Wikidata). `src/data/airport-traffic.ts` merges it with a hand-kept table of ACI 2024 figures for the busiest airports, which wins where both exist. Outside Taiwan, Hong Kong, Macau and Japan, an airport's catchment is its metro's population shared by passenger traffic, its size tier comes from passengers (35M hub, 12M major, 4M large, 1.2M medium), and the demand model is fitted so each airport carries about its real traffic. Regenerate with `npm run build:reference` (downloads are cached in `data-raw/`).
