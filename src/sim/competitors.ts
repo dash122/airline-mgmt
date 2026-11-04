@@ -4,7 +4,7 @@
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { timeOfDayQuality } from './choice';
-import { marketBetween, marketsAt, pairKey, type Market } from './markets';
+import { marketBetween, marketsAt, pairKey, rivalPaxPerFlight, type Market } from './markets';
 
 export type AirlineKind = 'full' | 'low' | 'regional';
 
@@ -294,7 +294,8 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
     const list: RivalService[] = [];
     for (const { al, freq } of alloc) {
       const n = Math.max(1, Math.round(freq));
-      const seatsNeeded = (m.airDemand * (freq / m.rivalFreq)) / n / AVERAGE_LOAD;
+      // Every airline in the market flies about the market's typical aircraft size.
+      const seatsNeeded = rivalPaxPerFlight(m.airDemand, m.distKm) / AVERAGE_LOAD;
       const type = pickType(al, A, B, m.distKm, seatsNeeded) ?? 'A20N';
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
         const times = departureTimes(`${al.id}${from}${to}`, n);

@@ -47,15 +47,17 @@ describe('route market share', () => {
   });
 
   test('a full long-haul flight fed by many routes still carries local travellers', () => {
+    // Hong Kong-Frankfurt: one daily widebody against two rival airlines, with connections from eight routes.
     let p = emptyPlan('HKG');
-    const r0 = addRoundTrip(p, 'HKG', 'LHR', 'B789');
+    const r0 = addRoundTrip(p, 'HKG', 'FRA', 'B789');
     if ('error' in r0) throw new Error(r0.error);
     p = r0.plan;
-    for (const x of ['TPE', 'NRT', 'ICN', 'MNL', 'BKK', 'SIN', 'PVG', 'KIX']) p = trips(p, 'HKG', x, 2);
-    const r = simulate(p).routes['HKG-LHR'];
-    expect(r.pax).toBeGreaterThan(r.seats * 0.99);
+    for (const x of ['TPE', 'NRT', 'ICN', 'MNL', 'BKK', 'SIN', 'PVG', 'KIX']) p = trips(p, 'HKG', x, 4);
+    const r = simulate(p).routes['FRA-HKG'];
+    expect(r.rivals.length).toBeGreaterThan(0);
+    expect(r.spill).toBeGreaterThan(0);
     expect(r.pax - r.localPax).toBeGreaterThan(0);
-    // Seats go to local and connecting travellers alike, so the local share isn't squeezed to zero.
-    expect(r.marketShare).toBeGreaterThan(0.1);
+    // Seats go to local and connecting travellers alike, so local travellers aren't squeezed out.
+    expect(r.localPax / r.pax).toBeGreaterThan(0.1);
   });
 });
