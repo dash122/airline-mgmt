@@ -1,24 +1,21 @@
 // Airports are generated from open data by scripts/build-data.mjs (OurAirports, GeoNames, Natural Earth).
 import type { AircraftClass } from './aircraft';
 import data from './airports.json';
+import { ANNUAL_TRAFFIC_M, tierFromTraffic } from './airport-traffic';
+import referenceData from './airport-reference.json';
 
-/** ISO 3166-1 alpha-2 country code. */
 export type Country = string;
-/** East Asia, Southeast Asia, South and Central Asia, Middle East, Europe, Africa, North America, Latin America, Oceania. */
-export type WorldRegion = 'EA' | 'SEA' | 'SAS' | 'ME' | 'EU' | 'AF' | 'NA' | 'LAT' | 'OC';
 export type AirportSize = 'hub' | 'major' | 'large' | 'medium' | 'small';
 
 export interface Airport {
   code: string;
   name: string; // Traditional Chinese
   country: Country;
-  world: WorldRegion;
+  utcOffset: number; // fixed game UTC offset in minutes (no seasonal DST)
   region: string; // ISO 3166-2
   metro: string; // airports in one metro never form a market with each other
   lat: number;
   lon: number;
-  utcOffset: number; // minutes east of UTC, standard time (no daylight saving)
-  island: boolean; // small landmass: ferry-reachable if near the mainland, otherwise flights are the only way
   size: AirportSize;
   runwayM: number;
   maxClass: AircraftClass;
@@ -35,9 +32,34 @@ export interface Airport {
  */
 export const SLOT_SCALE = 10;
 
-export const AIRPORTS = (data as Airport[]).map((a) => ({ ...a, slotCap: a.slotCap * SLOT_SCALE }));
+const CURATED_PLACES = ['JP', 'TW', 'HK', 'MO'];
+const reference = referenceData as Record<string, { pax?: number; pop?: number }>;
+
+/**
+ * Elsewhere in the world, people near an airport come from real data (GeoNames towns within 40 km, at least the city
+ * served in Wikidata), shared between the airports of one metro in proportion to their passenger traffic.
+ */
+const metroTraffic = new Map<string, number>();
+const metroKey = (a: Airport) => `${a.country}|${a.metro}`;
+for (const a of data as Airport[]) metroTraffic.set(metroKey(a), (metroTraffic.get(metroKey(a)) ?? 0) + (ANNUAL_TRAFFIC_M[a.code] ?? 0.3));
+
+export const AIRPORTS: Airport[] = (data as Airport[]).map((a) => {
+  const traffic = ANNUAL_TRAFFIC_M[a.code];
+  const curated = CURATED_PLACES.includes(a.country);
+  const size = traffic ? (curated ? (traffic >= 35 ? 'hub' : 'major') : tierFromTraffic(traffic)) : curated ? a.size : 'small';
+  const pop = reference[a.code]?.pop;
+  const catchment = !curated && pop ? Math.round(pop * ((traffic ?? 0.3) / (metroTraffic.get(metroKey(a)) ?? 1))) : a.catchment;
+  return { ...a, size, catchment, slotCap: Math.max(a.slotCap, size === 'hub' ? 140 : size === 'major' ? 84 : 0) * SLOT_SCALE };
+});
+
+/** Radius in screen pixels; circle area grows with historical passenger traffic. */
+export function airportMarkerRadius(a: Airport): number {
+  const traffic = ANNUAL_TRAFFIC_M[a.code];
+  return traffic ? 3 + Math.sqrt(traffic) * 0.75
+    : { hub: 7, major: 5, large: 4.5, medium: 3.5, small: 3 }[a.size];
+}
 
 export const AIRPORT_BY_CODE: Record<string, Airport> = Object.fromEntries(AIRPORTS.map((a) => [a.code, a]));
 
 /** Bases the player can start from. */
-export const BASES = ['TPE', 'HKG', 'HND', 'KIX', 'ICN', 'SIN', 'BKK', 'DXB', 'LHR', 'FRA', 'JFK', 'LAX', 'SYD', 'GRU'];
+export const BASES = ['TPE', 'KHH', 'HKG', 'KIX', 'FUK', 'HND', 'SIN', 'DXB', 'LHR', 'CDG', 'JFK', 'LAX', 'SYD', 'JNB', 'GRU'];

@@ -5,7 +5,7 @@ import { feature, mesh } from 'topojson-client';
 
 const require = createRequire(import.meta.url);
 const world = JSON.parse(readFileSync(require.resolve('world-atlas/countries-50m.json'), 'utf8'));
-const BBOX = [-180, -60, 180, 85]; // whole world except Antarctica
+const BBOX = [-180, -85, 180, 85]; // global lon/lat window
 
 const r = (n) => Math.round(n * 100) / 100;
 const inBox = (ring) => ring.some(([x, y]) => x >= BBOX[0] && x <= BBOX[2] && y >= BBOX[1] && y <= BBOX[3]);
@@ -16,8 +16,6 @@ const clean = (ring) => {
     const last = out[out.length - 1];
     if (!last || last[0] !== p[0] || last[1] !== p[1]) out.push(p);
   }
-  // A ring crossing the antimeridian jumps from +180 to -180; make it continuous (longitudes past 180) and let the map repeat the world.
-  if (out.some((p, i) => i && Math.abs(p[0] - out[i - 1][0]) > 180)) for (const p of out) if (p[0] < 0) p[0] = r(p[0] + 360);
   return out;
 };
 

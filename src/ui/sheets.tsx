@@ -173,26 +173,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
         <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
       </div>
-      <h4>競爭對手（右邊是搭機旅客占比）</h4>
-      <RouteRivals a={a} b={b} result={result} />
-      {[[a, b], [b, a]].map(([from, to]) => {
-        const dir = flights.filter((f) => f.leg.from === from);
-        if (!dir.length) return null;
-        return (
-          <div key={from}>
-            <h4>{AIRPORT_BY_CODE[from].name} → {AIRPORT_BY_CODE[to].name}（當地時間）</h4>
-            <ul className="timetable">
-              {dir.map(({ ac, index, leg }) => (
-                <li key={`${ac.id}-${index}`} onClick={() => onEditFlight(ac.id, index)} className="tap">
-                  <span className="t">{at(leg.from, leg.dep)}</span>
-                  <span className="name">抵達 {arrivalAt(leg.from, leg.dep, leg.to, arrival(ac, index))}<small>{ac.reg} · {AIRCRAFT[ac.type].name}</small></span>
-                  <span className="chev">調整 ›</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
+      <h4>航線班表</h4>
+      <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛此航線" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
     </Sheet>
   );

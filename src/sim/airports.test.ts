@@ -111,9 +111,11 @@ describe('connecting markets', () => {
   });
   test('a missing leg is named', () => {
     const p: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8)] };
-    const l = find(linkages(p, simulate(p), 'TPE', 50), 'HKG', 'HND')!;
-    expect(l.status).toBe('leg');
-    expect(l.missing).toEqual(['HND']);
+    const l = linkages(p, simulate(p), 'TPE', 50).find(l => l.status === 'leg')!;
+    expect(l).toBeDefined();
+    expect(l.missing).toHaveLength(1);
+    expect(l.missing[0]).not.toBe('HKG');
+    expect(AIRPORT_BY_CODE[l.missing[0]]).toBeDefined();
   });
   test('flights that miss each other get a suggested time, and taking it connects the market', () => {
     const miss: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', 19)] };

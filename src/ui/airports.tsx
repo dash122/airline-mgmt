@@ -140,8 +140,8 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const list = spokes(plan, result, code);
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
-  const links = linkages(plan, result, code);
-  const top = topMarketsFrom(code, plan);
+  const links = tab === 'transfer' ? linkages(plan, result, code) : [];
+  const top = tab === 'market' || tab === 'rivals' ? topMarketsFrom(code, plan) : [];
   const served = used > 0;
   return (
     <Sheet title={`${a.name} ${a.code}`} onClose={onClose}
