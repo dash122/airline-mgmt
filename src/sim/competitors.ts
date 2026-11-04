@@ -2,9 +2,10 @@
 // for any set of airports. They fly fixed schedules and do not react to the player: each market's
 // existing service (Market.rivalFreq) is split between the airlines that would plausibly fly it.
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
+import { airlineName } from '../data/airline-names';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { timeOfDayQuality } from './choice';
-import { marketBetween, marketsAt, pairKey, type Market } from './markets';
+import { marketBetween, marketsAt, pairKey, rivalPaxPerFlight, type Market } from './markets';
 
 export type AirlineKind = 'full' | 'low' | 'regional';
 
@@ -45,10 +46,6 @@ const KIND_SETTINGS: Record<AirlineKind, { fareMult: number; quality: number; fl
   regional: { fareMult: 1, quality: 0, fleet: ['ATR72', 'Q400', 'E190'], maxKm: 1200 },
 };
 
-// Fictional names. Kept clear of real airline names.
-const FULL_NAMES = ['雲帆', '海燕', '晨曦', '青嵐', '長風', '銀翼', '紅鶴', '白鷺', '曙光', '朱鷺', '雪松', '南星', '碧海', '蒼穹', '晴空', '旭日', '玉蘭', '松濤', '琥珀', '月桂', '翠羽', '星河', '錦帆', '秋楓'];
-const LOW_NAMES = ['樂翔', '輕羽', '跳島', '好旅', '嗨飛', '微風', '啾啾', '小步', '輕舟', '彩虹', '泡泡', '飛跳'];
-const REGIONAL_NAMES = ['群島', '山海', '澄海', '海峽', '岬角', '環島', '列嶼', '溪谷'];
 const COLORS = ['#c0392b', '#8e44ad', '#16a085', '#d35400', '#2c7be5', '#b8860b', '#6d4c41', '#00897b', '#c2185b', '#5e35b1', '#558b2f', '#0277bd', '#ef6c00', '#7b1fa2', '#2e7d32', '#ad1457'];
 
 /** Small deterministic string hash. */
@@ -56,17 +53,6 @@ function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
-}
-
-function pickName(pool: string[], key: string, used: Set<string>): string {
-  const start = hash(key) % pool.length;
-  for (let i = 0; i < pool.length; i++) {
-    const n = pool[(start + i) % pool.length];
-    if (!used.has(n)) { used.add(n); return n; }
-  }
-  const name = `${pool[start]}${used.size}`;
-  used.add(name);
-  return name;
 }
 
 const SIZE_WEIGHT = { hub: 5, major: 4, large: 3, medium: 2, small: 1 } as const;
@@ -81,11 +67,11 @@ function buildAirlines(): Airline[] {
   const byCountry = new Map<string, Airport[]>();
   for (const a of AIRPORTS) byCountry.set(a.country, [...(byCountry.get(a.country) ?? []), a]);
   const countries = [...byCountry.keys()].sort();
-  const used = new Set<string>();
   const out: Airline[] = [];
-  const make = (country: string, kind: AirlineKind, bases: string[], name: string) => {
+  const peopleOf = new Map<string, number>();
+  const make = (country: string, kind: AirlineKind, bases: string[]) => {
     const s = KIND_SETTINGS[kind];
-    out.push({ id: `${country}-${kind}`, name, kind, country, color: COLORS[hash(`${country}${kind}`) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality });
+    out.push({ id: `${country}-${kind}`, name: '', kind, country, color: COLORS[hash(`${country}${kind}`) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality });
   };
   for (const c of countries) {
     const list = [...byCountry.get(c)!].sort((x, y) => busyness(y) - busyness(x));
@@ -94,19 +80,24 @@ function buildAirlines(): Airline[] {
     for (const a of list) if (!metros.some((m) => m.metro === a.metro)) metros.push(a);
     if (!metros.length) continue;
     const people = list.reduce((s, a) => s + a.catchment, 0);
+    peopleOf.set(c, people);
     const top = metros[0], second = metros[1];
     // The main hub, other big airports in the same city, and a second city if it is nearly as big.
     const fullBases = [top.code, ...list.filter((a) => a.metro === top.metro && a.code !== top.code && a.size === top.size).map((a) => a.code)];
     if (second && second.size === top.size) fullBases.push(second.code);
-    make(c, 'full', fullBases, `${pickName(FULL_NAMES, `${c}full`, used)}航空`);
+    make(c, 'full', fullBases);
     if (people > LOW_COST_MIN_CATCHMENT) {
-      make(c, 'low', metros.slice(0, 3).map((a) => a.code), `${pickName(LOW_NAMES, `${c}low`, used)}航空`);
+      make(c, 'low', metros.slice(0, 3).map((a) => a.code));
     }
     const small = list.filter((a) => a.size === 'medium' || a.size === 'small');
     if (small.length >= REGIONAL_MIN_AIRPORTS) {
-      make(c, 'regional', list.map((a) => a.code), `${pickName(REGIONAL_NAMES, `${c}regional`, used)}航空`);
+      make(c, 'regional', list.map((a) => a.code));
     }
   }
+  // Name the biggest countries' airlines first, so they get the hand-picked names of their region.
+  const used = new Set<string>();
+  const order = [...out].sort((x, y) => (peopleOf.get(y.country) ?? 0) - (peopleOf.get(x.country) ?? 0) || x.id.localeCompare(y.id));
+  for (const al of order) al.name = airlineName(al.country, al.kind, used);
   return out;
 }
 
@@ -184,7 +175,8 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
     const list: RivalService[] = [];
     for (const { al, freq } of alloc) {
       const n = Math.max(1, Math.round(freq));
-      const seatsNeeded = (m.airDemand * (freq / m.rivalFreq)) / n / AVERAGE_LOAD;
+      // Every airline in the market flies about the market's typical aircraft size.
+      const seatsNeeded = rivalPaxPerFlight(m.airDemand, m.distKm) / AVERAGE_LOAD;
       const type = pickType(al, A, B, m.distKm, seatsNeeded) ?? 'A20N';
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
         const times = departureTimes(`${al.id}${from}${to}`, n);

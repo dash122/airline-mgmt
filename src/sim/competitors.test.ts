@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { airlines, airlinesAt, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
-import { marketBetween, markets, marketsAt, modelledAnnualPax } from './markets';
+import { DESTINATIONS, LONG_HAUL_KM, longHaulDestinations, marketBetween, markets, marketsAt, modelledAnnualPax } from './markets';
 import { AIRPORTS } from '../data/airports';
+import { AIRCRAFT } from '../data/aircraft';
+import { nameRegionOf } from '../data/airline-names';
 import { addRoundTrip, emptyPlan, simulate } from './simulate';
 
 describe('competitor airlines', () => {
@@ -21,16 +23,19 @@ describe('competitor airlines', () => {
     expect(modelledAnnualPax('UNKNOWN')).toBe(0);
   });
   test('global nonstop networks respect airport destination budgets and remain symmetric', () => {
-    const limits = { hub: 100, major: 60, large: 30, medium: 12, small: 4 };
-    const counts = new Map<string, number>();
+    const counts = new Map<string, number>(), longCounts = new Map<string, number>();
     for (const m of markets().values()) {
       if (!m.rivalFreq) continue;
-      counts.set(m.a, (counts.get(m.a) ?? 0) + 1);
-      counts.set(m.b, (counts.get(m.b) ?? 0) + 1);
+      const c = m.distKm > LONG_HAUL_KM ? longCounts : counts;
+      c.set(m.a, (c.get(m.a) ?? 0) + 1);
+      c.set(m.b, (c.get(m.b) ?? 0) + 1);
       expect(m.distKm).toBeLessThanOrEqual(15000);
       expect(marketBetween(m.b, m.a)).toBe(m);
     }
-    for (const a of AIRPORTS) expect(counts.get(a.code) ?? 0).toBeLessThanOrEqual(limits[a.size]);
+    for (const a of AIRPORTS) {
+      expect(counts.get(a.code) ?? 0).toBeLessThanOrEqual(DESTINATIONS[a.size]);
+      expect(longCounts.get(a.code) ?? 0).toBeLessThanOrEqual(longHaulDestinations(a));
+    }
   });
 
   test('Macau competitors use documented destinations, not every market with demand', () => {
@@ -61,6 +66,20 @@ describe('competitor airlines', () => {
     const route = simulate(r.plan).routes['MFM-TNN'];
     expect(route.rivals).toEqual([]);
     expect(route.localPax).toBeGreaterThan(0);
+  });
+
+  test('names never fall back to numbers and every country has a naming region', () => {
+    for (const a of airlines()) expect(a.name, a.id).not.toMatch(/[0-9]/);
+    for (const a of AIRPORTS) expect(nameRegionOf(a.country), a.country).toBeDefined();
+  });
+
+  test('big hubs have long-haul competitors', () => {
+    for (const [a, b] of [['HKG', 'LHR'], ['HKG', 'JFK'], ['SIN', 'LHR'], ['LHR', 'JFK'], ['DXB', 'LHR'], ['NRT', 'LHR'], ['TPE', 'LAX']]) {
+      const f = marketBetween(a, b)!.rivalFreq;
+      expect(f, `${a}-${b}`).toBeGreaterThanOrEqual(7);
+      expect(f, `${a}-${b}`).toBeLessThanOrEqual(70);
+      for (const s of rivalsFrom(a, b)) expect(AIRCRAFT[s.type].cls, `${a}-${b}`).toBe('widebody');
+    }
   });
 
   test('names are unique and every country has a full-service airline', () => {
