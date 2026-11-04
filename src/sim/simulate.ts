@@ -394,7 +394,7 @@ export function metroAirports(code: string): string[] {
  * Where nobody flies between two cities at all, travellers today connect through a hub on other airlines:
  * modelled as this many flights a week, NT$ CONNECTING_PENALTY worse than a nonstop (a layover of about 2.5 hours).
  */
-export const CONNECTING_FREQ = 14;
+export const CONNECTING_FREQ = 56;
 export const CONNECTING_PENALTY = 1500;
 
 export interface Competition {
@@ -426,7 +426,8 @@ export function competitionFor(o: string, d: string): Competition {
       const services: RivalService[] = [];
       for (const x of metroAirports(o)) for (const y of metroAirports(d)) if (x !== o || y !== d) services.push(...rivalsFrom(x, y));
       const m = marketBetween(o, d);
-      const offers = services.length || !m ? services.map(offer) : [{ freq: CONNECTING_FREQ, fare: m.refFare, quality: -CONNECTING_PENALTY }];
+      // Travellers can always change planes somewhere on other airlines, as well as fly from the other airports.
+      const offers = [...services.map(offer), ...(m ? [{ freq: CONNECTING_FREQ, fare: m.refFare, quality: -CONNECTING_PENALTY }] : [])];
       c = { services, offers, otherAirports: services.length > 0 };
     }
     competitionCache.set(k, c);
