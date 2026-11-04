@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { modelledAnnualPax } from '../sim/markets';
-import { hubOf, hubOpportunities, linkages, hourly, spokes, stations, viewFromHub, type HubView, type Linkage, type LinkStatus, type Spoke, type SpokeIdea } from '../sim/airports';
+import { hubOf, hubOpportunities, linkages, hourly, spokes, stations, viaGroup, viewFromHub, type HubView, type Linkage, type LinkStatus, type Spoke, type SpokeIdea } from '../sim/airports';
 import {
   CONNECT_FARE_SHARE, HUB_COST_PER_WEEK, HUB_MCT_CUT, hhmm, layoverKind, MAX_DETOUR, MAX_DETOUR_SHORT, minConnect, STOPOVER_FARE_SHARE, stopoverAppealHours,
   topMarketsFrom, weeklyDepartures, type NetworkResult, type Plan,
@@ -169,25 +169,70 @@ function HubIdeas({ hub, ideas, onOpenPair }: { hub: string; ideas: SpokeIdea[];
   );
 }
 
-/** A non-hub airport seen from the hub: what linking it to the hub would connect, and what is missing. */
-function FromHub({ plan, view, onOpenPair, onSuggest, onPickHub }: {
-  plan: Plan; view: HubView; onOpenPair: (a: string, b: string) => void; onSuggest: (from: string, to: string, localMin: number) => void; onPickHub: () => void;
+type ViaFilter = 'all' | 'flown' | 'hubLeg';
+const PAGE = 12;
+
+/** One destination reached through the hub: both legs at a glance, its transit demand, and the one-tap fix. */
+function ViaRow({ hub, l, onOpenPair, onSuggest }: {
+  hub: string; l: Linkage; onOpenPair: (a: string, b: string) => void; onSuggest: (from: string, to: string, localMin: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const leg = (a: string) => {
+    const missing = l.missing.includes(a);
+    return <span className={`leg ${missing ? 'miss' : 'ok'}`}>{a === l.o ? `${l.o}⇄${hub}` : `${hub}⇄${l.d}`}{missing ? '' : ' ✓'}</span>;
+  };
+  const st = l.status === 'long' && l.wait !== null && layoverKind(l.wait) === 'stopover' ? { label: '停留轉機', tone: 'warn' as const } : STATUS[l.status];
+  return (
+    <li className="via">
+      <div className="via-top" onClick={() => setOpen(!open)} role="button" aria-expanded={open}>
+        <span className="name"><b>{name(l.d)} {l.d}</b><small>{count(l.distKm)} 公里 · 經{hub}多飛 {pct(Math.max(0, l.detourPct))}</small></span>
+        <span className="num">{count(Math.max(l.est, l.viaPax))}<small>/週</small></span>
+      </div>
+      <div className="via-legs">
+        {leg(l.o)}{leg(l.d)}
+        {l.status !== 'leg' && <span className={`pill ${st.tone === 'idle' ? '' : st.tone}`}>{st.label}{l.viaPax > 0.5 ? ` ${count(l.viaPax)}` : ''}</span>}
+        {l.missing.filter((m) => m !== l.o).map((m) => <button key={m} className="chip strong" onClick={() => onOpenPair(hub, m)}>開航 {hub}⇄{m}</button>)}
+        {(l.status === 'long' || l.status === 'timing') && l.suggest && (
+          <button className="chip strong" onClick={() => onSuggest(l.suggest!.from, l.suggest!.to, l.suggest!.local)}>排入 {hhmm(l.suggest.local)} {l.suggest.from}→{l.suggest.to}</button>
+        )}
+      </div>
+      {open && <ul className="links"><LinkRow hub={hub} l={l} onOpenPair={onOpenPair} onSuggest={onSuggest} /></ul>}
+    </li>
+  );
+}
+
+/** A non-hub airport seen from the hub: every market its travellers could reach through the hub, flown or not. */
+function FromHub({ plan, view, filter, onFilter, onOpenPair, onSuggest, onPickHub }: {
+  plan: Plan; view: HubView; filter: ViaFilter; onFilter: (f: ViaFilter) => void;
+  onOpenPair: (a: string, b: string) => void; onSuggest: (from: string, to: string, localMin: number) => void; onPickHub: () => void;
 }) {
   const { hub, code } = view;
   const role = plan.hub === hub ? '轉運站' : '基地';
+  const [shown, setShown] = useState(PAGE);
+  const groups = { flown: view.rows.filter((l) => viaGroup(l) === 'flown'), hubLeg: view.rows.filter((l) => viaGroup(l) === 'hubLeg') };
+  const sum = (ls: Linkage[]) => ls.reduce((s, l) => s + Math.max(l.est, l.viaPax), 0);
+  const list = filter === 'all' ? view.rows : groups[filter];
   return (
     <>
       <div className="hubview">
-        <div className="hv-path"><b>{code}</b><i className={view.legFlown ? 'on' : 'off'} /><b className="hv-hub" onClick={onPickHub} role="button">{hub}<small>{role}</small></b><i className="on" /><b>{view.rows.length} 個市場</b></div>
+        <div className="hv-path"><b>{code}</b><i className={view.legFlown ? 'on' : 'off'} /><b className="hv-hub" onClick={onPickHub} role="button">{hub}<small>{role}</small></b><i className={groups.flown.length ? 'on' : 'off'} /><b>{view.rows.length} 個地方</b></div>
+        <small>{name(code)}的旅客在{hub}換機，可以去 {view.rows.length} 個地方。兩段都開、班次接得好時，轉機需求共約 <b>{count(view.total)}</b> 人/週。</small>
         {view.legFlown
-          ? <small>{code} ⇄ {hub} 已開航。下面是{name(code)}的旅客經你的{role}可以去的地方。</small>
-          : <small>開 {code} ⇄ {hub}：本地需求約 {count(view.local)} 人/週{view.unlockCount ? `，另外馬上接上你從${hub}飛的 ${view.unlockCount} 個市場，轉機需求約 ${count(view.unlock)} 人/週` : ''}。每天一班可載 {count(view.seats)} 人/週，需求多就加班或換大飛機。</small>}
+          ? <small>{code} ⇄ {hub} 已開航 ✓</small>
+          : <small>第一步是開 {code} ⇄ {hub}：本地需求約 {count(view.local)} 人/週{view.unlockCount ? `，馬上接上你從${hub}已飛的 ${view.unlockCount} 個地方（約 ${count(view.unlock)} 人/週）` : ''}。每天一班可載 {count(view.seats)} 人/週。</small>}
         {!view.legFlown && <button className="primary small" onClick={() => onOpenPair(code, hub)}>開航 {code} ⇄ {hub}</button>}
       </div>
       {view.rows.length > 0 && (
         <>
-          <h4>{name(code)}出發，經{hub}轉機的市場（每週兩個方向）</h4>
-          <ul className="links">{view.rows.map((l) => <LinkRow key={l.d} hub={hub} l={l} onOpenPair={onOpenPair} onSuggest={onSuggest} />)}</ul>
+          <div className="seg three" role="tablist">
+            {([['all', '全部', view.rows], ['flown', `${hub}已飛`, groups.flown], ['hubLeg', `${hub}還沒飛`, groups.hubLeg]] as [ViaFilter, string, Linkage[]][]).map(([f, label, ls]) => (
+              <button key={f} role="tab" className={filter === f ? 'on' : ''} onClick={() => { onFilter(f); setShown(PAGE); }}>{label} {ls.length}<small>{count(sum(ls))}/週</small></button>
+            ))}
+          </div>
+          <ul className="vias">{list.slice(0, shown).map((l) => <ViaRow key={l.d} hub={hub} l={l} onOpenPair={onOpenPair} onSuggest={onSuggest} />)}</ul>
+          {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, list.length - shown)} 個（共 {list.length}）</button>}
+          {list.length === 0 && <div className="hint center">{filter === 'flown' ? `你從${hub}飛的航線還接不到${name(code)}的市場。看「${hub}還沒飛」。` : '沒有。'}</div>}
+          <div className="hint">數字是每週兩個方向的轉機需求，用的是和模擬一樣的算法：每天一班、轉機 1 到 2 小時。實際載客還受座位、班次時間和票價影響。點一列看細節。</div>
         </>
       )}
       {view.rows.length === 0 && <div className="hint center">經{hub}轉機繞路太遠，{name(code)}比較適合直飛。</div>}
@@ -218,18 +263,20 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const persp = hubOf(plan);
   const isPersp = code === persp;
   const view = useMemo(() => (isPersp ? null : viewFromHub(plan, result, persp, code)), [plan, result, persp, code, isPersp]);
+  const [viaFilter, setViaFilter] = useState<ViaFilter>('all');
   const ideas = useMemo(() => (isPersp && tab === 'transfer' ? hubOpportunities(plan, code) : []), [plan, code, isPersp, tab]);
   useEffect(() => {
     if (isPersp) onHint(tab === 'transfer' ? ideas.slice(0, 5).map((i) => [code, i.to]) : null);
     else if (view) {
       const legs = new Map<string, [string, string]>();
       if (!view.legFlown) legs.set(code, [code, persp]);
-      if (tab === 'transfer') for (const l of view.rows.slice(0, 6)) for (const m of l.missing) legs.set(m, [m, persp]);
+      // The fan out of the hub: the biggest destinations in the chosen list (dashed where the leg is not flown yet).
+      if (tab === 'transfer') for (const l of view.rows.filter((r) => viaFilter === 'all' || viaGroup(r) === viaFilter).slice(0, 10)) legs.set(l.d, [persp, l.d]);
       onHint(legs.size ? [...legs.values()] : null);
     }
     return () => onHint(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, ideas, tab, isPersp, code, persp]);
+  }, [view, ideas, tab, isPersp, code, persp, viaFilter]);
   const a = AIRPORT_BY_CODE[code];
   const used = weeklyDepartures(plan, code);
   const list = spokes(plan, result, code);
@@ -263,10 +310,10 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
           </ul>
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>
-              <span className="grow"><b>經{persp}轉機{view.legFlown ? '' : '的潛力'}</b>
+              <span className="grow"><b>經{persp}轉機的市場</b>
                 <small>{view.legFlown
-                  ? `${view.rows.filter((r) => r.viaPax > 0.5).length} 個市場在${persp}轉機 · ${view.rows.filter((r) => r.status === 'leg').length} 個還缺航線`
-                  : `開 ${code} ⇄ ${persp} 需求約：本地 ${count(view.local)}${view.unlockCount ? ` + 轉機 ${count(view.unlock)}（${view.unlockCount} 個市場）` : ''} 人/週`}</small></span>
+                  ? `可去 ${view.rows.length} 個地方，轉機需求約 ${count(view.total)} 人/週 · ${view.rows.filter((r) => r.viaPax > 0.5).length} 個已有人轉機`
+                  : `可去 ${view.rows.length} 個地方，轉機需求約 ${count(view.total)} 人/週 · 本地約 ${count(view.local)} 人/週`}</small></span>
               <span className="chev">›</span>
             </button>
           )}
@@ -286,7 +333,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
 
       {tab === 'transfer' && view && (
         <>
-          <FromHub plan={plan} view={view} onOpenPair={onOpenPair} onSuggest={onSuggest} onPickHub={() => onPickAirport(persp)} />
+          <FromHub plan={plan} view={view} filter={viaFilter} onFilter={setViaFilter} onOpenPair={onOpenPair} onSuggest={onSuggest} onPickHub={() => onPickAirport(persp)} />
           {transfer && transfer.flows.length > 0 && (
             <>
               <h4>在{code}換機的旅客（每週）</h4>
