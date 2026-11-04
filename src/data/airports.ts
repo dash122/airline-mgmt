@@ -1,7 +1,8 @@
 // Airports are generated from open data by scripts/build-data.mjs (OurAirports, GeoNames, Natural Earth).
 import type { AircraftClass } from './aircraft';
 import data from './airports.json';
-import { ANNUAL_TRAFFIC_M } from './airport-traffic';
+import { ANNUAL_TRAFFIC_M, tierFromTraffic } from './airport-traffic';
+import referenceData from './airport-reference.json';
 
 export type Country = string;
 export type AirportSize = 'hub' | 'major' | 'large' | 'medium' | 'small';
@@ -31,10 +32,24 @@ export interface Airport {
  */
 export const SLOT_SCALE = 10;
 
+const CURATED_PLACES = ['JP', 'TW', 'HK', 'MO'];
+const reference = referenceData as Record<string, { pax?: number; pop?: number }>;
+
+/**
+ * Elsewhere in the world, people near an airport come from real data (GeoNames towns within 40 km, at least the city
+ * served in Wikidata), shared between the airports of one metro in proportion to their passenger traffic.
+ */
+const metroTraffic = new Map<string, number>();
+const metroKey = (a: Airport) => `${a.country}|${a.metro}`;
+for (const a of data as Airport[]) metroTraffic.set(metroKey(a), (metroTraffic.get(metroKey(a)) ?? 0) + (ANNUAL_TRAFFIC_M[a.code] ?? 0.3));
+
 export const AIRPORTS: Airport[] = (data as Airport[]).map((a) => {
   const traffic = ANNUAL_TRAFFIC_M[a.code];
-  const size = traffic ? (traffic >= 35 ? 'hub' : 'major') : a.size;
-  return { ...a, size, slotCap: Math.max(a.slotCap, size === 'hub' ? 140 : size === 'major' ? 84 : 0) * SLOT_SCALE };
+  const curated = CURATED_PLACES.includes(a.country);
+  const size = traffic ? (curated ? (traffic >= 35 ? 'hub' : 'major') : tierFromTraffic(traffic)) : curated ? a.size : 'small';
+  const pop = reference[a.code]?.pop;
+  const catchment = !curated && pop ? Math.round(pop * ((traffic ?? 0.3) / (metroTraffic.get(metroKey(a)) ?? 1))) : a.catchment;
+  return { ...a, size, catchment, slotCap: Math.max(a.slotCap, size === 'hub' ? 140 : size === 'major' ? 84 : 0) * SLOT_SCALE };
 });
 
 /** Radius in screen pixels; circle area grows with historical passenger traffic. */

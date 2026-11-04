@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "build:reference": "node scripts/build-reference.mjs",
     "build:map": "node scripts/build-map.mjs",
     "build:data": "node scripts/build-data.mjs"
   },
