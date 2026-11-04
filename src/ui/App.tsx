@@ -9,6 +9,7 @@ import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { count, money, pct } from './format';
+import { NewRouteSheet, type NewRouteState } from './NewRoute';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type GameState, type Speed } from './clock';
 
 const SAVE_KEY = 'waypoint.plan.v2';
@@ -38,6 +39,7 @@ type Overlay =
   | { kind: 'move'; acId: string; unit: Unit; key: string }
   | { kind: 'gap'; acId: string; t: number }
   | { kind: 'lease' }
+  | ({ kind: 'new' } & NewRouteState)
   | null;
 
 export default function App() {
@@ -49,7 +51,6 @@ export default function App() {
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [game, setGame] = useState<GameState | null>(() => {
     const g = load<GameState>(GAME_KEY);
     return g && g.version === 1 ? g : null;
@@ -122,14 +123,20 @@ export default function App() {
     setSpeedState(1);
     setGame(g);
     setPlan(emptyPlan(base));
-    setToast('拖曳移動地圖；點選機場後，按「從這裡開新航線」規劃航班');
+    setOverlay({ kind: 'new', from: base, to: null, pick: 'to' });
   }} />;
   const clock = clockRef.current;
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); };
-  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
+  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); };
+  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
+  /** The new-route planner: pick two airports, see what the route would earn, confirm. */
+  const planRoute = (from: string, to: string | null = null) => {
+    setSelection(null);
+    setOverlay({ kind: 'new', from, to: to === from ? null : to, pick: to && to !== from ? null : 'to' });
+  };
+  const newRoute = overlay?.kind === 'new' ? overlay : null;
 
   const addTrip = (a: string, b: string, type?: AircraftModel, stay = false) => {
     const r = addRoundTrip(plan, a, b, type);
@@ -156,7 +163,7 @@ export default function App() {
   const editing = overlay?.kind === 'edit' ? plan.fleet.find((a) => a.id === overlay.acId) : undefined;
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
-  const showPanel = !selection && panel;
+  const showPanel = !selection && !newRoute && panel;
   const airportCount = new Set(plan.fleet.flatMap((a) => a.legs.flatMap((l) => [l.from, l.to]))).size;
 
   return (
@@ -165,20 +172,22 @@ export default function App() {
         plan={plan}
         result={result}
         clock={clock}
-        selection={selection ?? (editing ? { kind: 'aircraft', id: editing.id } : null)}
-        connectFrom={connectFrom}
-        hint={airport ? transitHint : null}
+        selection={selection ?? (editing ? { kind: 'aircraft', id: editing.id } : newRoute ? { kind: 'airport', id: newRoute.to && !newRoute.pick ? newRoute.to : newRoute.from } : null)}
+        connectFrom={newRoute?.from ?? null}
+        hint={airport || newRoute ? transitHint : null}
         theme={theme}
         onTapAirport={(code) => {
-          if (connectFrom && connectFrom !== code) {
-            setOverlay({ kind: 'add', key: [connectFrom, code].sort().join('-'), prefer: { from: connectFrom, dep: utcMorning(connectFrom) } });
-            setConnectFrom(null);
+          // While the planner is open, a tap on the map fills in the airport it is asking for.
+          if (newRoute) {
+            const field = newRoute.pick ?? 'to';
+            if (field === 'from') setOverlay({ ...newRoute, from: code, to: newRoute.to === code ? null : newRoute.to, pick: newRoute.to && newRoute.to !== code ? null : 'to' });
+            else if (code !== newRoute.from) setOverlay({ ...newRoute, to: code, pick: null });
           }
           else select({ kind: 'airport', id: code });
         }}
         onTapRoute={(key) => select({ kind: 'route', id: key })}
-        onTapEmpty={() => { if (selection || connectFrom) select(null); else openTab(null); }}
-        onDragRoute={(a, b) => setOverlay({ kind: 'add', key: [a, b].sort().join('-'), prefer: { from: a, dep: utcMorning(a) } })}
+        onTapEmpty={() => { if (newRoute) return; if (selection) select(null); else openTab(null); }}
+        onDragRoute={(a, b) => planRoute(a, b)}
       />
 
       <TopBar result={result} balance={game?.balance ?? 0} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
@@ -187,7 +196,6 @@ export default function App() {
         }} />
       <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
 
-      {connectFrom && <div className="banner">從{AIRPORT_BY_CODE[connectFrom].name}出發：點選目的地，再確認航班<button onClick={() => setConnectFrom(null)}>取消</button></div>}
       {toast && <div className="toast">{toast}</div>}
 
       {routeKey && routeExists && (
@@ -209,8 +217,8 @@ export default function App() {
       )}
       {airport && (
         <AirportSheet key={airport} plan={plan} result={result} code={airport}
-          onConnect={() => { setSelection(null); setConnectFrom(airport); }}
-          onOpen={(to: string) => addTrip(airport, to)}
+          onConnect={() => planRoute(airport)}
+          onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
           onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'add', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } })}
           onOpenRoute={(key) => select({ kind: 'route', id: key })}
@@ -225,7 +233,7 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {showPanel === 'routes' && (
-        <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })}
+        <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })} onNew={() => planRoute(plan.hub ?? plan.base)}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
       {showPanel === 'airports' && (
@@ -254,6 +262,13 @@ export default function App() {
         <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined} prefer={overlay.kind === 'add' ? overlay.prefer : undefined}
           onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
           onClose={() => setOverlay(null)} />
+      )}
+      {newRoute && (
+        <NewRouteSheet plan={plan} result={result} state={newRoute}
+          onState={(s) => setOverlay({ kind: 'new', ...s })}
+          onHint={setTransitHint}
+          onDone={(next, msg, key) => { update(next); setToast(msg); setOverlay(null); setTransitHint(null); setSelection({ kind: 'route', id: key }); }}
+          onClose={() => { setOverlay(null); setTransitHint(null); }} />
       )}
       {overlay?.kind === 'gap' && (
         <GapSheet plan={plan} acId={overlay.acId} t={overlay.t}

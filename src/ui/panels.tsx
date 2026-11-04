@@ -19,16 +19,22 @@ const dur = (min: number) => `${Math.floor(min / 60)} 小時${min % 60 ? ` ${min
 
 // ---------- Routes ----------
 
-export function RoutesPanel({ plan, result, onOpen, onAdd, onRemoveOne, onClose }: {
-  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void; onClose: () => void;
+export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onClose }: {
+  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void; onClose: () => void;
 }) {
   const rows = routePairs(plan)
     .map((r) => ({ ...r, res: result?.routes[r.key], types: [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => AIRCRAFT[ac.type].name))] }))
     .sort((x, y) => (y.res ? y.res.revenue - y.res.flyingCost : 0) - (x.res ? x.res.revenue - x.res.flyingCost : 0));
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   return (
-    <Sheet size="full" title={`航線 · ${rows.length} 條`} sub={`每日 ${daily} 班來回 · 損益為每週航段損益（不含租金）`} onClose={onClose}>
-      {rows.length === 0 && <div className="hint center">在地圖上從一個機場拖到另一個機場，即可開新航線。</div>}
+    <Sheet size="full" title={`航線 · ${rows.length} 條`} sub={`每日 ${daily} 班來回 · 損益為每週航段損益（不含租金）`} onClose={onClose}
+      action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
+      {rows.length === 0 && (
+        <div className="empty-cta">
+          <div>還沒有航線。選一個目的地，先看需求、對手和預估損益，再決定要不要飛。</div>
+          <button className="primary wide" onClick={onNew}>＋ 開第一條航線</button>
+        </div>
+      )}
       <ul className="routes">
         {rows.map((r) => {
           const p = r.res ? r.res.revenue - r.res.flyingCost : 0;
@@ -48,7 +54,7 @@ export function RoutesPanel({ plan, result, onOpen, onAdd, onRemoveOne, onClose 
           );
         })}
       </ul>
-      {rows.length > 0 && <div className="hint">＋ 會讓你選擇由哪架飛機、幾點飛。在地圖上從機場拖到另一個機場可以開新航線。</div>}
+      {rows.length > 0 && <div className="hint">＋ 會讓你選擇由哪架飛機、幾點飛。「新航線」可以搜尋或從推薦清單選目的地。</div>}
     </Sheet>
   );
 }
@@ -273,7 +279,7 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
 
 // ---------- Time stepper ----------
 
-function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep: number; lo: number; hi: number; onChange: (dep: number) => void }) {
+export function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep: number; lo: number; hi: number; onChange: (dep: number) => void }) {
   const set = (d: number) => onChange(Math.max(lo, Math.min(hi, dep + d)));
   const steps = [-60, -15, 15, 60];
   return (
