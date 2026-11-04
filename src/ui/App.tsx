@@ -7,6 +7,8 @@ import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
+import { airlines } from '../sim/competitors';
+import { AirlineLink, AirlineSheet, AirlinesPanel } from './airlines';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { count, money, pct } from './format';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type GameState, type Speed } from './clock';
@@ -31,7 +33,7 @@ function save(key: string, value: unknown) {
   }
 }
 
-type Panel = 'routes' | 'airports' | 'schedule' | 'fleet' | 'report' | null;
+type Panel = 'routes' | 'airports' | 'airlines' | 'schedule' | 'fleet' | 'report' | null;
 type Overlay =
   | { kind: 'edit'; acId: string; leg: number }
   | { kind: 'add'; key: string; prefer?: { from: string; dep: number } }
@@ -65,6 +67,9 @@ export default function App() {
   const [transitHint, setTransitHint] = useState<[string, string][] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [schedAirport, setSchedAirport] = useState<{ airport: string } | null>(null);
+  /** Where the airline profile was opened from, for its back button. */
+  const [back, setBack] = useState<Selection | null>(null);
+  const [airlineRoute, setAirlineRoute] = useState<string | null>(null);
 
   useEffect(() => { if (plan) save(SAVE_KEY, plan); }, [plan]);
   useEffect(() => { if (game) save(GAME_KEY, game); }, [game]);
@@ -128,7 +133,14 @@ export default function App() {
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); };
+  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); setBack(null); setAirlineRoute(null); };
+  const openAirline = (id: string) => {
+    const from = selection && selection.kind !== 'airline' ? selection : null;
+    select({ kind: 'airline', id });
+    setBack(from);
+  };
+  /** From the airline profile to an airport or route, with a way back to the airline. */
+  const fromAirline = (s: Selection) => { const prev = selection; select(s); setBack(prev); };
   const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
 
   const addTrip = (a: string, b: string, type?: AircraftModel, stay = false) => {
@@ -153,6 +165,9 @@ export default function App() {
   const routeExists = routeKey && routePairs(plan).some((r) => r.key === routeKey);
   const aircraft = selection?.kind === 'aircraft' ? plan.fleet.find((a) => a.id === selection.id) : undefined;
   const airport = selection?.kind === 'airport' ? selection.id : undefined;
+  const airlineId = selection?.kind === 'airline' ? selection.id : undefined;
+  const backToAirline = back?.kind === 'airline' ? <button className="back" onClick={() => openAirline(back.id)}>‹ {airlineLabel(back.id)}</button> : undefined;
+  const backLabel = (s: Selection) => (s.kind === 'airport' ? s.id : s.kind === 'route' ? s.id.replace('-', '⇄') : s.kind === 'aircraft' ? plan.fleet.find((a) => a.id === s.id)?.reg ?? '飛機' : '航空');
   const editing = overlay?.kind === 'edit' ? plan.fleet.find((a) => a.id === overlay.acId) : undefined;
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
@@ -160,6 +175,7 @@ export default function App() {
   const airportCount = new Set(plan.fleet.flatMap((a) => a.legs.flatMap((l) => [l.from, l.to]))).size;
 
   return (
+    <AirlineLink.Provider value={openAirline}>
     <div className="app">
       <MapCanvas
         plan={plan}
@@ -169,6 +185,7 @@ export default function App() {
         connectFrom={connectFrom}
         hint={airport ? transitHint : null}
         theme={theme}
+        airline={airlineId ? { id: airlineId, route: airlineRoute } : null}
         onTapAirport={(code) => {
           if (connectFrom && connectFrom !== code) {
             setOverlay({ kind: 'add', key: [connectFrom, code].sort().join('-'), prefer: { from: connectFrom, dep: utcMorning(connectFrom) } });
@@ -197,6 +214,7 @@ export default function App() {
           onRemoveOne={() => removeOne(routeKey)}
           onEditFlight={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
           onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛這條航線，飛機的其他航班不受影響'); select(null); }}
+          action={backToAirline}
           onClose={() => select(null)} />
       )}
       {aircraft && (
@@ -222,7 +240,19 @@ export default function App() {
           onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
           onPickAirport={(code) => select({ kind: 'airport', id: code })}
           onHint={setTransitHint}
+          action={backToAirline}
           onClose={() => select(null)} />
+      )}
+      {airlineId && (
+        <AirlineSheet key={airlineId} plan={plan} result={result} id={airlineId} focus={airlineRoute} onFocus={setAirlineRoute}
+          onPickAirport={(code) => fromAirline({ kind: 'airport', id: code })}
+          onOpenRoute={(key) => fromAirline({ kind: 'route', id: key })}
+          onOpen={(a, b) => addTrip(a, b, undefined, true)}
+          back={back ? { label: backLabel(back), go: () => { const b = back; select(b); } } : undefined}
+          onClose={() => select(null)} />
+      )}
+      {showPanel === 'airlines' && (
+        <AirlinesPanel plan={plan} onPick={openAirline} onClose={() => openTab(null)} />
       )}
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })}
@@ -277,7 +307,7 @@ export default function App() {
       )}
 
       <nav className="tabbar">
-        {([[null, '地圖'], ['routes', `航線`], ['airports', '機場'], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
+        {([[null, '地圖'], ['routes', `航線`], ['airports', '機場'], ['airlines', '對手'], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
           <button key={label} className={(selection ? false : panel === p) ? 'on' : ''} onClick={() => openTab(panel === p && p !== null && !selection ? null : p)}
             disabled={p === 'report' && !result}>
             <TabIcon tab={p} />
@@ -286,9 +316,11 @@ export default function App() {
         ))}
       </nav>
     </div>
+    </AirlineLink.Provider>
   );
 }
 
+const airlineLabel = (id: string) => airlines().find((a) => a.id === id)?.name ?? '航空';
 const utcMorning = (code: string) => utcFromLocal(code, 7 * 60);
 
 function TabIcon({ tab }: { tab: Panel }) {
@@ -299,6 +331,7 @@ function TabIcon({ tab }: { tab: Panel }) {
     airports: 'M12 3a5 5 0 0 1 5 5c0 4-5 10-5 10S7 12 7 8a5 5 0 0 1 5-5z M12 6.5a1.6 1.6 0 1 0 0.01 0 M5 21h14',
     fleet: 'M2 13l8-2 2-7h2l-1 7 8 1v2l-8 1 1 4-2 1-3-4-7-1z',
     report: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
+    airlines: 'M4 20h16 M6 20l4-16h3l-1 8h6l2 8',
   }[tab ?? 'map'];
   return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }

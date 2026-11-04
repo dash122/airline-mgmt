@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { modelledAnnualPax } from '../sim/markets';
@@ -251,12 +251,12 @@ function LayoverLegend({ hub }: { hub: string }) {
   );
 }
 
-export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose }: {
+export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action }: {
   plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
   onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
   onToggleHub: () => void; onShowSchedule: () => void; onPickAirport: (code: string) => void;
   /** Legs to sketch on the map while transit ideas are on screen (dashed = not flown yet). */
-  onHint: (legs: [string, string][] | null) => void; onClose: () => void;
+  onHint: (legs: [string, string][] | null) => void; onClose: () => void; action?: ReactNode;
 }) {
   const [tab, setTab] = useState<AirportSection>('routes');
   const persp = hubOf(plan);
@@ -295,7 +295,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
       : { key: 'transfer', label: `經${persp}轉機`, value: `${view?.rows.length ?? 0} 處`, sub: `約 ${short(view?.total ?? 0)} 人/週` },
   ];
   return (
-    <Sheet title={`${a.name} ${a.code}`} onClose={onClose}
+    <Sheet title={`${a.name} ${a.code}`} onClose={onClose} action={action}
       sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}${isHub ? ' · 轉運站' : ''}`}>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
 

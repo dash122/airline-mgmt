@@ -5,12 +5,13 @@ import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, cycleOf, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
 import { rivalsAt } from '../sim/competitors';
+import { airlineNetwork } from '../sim/networks';
 import { fitView, nearestLongitude, projX, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
 
 export interface Selection {
-  kind: 'airport' | 'route' | 'aircraft';
+  kind: 'airport' | 'route' | 'aircraft' | 'airline';
   id: string;
 }
 
@@ -23,6 +24,8 @@ interface Props {
   /** Legs to sketch while transit ideas are on screen: flown ones glow, missing ones are dashed. */
   hint?: [string, string][] | null;
   theme: Theme;
+  /** A competitor airline whose whole network is drawn, with one of its routes picked out. */
+  airline?: { id: string; route?: string | null } | null;
   onTapAirport: (code: string) => void;
   onTapRoute: (id: string) => void;
   onTapEmpty: () => void;
@@ -71,7 +74,29 @@ export default function MapCanvas(props: Props) {
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const dragRef = useRef<{ from: string; x: number; y: number } | null>(null);
   const landCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
-  const panTarget = useRef<{ cx: number; cy: number } | null>(null);
+  const panTarget = useRef<{ cx: number; cy: number; scale?: number } | null>(null);
+
+  // Fit a competitor's whole network (or its picked route) into the part of the map the sheet leaves free.
+  useEffect(() => {
+    const v = viewRef.current;
+    const id = props.airline?.id;
+    const net = id ? airlineNetwork(id) : null;
+    if (!v || !net) return;
+    const { w, h } = sizeRef.current;
+    const route = props.airline?.route?.split('-');
+    const codes = route?.length === 2 ? route : net.airports;
+    const ref = AIRPORT_BY_CODE[codes[0] === net.hubs[0].code || !route ? net.hubs[0].code : codes[0]];
+    const pts = codes.map((c) => AIRPORT_BY_CODE[c]).map((a) => [a.lat, nearestLongitude(a.lon, ref.lon)]);
+    const lats = pts.map((p) => p[0]), lons = pts.map((p) => p[1]);
+    const phone = w < 820;
+    const top = 124, bottom = phone ? h * 0.38 : h - 70;
+    const right = phone ? w : w - 420;
+    const pad = route ? 48 : 28;
+    const fit = fitView(Math.max(80, right - 2 * pad), Math.max(80, bottom - top - 2 * pad), Math.min(...lats) - 1, Math.min(...lons) - 1, Math.max(...lats) + 1, Math.max(...lons) + 1);
+    const scale = Math.max(0.6, Math.min(route ? 30 : 60, fit.scale));
+    // Shift the centre so the fitted box lands in the free area, not the middle of the screen.
+    panTarget.current = { cx: fit.cx + (w / 2 - right / 2) / scale, cy: fit.cy - (h / 2 - (top + bottom) / 2) / scale, scale };
+  }, [props.airline?.id, props.airline?.route]);
 
   // Keep the selected airport or route visible above the bottom sheet on phones.
   useEffect(() => {
@@ -166,17 +191,22 @@ export default function MapCanvas(props: Props) {
       return off;
     };
 
+    let lastFrame = 0;
     const draw = (time: number) => {
       const p = propsRef.current;
       const pal = PALETTE[p.theme];
       const { w, h, dpr } = sizeRef.current;
+      // Ease towards a target view at the same speed whatever the frame rate (a fifth of the way per 60 Hz frame).
+      const k = 1 - Math.pow(0.8, Math.min(30, (time - (lastFrame || time - 16.7)) / 16.7));
+      lastFrame = time;
       if (panTarget.current) {
         const cur = viewRef.current!, t = panTarget.current;
-        const nx = cur.cx + (t.cx - cur.cx) * 0.2, ny = cur.cy + (t.cy - cur.cy) * 0.2;
-        if (Math.abs(t.cx - nx) * cur.scale < 0.5 && Math.abs(t.cy - ny) * cur.scale < 0.5) {
-          viewRef.current = { ...cur, cx: t.cx, cy: t.cy };
+        const nx = cur.cx + (t.cx - cur.cx) * k, ny = cur.cy + (t.cy - cur.cy) * k;
+        const ts = t.scale ?? cur.scale, ns = cur.scale * Math.pow(ts / cur.scale, k);
+        if (Math.abs(t.cx - nx) * cur.scale < 0.5 && Math.abs(t.cy - ny) * cur.scale < 0.5 && Math.abs(ts / ns - 1) < 0.005) {
+          viewRef.current = { cx: t.cx, cy: t.cy, scale: ts };
           panTarget.current = null;
-        } else viewRef.current = { ...cur, cx: nx, cy: ny };
+        } else viewRef.current = { cx: nx, cy: ny, scale: ns };
       }
       const v = viewRef.current!;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -204,6 +234,31 @@ export default function MapCanvas(props: Props) {
         }
       }
 
+      // A competitor's network, in its colour; its hubs get a ring below.
+      const net = p.airline ? airlineNetwork(p.airline.id) : null;
+      if (net) {
+        const maxF = Math.max(1, ...net.routes.map((r) => r.freq));
+        for (const r of net.routes) {
+          const picked = p.airline?.route === r.key;
+          const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
+          if (!picked && pts.every(([x, y]) => x < -20 || y < -20 || x > w + 20 || y > h + 20)) continue;
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.lineCap = 'round';
+          if (picked) {
+            ctx.strokeStyle = pal.sel;
+            ctx.lineWidth = 8;
+            ctx.globalAlpha = 0.35;
+            ctx.stroke();
+          }
+          ctx.strokeStyle = net.airline.color;
+          ctx.globalAlpha = picked ? 1 : p.airline?.route ? 0.15 : 0.7;
+          ctx.lineWidth = picked ? 3.5 : 0.8 + 2.4 * Math.sqrt(r.freq / maxF);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // Routes
       const pairs = routePairs(p.plan);
       const hintedNodes = new Set((p.hint ?? []).flat());
@@ -225,7 +280,8 @@ export default function MapCanvas(props: Props) {
         ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
         // With an airport selected, show its direct routes and fade the rest.
         const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
-        if (focus) {
+        if (net) ctx.globalAlpha = 0.25;
+        else if (focus) {
           if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
           else if (hintedNodes.has(r.a) || hintedNodes.has(r.b)) { /* part of a transit idea: keep it visible */ }
           else ctx.globalAlpha = 0.18;
@@ -309,6 +365,9 @@ export default function MapCanvas(props: Props) {
       // Airports
       const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
       const hinted = new Set((p.hint ?? []).flat());
+      const netHubs = new Set(net?.hubs.map((x) => x.code) ?? []);
+      const picked = net && p.airline?.route ? p.airline.route.split('-') : [];
+      for (const c of picked) hinted.add(c);
       ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
       ctx.textBaseline = 'middle';
       const labels: { prio: number; text: string; x: number; y: number }[] = [];
@@ -326,6 +385,14 @@ export default function MapCanvas(props: Props) {
           ctx.fill();
           ctx.globalAlpha = 1;
         }
+        if (netHubs.has(a.code)) {
+          ctx.beginPath();
+          ctx.arc(x, y, r + 5, 0, Math.PI * 2);
+          ctx.strokeStyle = net!.airline.color;
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          hinted.add(a.code);
+        }
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.airport : pal.land;
@@ -335,7 +402,7 @@ export default function MapCanvas(props: Props) {
         ctx.stroke();
         const showLabel = hinted.has(a.code) || a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
         if (showLabel) {
-          const prio = selected || isBase ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
+          const prio = selected || isBase || netHubs.has(a.code) ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
           labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
         }
       }

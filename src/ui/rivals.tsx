@@ -5,15 +5,14 @@ import { KIND_NAMES, rivalsBetween, type Airline } from '../sim/competitors';
 import { type Plan, type RouteResult } from '../sim/simulate';
 import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
 import { count, pct } from './format';
+import { useAirlineLink } from './airlines';
 
+/** An airline's name; taps open its profile wherever the app provides one. */
 export function AirlineName({ airline }: { airline: Airline }) {
-  return (
-    <span className="airline">
-      <i style={{ background: airline.color }} />
-      {airline.name}
-      <em>{KIND_NAMES[airline.kind]}</em>
-    </span>
-  );
+  const open = useAirlineLink();
+  const body = <><i style={{ background: airline.color }} />{airline.name}<em>{KIND_NAMES[airline.kind]}</em></>;
+  if (!open || airline.id === 'other') return <span className="airline">{body}</span>;
+  return <button className="airline link" onClick={(e) => { e.stopPropagation(); open(airline.id); }} aria-label={`看${airline.name}的航線網`}>{body}<span className="chev">›</span></button>;
 }
 
 const OWN_COLOR = 'var(--accent)';
@@ -61,7 +60,7 @@ export function MarketShare({ a, b, result, split: given }: { a: string; b: stri
             <li key={r.id} className={r.kind === 'own' ? 'own' : undefined}>
               <i style={{ background: rowColor(r) }} />
               <span className="name">
-                <b>{rowName(r)}{r.airline && <em>{KIND_NAMES[r.airline.kind]}</em>}</b>
+                {r.airline ? <b><AirlineName airline={r.airline} /></b> : <b>{rowName(r)}</b>}
                 <small>
                   {r.kind === 'connecting' ? '沒有直飛，旅客轉機' : `每週 ${count(r.freq)} 班`}
                   {r.fare ? ` · NT$${count(r.fare)}` : ''}
