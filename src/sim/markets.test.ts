@@ -38,7 +38,7 @@ test('airport populations are real metro populations shared between the airports
   const metro = (codes: string[]) => codes.reduce((s, c) => s + AIRPORT_BY_CODE[c].catchment, 0) / 1e6;
   expect(metro(['JFK', 'LGA', 'EWR'])).toBeGreaterThan(15);
   expect(metro(['JFK', 'LGA', 'EWR'])).toBeLessThan(26);
-  expect(metro(['LHR', 'LGW', 'STN', 'LTN', 'LCY'])).toBeGreaterThan(11);
+  expect(metro(['LHR', 'LGW', 'STN', 'LTN'])).toBeGreaterThan(11);
   expect(metro(['CDG', 'ORY'])).toBeGreaterThan(8);
   expect(AIRPORT_BY_CODE.JFK.catchment).toBeGreaterThan(AIRPORT_BY_CODE.LGA.catchment);
   expect(AIRPORT_BY_CODE.SIN.catchment).toBeLessThan(12e6);
