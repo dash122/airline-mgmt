@@ -513,3 +513,70 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .via-legs .leg.miss { color: var(--sel); border-style: dashed; border-color: var(--sel); }
 .via-legs .chip { padding: 4px 10px; font-size: 12px; }
 .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
+
+/* Tap-to-explain numbers */
+button.stat.tappable { text-align: left; border: 1px solid transparent; cursor: pointer; font: inherit; color: inherit; }
+button.stat.tappable.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--line)); }
+.why-dot { display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 7px; font-size: 9px; font-style: normal; font-weight: 700; background: var(--muted); color: var(--bg); vertical-align: 1px; margin-left: 2px; }
+.explain { margin-top: 8px; border: 1px solid var(--accent); border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.explain-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.explain-head b { font-size: 15px; }
+.close.sm { width: 26px; height: 26px; border-radius: 13px; font-size: 12px; }
+.explain p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.explain p.tip { color: var(--muted); font-size: 12px; margin-bottom: 0; }
+.explain dl { margin: 6px 0 0; display: grid; gap: 3px; font-size: 12px; }
+.explain dl > div { display: flex; justify-content: space-between; gap: 10px; }
+.explain dt { color: var(--muted); }
+.explain dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.explain dl > div.total { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; font-weight: 700; }
+.explain dl > div.total dt { color: inherit; }
+.explain .good dd { color: var(--good); }
+.explain .bad dd { color: var(--bad); }
+.explain .warn dd { color: var(--warn); }
+
+/* Airport sheet: summary tiles that open each section (same four for every airport) */
+.ap-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ap-tiles button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 7px 8px; border-radius: 12px; background: var(--line); border: 1.5px solid transparent; color: inherit; font: inherit; min-width: 0; }
+.ap-tiles button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--line)); }
+.ap-tiles .label { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ap-tiles .value { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ap-tiles small { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* Competition: you vs rivals */
+.vs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.vs-head > div { display: flex; flex-direction: column; }
+.vs-head > div:last-child { text-align: right; }
+.vs-head b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.vs-head > div:first-child b { color: var(--accent); }
+.vs-head small { font-size: 11px; color: var(--muted); }
+.vs-head > span { color: var(--muted); font-size: 12px; }
+.vs-list, .pot-list { list-style: none; margin: 0; padding: 0; }
+.vs-list > li, .pot-list > li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.vs-list > li.flown .name b::before, .pot-list > li.flown .name b::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 4px; background: var(--accent); margin-right: 6px; vertical-align: 1px; }
+.vs-top { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.vs-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.vs-top .name small { font-size: 11px; color: var(--muted); }
+.share-track.thin { height: 8px; margin: 5px 0 2px; }
+.vs-who { display: block; font-size: 11px; color: var(--muted); }
+.vs-more { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.competitor-list > li.carrier { display: flex; align-items: center; gap: 8px; padding: 9px 0; }
+.competitor-list > li.carrier .name { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.competitor-list > li.carrier small { font-size: 11px; color: var(--muted); }
+.k.spill { color: var(--warn); }
+.k.est { color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.k.rest { color: var(--line); }
+
+/* Market potential */
+.pot-head { background: var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 4px; }
+.pot-head .share-track { background: color-mix(in srgb, var(--muted) 25%, transparent); margin-bottom: 0; }
+.pot-nums { display: flex; gap: 14px; flex-wrap: wrap; }
+.pot-nums > div { display: flex; flex-direction: column; }
+.pot-nums b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.pot-nums b.acc { color: var(--accent); }
+.pot-nums small { font-size: 11px; color: var(--muted); }
+.pot-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 5px 0 2px; gap: 1px; }
+.pot-bar i { display: block; height: 100%; min-width: 0; }
+.pot-bar .ours { background: var(--accent); }
+.pot-bar .lost { background: repeating-linear-gradient(45deg, var(--warn) 0 4px, transparent 4px 7px); }
+.pot-bar .est { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+.pot-bar .rest { background: var(--line); }

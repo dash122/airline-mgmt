@@ -102,6 +102,18 @@ describe('competitor airlines', () => {
     const route = simulate(r.plan).routes['HKG-TPE'];
     expect(route.rivals.length).toBeGreaterThan(1);
     const rivalPax = route.rivals.reduce((s, x) => s + x.pax, 0);
-    expect(rivalPax + route.localPax).toBeCloseTo(route.airTotal, -1);
+    // Everyone in the market picks a competitor or the player (some of whom then find the flights full).
+    expect(rivalPax + route.localDemand).toBeCloseTo(route.airTotal, -1);
+  });
+
+  test('competitor frequencies stay close to real ones on busy Hong Kong routes', () => {
+    // Hong Kong–Guangzhou is a 50-minute train ride: almost nobody flies it.
+    expect(marketBetween('HKG', 'CAN')!.ground?.name).toBe('高鐵/新幹線');
+    expect(marketBetween('HKG', 'CAN')!.rivalFreq).toBeLessThan(15);
+    // Hong Kong–Taipei is one of Asia's busiest routes, mostly on widebodies: about 15 to 20 a day each way.
+    const tpe = marketBetween('HKG', 'TPE')!.rivalFreq;
+    expect(tpe).toBeGreaterThan(70);
+    expect(tpe).toBeLessThan(150);
+    expect(rivalsFrom('HKG', 'TPE').some((s) => s.type === 'B789' || s.type === 'A359' || s.type === 'B77W')).toBe(true);
   });
 });

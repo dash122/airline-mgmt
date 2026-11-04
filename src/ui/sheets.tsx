@@ -11,6 +11,8 @@ import {
 } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { MarketShare, RouteRivals } from './rivals';
+import { ExplainCard, explainRoute, type ExplainKey } from './explain';
+import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
@@ -60,7 +62,13 @@ export function Sheet({ title, sub, onClose, children, size = 'half', over, acti
   );
 }
 
-export function Stat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn' }) {
+export function Stat({ label, value, tone, onTap, active }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onTap?: () => void; active?: boolean }) {
+  if (onTap) return (
+    <button className={`stat tappable ${tone ?? ''}${active ? ' on' : ''}`} onClick={onTap} aria-expanded={!!active} aria-label={`${label} ${value}，點選看原因`}>
+      <span className="label">{label} <i className="why-dot">?</i></span>
+      <span className="value">{value}</span>
+    </button>
+  );
   return (
     <div className={`stat ${tone ?? ''}`}>
       <span className="label">{label}</span>
@@ -147,6 +155,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     return pairs.length ? `沒有其他航空直飛這兩個機場。旅客現在改從同城市的其他機場出發（${pairs.join('、')}），你和這些航班競爭。` : '目前沒有航空飛這兩個城市，旅客只能轉機：你是唯一的直飛。';
   }, [a, b]);
   const types = [...new Set(flights.map((f) => AIRCRAFT[f.ac.type].name))].join('、');
+  const [why, setWhy] = useState<ExplainKey | null>(null);
+  const split = useMemo(() => marketSplit(a, b, result), [a, b, result]);
+  const explained = result && why ? explainRoute(why, result, split) : null;
+  const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
     <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose}>
       <div className="big-step">
@@ -161,14 +173,16 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>
       {result && (
         <div className="stats">
-          <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} />
-          <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} />
-          <Stat label="市占" value={pct(result.marketShare)} />
+          <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'} />
+          <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'} />
+          <Stat label="市占" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'} />
           <Stat label="週需求" value={count(result.demand)} />
           <Stat label="轉機旅客" value={count(result.pax - result.localPax)} />
-          <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} />
+          <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} onTap={tap('spill')} active={why === 'spill'} />
         </div>
       )}
+      {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
+      {result && !why && <div className="hint">點有 ? 的數字，看它為什麼是這個數。</div>}
       {result && <DemandBar seats={result.seats} pax={result.pax} spill={result.spill} />}
       {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客付直飛票價的 85%，再按兩段航線的票價設定（依距離加權）調整，所以這裡改票價也會影響他們。要接得上：看「機場」的轉機分頁。</div>}
       {full && <div className="hint warn">客滿：每週 {count(result!.spill)} 人買不到位子（溢出），不付錢。這時降價只會少賺；漲價先減少溢出，載客率不變。或加班次、換大飛機。</div>}
@@ -189,7 +203,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         : <button className="fare-tip" onClick={() => setFare(best.mult)}>
             最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
           </button>)}
-      <MarketShare a={a} b={b} result={result} />
+      <MarketShare a={a} b={b} result={result} split={split} />
       {elsewhere && <div className="hint">{elsewhere}</div>}
       {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
       <h4>航線班表</h4>

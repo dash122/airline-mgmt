@@ -4,7 +4,7 @@ import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, marketsAt, pairKey } from './markets';
 import {
-  blockMinutes, competitionFor, connectionWeight, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
+  blockMinutes, competitionFor, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
   topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
 import { airChoice, blockHours } from './choice';
@@ -474,6 +474,79 @@ export function stations(plan: Plan, result: NetworkResult | null): StationRow[]
       isHub: plan.hub === code,
     };
   }).sort((x, y) => y.departures - x.departures || x.code.localeCompare(y.code));
+}
+
+/** One market from an airport: how many fly it, how many the player carries, and what an unflown one could bring. */
+export interface MarketPotential {
+  to: string;
+  key: string;
+  distKm: number;
+  flown: boolean;
+  /** Weekly air travellers, both directions, all airlines (with the player's flights when flown). */
+  total: number;
+  /** Weekly local travellers the player carries. */
+  ours: number;
+  /** Weekly local travellers who chose the player but found the flights full. */
+  spill: number;
+  /** Unflown markets: weekly travellers (both directions) one daily round trip would win, before seat limits. */
+  estimate: number;
+  /** Unflown markets: seats a week on one daily round trip with the usual aircraft (0 = nothing can fly it). */
+  seats: number;
+  /** Competitor flights a week, both directions (including same-city airports). */
+  rivalFlights: number;
+}
+
+export interface AirportPotential {
+  /** Weekly air travellers in all markets from this airport, both directions. */
+  total: number;
+  /** Of which the player carries (local travellers only). */
+  ours: number;
+  /** Weekly connecting travellers changing planes here on the player's flights. */
+  transfer: number;
+  rows: MarketPotential[];
+}
+
+/** Weekly air travellers in all markets from an airport (both directions), and how many fly the player's nonstops. */
+export function airportTraffic(result: NetworkResult | null, code: string): { total: number; ours: number } {
+  let total = 0, ours = 0;
+  for (const m of marketsAt(code)) {
+    const r = result?.routes[pairKey(m.a, m.b)];
+    total += r ? r.airTotal : 2 * m.airDemand;
+    ours += r ? r.localPax : 0;
+  }
+  return { total, ours };
+}
+
+/**
+ * The airport's market potential: every market's air travellers against what the player carries, plus the
+ * biggest unflown markets (by today's traffic, and by potential where nobody flies yet) with an estimate of
+ * what one daily round trip would win.
+ */
+export function marketPotential(plan: Plan, result: NetworkResult | null, code: string, limit = 40): AirportPotential {
+  const all = marketsAt(code);
+  const { total, ours } = airportTraffic(result, code);
+  const flown = new Set(spokes(plan, result, code).map((s) => s.other));
+  const other = (m: { a: string; b: string }) => (m.a === code ? m.b : m.a);
+  const byTraffic = [...all].sort((x, y) => y.airDemand - x.airDemand).slice(0, limit);
+  const unserved = all.filter((m) => m.airDemand <= 0).sort((x, y) => y.potential - x.potential).slice(0, Math.ceil(limit / 3));
+  const picked = new Map<string, (typeof all)[number]>();
+  for (const m of [...byTraffic, ...unserved]) picked.set(other(m), m);
+  for (const to of flown) { const m = marketBetween(code, to); if (m) picked.set(to, m); }
+  const rows: MarketPotential[] = [...picked.entries()].map(([to, m]) => {
+    const key = pairKey(code, to);
+    const r = result?.routes[key];
+    const rivalFlights = [competitionFor(code, to), competitionFor(to, code)].reduce((s, c) => s + c.services.reduce((t, x) => t + x.freq, 0), 0);
+    if (r && flown.has(to)) {
+      return { to, key, distKm: m.distKm, flown: true, total: r.airTotal, ours: r.localPax, spill: Math.max(0, r.localDemand - r.localPax), estimate: 0, seats: 0, rivalFlights };
+    }
+    return {
+      to, key, distKm: m.distKm, flown: false, total: todaySplit(code, to).total + todaySplit(to, code).total, ours: 0, spill: 0,
+      estimate: estimateNonstop(plan, code, to), seats: dailySeats(code, to), rivalFlights,
+    };
+  });
+  const size = (x: MarketPotential) => Math.max(x.total, x.ours + x.spill, x.estimate);
+  rows.sort((x, y) => size(y) - size(x) || x.to.localeCompare(y.to));
+  return { total, ours, transfer: result?.transfers[code]?.pax ?? 0, rows: rows.filter((x) => size(x) >= 5) };
 }
 
 export { HUB_COST_PER_WEEK };

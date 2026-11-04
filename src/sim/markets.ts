@@ -25,15 +25,34 @@ export interface Market {
 }
 
 export const MIN_MARKET_KM = 100;
-const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
 const MIN_RIVAL_FREQ = 3;
+
+/**
+ * Travellers per competitor flight. Up to 5,000 a week each way a route is flown with narrowbodies about 80% full
+ * (120 travellers); busier routes get bigger aircraft, as airlines do, so frequency grows slower than traffic.
+ * Hong Kong–Taipei (about 19,000 a week each way) gets about 180 per flight instead of 120.
+ */
+export const rivalLoad = (weeklyAir: number) => Math.min(300, 120 * Math.max(1, Math.pow(weeklyAir / 5000, 0.3)));
 
 /** Average one-way fare across all cabins and booking classes, NT$. */
 export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6 * distKm) / 10) * 10);
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
 
-export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !a.landmass.startsWith('main-');
+/**
+ * Land links the coastline data misses: Hong Kong and Macau are joined to the mainland by the high-speed rail and
+ * the bridge, and Xiamen and Zhuhai by bridges and tunnels.
+ */
+const LAND_LINKS: Record<string, string> = { prd: 'main-0', 'ring-1016': 'main-0', 'isl-ZUH': 'main-0' };
+/** The landmass an airport can reach by rail or road. */
+export const landOf = (a: Airport) => LAND_LINKS[a.landmass] ?? a.landmass;
+/**
+ * High-speed rail at this end. China's network reaches nearly every city with a big airport, and Hong Kong
+ * (West Kowloon) and Macau (via Zhuhai) connect into it.
+ */
+export const hasHsr = (a: Airport) => a.hsr || a.country === 'CN' || a.country === 'HK' || a.country === 'MO';
+
+export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !landOf(a).startsWith('main-');
 
 /** Nearest mainland airport within ferry range of an island airport (a stand-in for the ferry port). */
 const ferryCache = new Map<string, { port: Airport; km: number } | null>();
@@ -51,10 +70,10 @@ function ferryPort(isl: Airport) {
 }
 
 function landOption(a: Airport, b: Airport, distKm: number): GroundOption | undefined {
-  if (a.landmass !== b.landmass) return undefined;
-  if (a.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
+  if (landOf(a) !== landOf(b)) return undefined;
+  if (a.landmass === 'prd' && b.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
   const km = distKm * GROUND.detour;
-  const mode = a.hsr && b.hsr ? GROUND.hsr : GROUND.conventional;
+  const mode = hasHsr(a) && hasHsr(b) ? GROUND.hsr : GROUND.conventional;
   return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
 }
 
@@ -85,7 +104,7 @@ function baseline(potential: number, fare: number, distKm: number, ground?: Grou
   for (let i = 0; i < 8; i++) {
     const uAir = Math.exp(airUtility(fare, distKm, freq));
     air = (potential * uAir) / (uAir + uGround + uNone);
-    const next = air / SEATS_PER_RIVAL_FLIGHT;
+    const next = air / rivalLoad(air);
     if (next < MIN_RIVAL_FREQ) return { air: 0, freq: 0 };
     freq = next;
   }

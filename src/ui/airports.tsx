@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { modelledAnnualPax } from '../sim/markets';
-import { hubOf, hubOpportunities, linkages, hourly, spokes, stations, viaGroup, viewFromHub, type HubView, type Linkage, type LinkStatus, type Spoke, type SpokeIdea } from '../sim/airports';
+import { airportTraffic, hubOf, hubOpportunities, linkages, hourly, spokes, stations, viaGroup, viewFromHub, type HubView, type Linkage, type LinkStatus, type Spoke, type SpokeIdea } from '../sim/airports';
 import {
   CONNECT_FARE_SHARE, HUB_COST_PER_WEEK, HUB_MCT_CUT, hhmm, layoverKind, MAX_DETOUR, MAX_DETOUR_SHORT, minConnect, STOPOVER_FARE_SHARE, stopoverAppealHours,
-  topMarketsFrom, weeklyDepartures, type NetworkResult, type Plan,
+  weeklyDepartures, type NetworkResult, type Plan,
 } from '../sim/simulate';
-import { count, money, pct } from './format';
+import { count, money, pct, short } from './format';
 import { Sheet, Stat, tone } from './sheets';
-import { AirportRivals } from './rivals';
+import { airlinesAt } from '../sim/competitors';
+import { AirportCompetition, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
 
 const lfClass = (lf: number | null) => (lf === null ? 'idle' : lf >= 0.8 ? 'good' : lf >= 0.6 ? 'warn' : 'bad');
 
@@ -250,8 +251,6 @@ function LayoverLegend({ hub }: { hub: string }) {
   );
 }
 
-type AirportTab = 'now' | 'transfer' | 'market' | 'rivals';
-
 export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose }: {
   plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
   onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
@@ -259,7 +258,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   /** Legs to sketch on the map while transit ideas are on screen (dashed = not flown yet). */
   onHint: (legs: [string, string][] | null) => void; onClose: () => void;
 }) {
-  const [tab, setTab] = useState<AirportTab>('now');
+  const [tab, setTab] = useState<AirportSection>('routes');
   const persp = hubOf(plan);
   const isPersp = code === persp;
   const view = useMemo(() => (isPersp ? null : viewFromHub(plan, result, persp, code)), [plan, result, persp, code, isPersp]);
@@ -283,18 +282,24 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
   const links = tab === 'transfer' && isPersp ? linkages(plan, result, code) : [];
-  const top = tab === 'market' || tab === 'rivals' ? topMarketsFrom(code, plan) : [];
   const served = used > 0;
+  const carriers = airlinesAt(code);
+  const traffic = useMemo(() => airportTraffic(result, code), [result, code]);
+  const ourPax = list.reduce((s, x) => s + x.pax, 0);
+  const tiles: Tile[] = [
+    { key: 'routes', label: '你的航線', value: list.length ? `${list.length} 條` : '—', sub: list.length ? `${short(ourPax)} 人/週` : '還沒飛' },
+    { key: 'rivals', label: '對手', value: carriers.length ? `${carriers.length} 家` : '—', sub: carriers.length ? `${short(carriers.reduce((s, c) => s + c.flights, 0))} 班/週` : '沒有對手' },
+    { key: 'market', label: '市場', value: traffic.ours >= 1 ? pct(traffic.ours / Math.max(1, traffic.total)) : '0%', sub: `共 ${short(traffic.total)} 人/週` },
+    isPersp
+      ? { key: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週在這裡轉' }
+      : { key: 'transfer', label: `經${persp}轉機`, value: `${view?.rows.length ?? 0} 處`, sub: `約 ${short(view?.total ?? 0)} 人/週` },
+  ];
   return (
     <Sheet title={`${a.name} ${a.code}`} onClose={onClose}
       sub={`腹地人口 ${count(a.catchment / 1e4)} 萬 · 模擬年旅客 ${(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 ${used}/${a.slotCap} 班/週 · 跑道 ${count(a.runwayM)} 公尺（最大 ${CLASS_NAMES[a.maxClass]}）${code === plan.base ? ' · 你的基地' : ''}${isHub ? ' · 轉運站' : ''}`}>
-      <div className="seg four" role="tablist">
-        {([['now', '航線'], ['transfer', '轉機'], ['market', '市場'], ['rivals', '對手']] as [AirportTab, string][]).map(([t, label]) => (
-          <button key={t} role="tab" className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{label}{t === 'transfer' && transfer ? ` ${count(transfer.pax)}` : ''}</button>
-        ))}
-      </div>
+      <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
 
-      {tab === 'now' && (
+      {tab === 'routes' && (
         <>
           {list.length === 0 ? <div className="hint center">你還沒有從這裡起降的航班。</div> : <Radial code={code} list={list} onPick={onOpenRoute} />}
           {list.length > 0 && <div className="hint">線的粗細是旅客數，顏色是載客率（綠 80% 以上、黃 60% 以上、紅偏低），方向大致對應實際方位。點線可開啟航線。</div>}
@@ -375,23 +380,9 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
         </>
       )}
 
-      {tab === 'rivals' && <AirportRivals code={code} served={(to) => top.some((m) => m.to === to && m.served) || list.some((x) => x.other === to)} onOpen={onOpen} />}
+      {tab === 'rivals' && <AirportCompetition result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
 
-      {tab === 'market' && (
-        <>
-          <button className="primary wide" onClick={onConnect}>從這裡開新航線</button>
-          <h4>最大市場（每週單向航空旅客）</h4>
-          <ul className="markets">
-            {top.map((m) => (
-              <li key={m.to}>
-                <span className="name">{AIRPORT_BY_CODE[m.to].name} <small>{m.to} · {count(m.distKm)} 公里</small></span>
-                <span className="num">{count(m.airDemand)}</span>
-                {m.served ? <span className="tag">已開航</span> : <button onClick={() => onOpen(m.to)}>開航</button>}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {tab === 'market' && <AirportMarkets plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}
     </Sheet>
   );
 }

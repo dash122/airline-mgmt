@@ -64,6 +64,13 @@ function pickName(pool: string[], key: string, used: Set<string>): string {
     const n = pool[(start + i) % pool.length];
     if (!used.has(n)) { used.add(n); return n; }
   }
+  // Pool used up: pair the first character of one name with the second of another (雲帆 + 海燕 → 雲燕).
+  const n = pool.length;
+  for (let k = 0; k < n * n; k++) {
+    const i = (start + k) % n, j = (start + 1 + Math.floor(k / n) + k) % n;
+    const name = `${pool[i][0]}${pool[j][1]}`;
+    if (i !== j && !used.has(name) && !pool.includes(name)) { used.add(name); return name; }
+  }
   const name = `${pool[start]}${used.size}`;
   used.add(name);
   return name;

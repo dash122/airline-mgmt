@@ -10,6 +10,11 @@ export const AIR_TARGETS_M: Record<string, number> = {
   'MO-TW': 1.5,
   'JP-MO': 0.6,
   'HK-MO': 0.05, // almost everyone takes the bridge or ferry
+  // Mainland China: cross-border flying is far below what city sizes suggest (rail to Hong Kong, limits on
+  // cross-strait flights), so the gravity model alone gave Hong Kong–Guangzhou 80 flights a day.
+  'CN-HK': 7,
+  'CN-TW': 4,
+  'CN-JP': 11,
 };
 
 /** Relative propensity to travel, by country (income and travel habits). */
