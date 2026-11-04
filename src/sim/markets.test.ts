@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { AIRPORT_BY_CODE, airportMarkerRadius } from '../data/airports';
 import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
-import { marketBetween, marketsAt, modelledAnnualPax } from './markets';
+import { marketBetween, marketsAt, modelledAnnualPax, rivalPaxPerFlight } from './markets';
 
 test('global hubs have substantial transatlantic and transpacific demand', () => {
   for (const [a, b] of [['JFK', 'LHR'], ['LAX', 'NRT'], ['LAX', 'LHR'], ['JFK', 'CDG']]) {
@@ -42,4 +42,38 @@ test('airport populations are real metro populations shared between the airports
   expect(metro(['CDG', 'ORY'])).toBeGreaterThan(8);
   expect(AIRPORT_BY_CODE.JFK.catchment).toBeGreaterThan(AIRPORT_BY_CODE.LGA.catchment);
   expect(AIRPORT_BY_CODE.SIN.catchment).toBeLessThan(12e6);
+});
+
+test('competitor frequencies are in the range of real timetables', () => {
+  // Weekly flights per direction, all airlines, roughly as flown about 2024 (with room either side).
+  const ranges: [string, string, number, number][] = [
+    ['HKG', 'TPE', 60, 120], // about 12-15 a day
+    ['HKG', 'NRT', 25, 70],
+    ['HKG', 'BKK', 35, 90],
+    ['HND', 'CTS', 100, 220],
+    ['SIN', 'KUL', 150, 350],
+  ];
+  for (const [a, b, lo, hi] of ranges) {
+    const f = marketBetween(a, b)!.rivalFreq;
+    expect(f, `${a}-${b}`).toBeGreaterThanOrEqual(lo);
+    expect(f, `${a}-${b}`).toBeLessThanOrEqual(hi);
+  }
+});
+
+test('nobody flies where fast rail takes under about two and a half hours', () => {
+  for (const [a, b] of [['HKG', 'CAN'], ['TPE', 'KHH'], ['HND', 'NGO']]) {
+    const m = marketBetween(a, b)!;
+    expect(m.potential, `${a}-${b}`).toBeGreaterThan(0);
+    expect(m.rivalFreq, `${a}-${b}`).toBe(0);
+  }
+  // Tokyo-Osaka is about three hours by Shinkansen and still busy by air.
+  expect(marketBetween('HND', 'ITM')!.rivalFreq).toBeGreaterThan(50);
+});
+
+test('busier routes get bigger aircraft as well as more flights', () => {
+  expect(rivalPaxPerFlight(500, 800)).toBeLessThan(rivalPaxPerFlight(5000, 800));
+  expect(rivalPaxPerFlight(5000, 800)).toBeLessThan(rivalPaxPerFlight(50000, 800));
+  expect(rivalPaxPerFlight(1e6, 800)).toBeLessThanOrEqual(300);
+  expect(rivalPaxPerFlight(1e6, 800, 60)).toBe(60);
+  expect(rivalPaxPerFlight(500, 9000)).toBeGreaterThanOrEqual(230);
 });

@@ -102,6 +102,7 @@ describe('competitor airlines', () => {
     const route = simulate(r.plan).routes['HKG-TPE'];
     expect(route.rivals.length).toBeGreaterThan(1);
     const rivalPax = route.rivals.reduce((s, x) => s + x.pax, 0);
-    expect(rivalPax + route.localPax).toBeCloseTo(route.airTotal, -1);
+    // Rival travellers are counted before seats run out, so they add up with our demand (carried plus spill).
+    expect(rivalPax + route.localDemand + route.connectingPax).toBeCloseTo(route.airTotal, -1);
   });
 });

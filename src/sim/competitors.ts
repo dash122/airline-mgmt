@@ -41,7 +41,7 @@ export const KIND_NAMES: Record<AirlineKind, string> = { full: '全服務', low:
 
 const KIND_SETTINGS: Record<AirlineKind, { fareMult: number; quality: number; fleet: AircraftModel[]; maxKm: number }> = {
   full: { fareMult: 1.1, quality: 400, fleet: ['A20N', 'A21N', 'B789', 'A359', 'B77W'], maxKm: 15000 },
-  low: { fareMult: 0.78, quality: -500, fleet: ['A20N', 'A21N'], maxKm: 4500 },
+  low: { fareMult: 0.78, quality: -500, fleet: ['A20N', 'A21N', 'A333'], maxKm: 4500 },
   regional: { fareMult: 1, quality: 0, fleet: ['ATR72', 'Q400', 'E190'], maxKm: 1200 },
 };
 
@@ -136,9 +136,13 @@ function canFly(type: AircraftModel, a: Airport, b: Airport, distKm: number): bo
   return distKm <= s.rangeKm && classRank(s.cls) <= Math.min(classRank(a.maxClass), classRank(b.maxClass));
 }
 
+/** Low-cost airlines fly single-aisle jets, and widebodies only on longer routes (like the long-haul low-cost arms in Asia). */
+const LOW_COST_WIDEBODY_KM = 2500;
+
 /** Smallest aircraft in the airline's fleet that carries the expected load, or the largest that can fly it. */
 function pickType(al: Airline, a: Airport, b: Airport, distKm: number, seatsNeeded: number): AircraftModel | null {
-  const fleet = KIND_SETTINGS[al.kind].fleet.filter((t) => canFly(t, a, b, distKm)).sort((x, y) => AIRCRAFT[x].seats - AIRCRAFT[y].seats);
+  const fleet = KIND_SETTINGS[al.kind].fleet
+    .filter((t) => canFly(t, a, b, distKm) && !(al.kind === 'low' && AIRCRAFT[t].cls === 'widebody' && distKm < LOW_COST_WIDEBODY_KM)).sort((x, y) => AIRCRAFT[x].seats - AIRCRAFT[y].seats);
   if (!fleet.length) return null;
   return fleet.find((t) => AIRCRAFT[t].seats >= seatsNeeded) ?? fleet[fleet.length - 1];
 }
