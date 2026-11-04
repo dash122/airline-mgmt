@@ -26,6 +26,19 @@ export interface Market {
 }
 
 export const MIN_MARKET_KM = 100;
+/** Routes longer than this need a widebody and two big airports, and count against the long-haul budget. */
+export const LONG_HAUL_KM = 4500;
+/** Most nonstop destinations competitors serve from an airport, short and medium haul. */
+export const DESTINATIONS = { hub: 100, major: 60, large: 30, medium: 12, small: 4 } as const;
+/**
+ * Most long-haul destinations, on top of DESTINATIONS: 0.8 per million annual passengers (Heathrow about 67,
+ * Hong Kong 42, Taipei 36), or 8 for a major airport without a traffic figure. Only hubs and majors fly long-haul.
+ */
+export function longHaulDestinations(a: Airport): number {
+  if (a.size !== 'hub' && a.size !== 'major') return 0;
+  const traffic = ANNUAL_TRAFFIC_M[a.code];
+  return traffic ? Math.max(5, Math.round(traffic * 0.8)) : 8;
+}
 const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
 const MIN_RIVAL_FREQ = 3;
 
@@ -42,7 +55,17 @@ export function rivalPaxPerFlight(weeklyAir: number, distKm: number, maxPax = MA
   const floor = distKm > 4500 ? 230 : 50;
   return Math.min(maxPax, Math.max(floor, gauge));
 }
-const maxPaxBetween = (a: Airport, b: Airport) => MAX_PAX_BY_CLASS[classRank(a.maxClass) < classRank(b.maxClass) ? a.maxClass : b.maxClass];
+/**
+ * Long-haul flights from a hub also carry travellers connecting there (most of Hong Kong-London's seats, for one),
+ * which this origin-destination model doesn't count, so they fly this much more often per hub end.
+ */
+export const LONG_HAUL_HUB_UPLIFT = 0.4;
+
+/** What shapes competitor service between two airports: the biggest aircraft both take, and hub connecting traffic. */
+const serviceBetween = (a: Airport, b: Airport, distKm: number) => ({
+  maxPax: MAX_PAX_BY_CLASS[classRank(a.maxClass) < classRank(b.maxClass) ? a.maxClass : b.maxClass],
+  uplift: distKm > LONG_HAUL_KM ? 1 + LONG_HAUL_HUB_UPLIFT * [a, b].filter(x => x.size === 'hub').length : 1,
+});
 
 /** Average one-way fare across all cabins and booking classes, NT$. */
 export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6 * distKm) / 10) * 10);
@@ -116,7 +139,7 @@ export function groundOption(a: Airport, b: Airport, distKm: number): GroundOpti
  */
 export const RAIL_ONLY_HOURS = 2.5;
 
-function baseline(potential: number, fare: number, distKm: number, ground?: GroundOption, maxPax?: number) {
+function baseline(potential: number, fare: number, distKm: number, ground: GroundOption | undefined, service: { maxPax: number; uplift: number }) {
   if (ground && ground.comfort > 0 && ground.hours <= RAIL_ONLY_HOURS) return { air: 0, freq: 0 };
   const uGround = ground ? Math.exp(groundUtility(ground)) : 0;
   const uNone = Math.exp(noTravelUtility(fare, distKm));
@@ -127,10 +150,21 @@ function baseline(potential: number, fare: number, distKm: number, ground?: Grou
     air = (potential * uAir) / (uAir + uGround + uNone);
     // Too few travellers for a regular service (a few flights a week on a mid-sized jet).
     if (air < MIN_RIVAL_FREQ * SEATS_PER_RIVAL_FLIGHT) return { air: 0, freq: 0 };
-    freq = Math.max(MIN_RIVAL_FREQ, air / rivalPaxPerFlight(air, distKm, maxPax));
+    freq = Math.max(MIN_RIVAL_FREQ, (service.uplift * air) / rivalPaxPerFlight(air, distKm, service.maxPax));
   }
   return { air, freq: Math.round(freq) };
 }
+
+/**
+ * Distance as the gravity model feels it. Past LONG_HAUL_FLAT_KM demand falls off much more slowly: nothing but a
+ * flight makes the trip, and family, business and holiday ties between big cities don't fade with every extra
+ * thousand kilometres. Without this, Hong Kong-London drew a third of Hong Kong-Tokyo's travellers.
+ */
+export const LONG_HAUL_FLAT_KM = 3000;
+const gravityKm = (distKm: number) => {
+  const d = Math.max(distKm, 150);
+  return d <= LONG_HAUL_FLAT_KM ? d : LONG_HAUL_FLAT_KM + (d - LONG_HAUL_FLAT_KM) * 0.25;
+};
 
 function buildMarkets(): Map<string, Market> {
   const mass = AIRPORTS.map((a) =>
@@ -144,7 +178,7 @@ function buildMarkets(): Map<string, Market> {
       if (a.metro === b.metro) continue;
       const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
       if (distKm < MIN_MARKET_KM) continue;
-      const gravity = (mass[i] * mass[j]) / Math.pow(Math.max(distKm, 150) / 100, DISTANCE_EXPONENT);
+      const gravity = (mass[i] * mass[j]) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
       raw.push({ i, j, distKm, gravity, group: groupOf(a, b), ground: groundOption(a, b, distKm) });
     }
   }
@@ -160,7 +194,7 @@ function buildMarkets(): Map<string, Market> {
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
     for (const r of calibrated) {
-      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground, maxPaxBetween(AIRPORTS[r.i], AIRPORTS[r.j]));
+      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground, serviceBetween(AIRPORTS[r.i], AIRPORTS[r.j], r.distKm));
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
     for (const g of Object.keys(scale).filter(g => g in AIR_TARGETS_M)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
@@ -173,7 +207,7 @@ function buildMarkets(): Map<string, Market> {
     const potential = r.gravity * scale[r.group];
     const fare = refFare(r.distKm);
     const b = hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
-      ? baseline(potential, fare, r.distKm, r.ground, maxPaxBetween(AIRPORTS[r.i], AIRPORTS[r.j]))
+      ? baseline(potential, fare, r.distKm, r.ground, serviceBetween(AIRPORTS[r.i], AIRPORTS[r.j], r.distKm))
       : { air: 0, freq: 0 };
     out.set(pairKey(AIRPORTS[r.i].code, AIRPORTS[r.j].code), {
       a: AIRPORTS[r.i].code,
@@ -188,20 +222,28 @@ function buildMarkets(): Map<string, Market> {
     });
   }
   // Simulated destination budgets keep potential demand separate from nonstop service.
-  const limits = { hub: 100, major: 60, large: 30, medium: 12, small: 4 };
+  // Long-haul routes (over LONG_HAUL_KM) have their own budget. They carry fewer travellers than a hub's short-haul
+  // routes, so in one shared budget the short-haul ones took every slot.
   const degree = new Map<string, number>();
+  const longDegree = new Map<string, number>();
+  const longOk = (m: Market) => m.distKm <= 15000
+    && [m.a, m.b].every(c => { const x = AIRPORT_BY_CODE[c]; return (x.size === 'hub' || x.size === 'major') && x.maxClass === 'widebody'; });
+  // Long-haul flows concentrate between big hubs, so hub-to-hub routes take long-haul slots first. In plain demand
+  // order a hub's slots went to whichever secondary cities came first, and Hong Kong-London found London full.
+  const hubEnds = (m: Market) => m.distKm > LONG_HAUL_KM ? [m.a, m.b].filter(c => AIRPORT_BY_CODE[c].size === 'hub').length : 0;
   const candidates = [...out.values()].filter(m => m.rivalFreq > 0)
-    .sort((a, b) => b.airDemand - a.airDemand || pairKey(a.a, a.b).localeCompare(pairKey(b.a, b.b)));
+    .sort((a, b) => hubEnds(b) - hubEnds(a) || b.airDemand - a.airDemand || pairKey(a.a, a.b).localeCompare(pairKey(b.a, b.b)));
   for (const m of candidates) {
     const a = AIRPORT_BY_CODE[m.a], b = AIRPORT_BY_CODE[m.b];
-    if ((degree.get(m.a) ?? 0) >= limits[a.size] || (degree.get(m.b) ?? 0) >= limits[b.size]
-      || m.distKm > 15000
-      || (m.distKm > 4500 && ![a, b].every(x => (x.size === 'hub' || x.size === 'major') && x.maxClass === 'widebody'))) {
+    const long = m.distKm > LONG_HAUL_KM;
+    const deg = long ? longDegree : degree;
+    const lim = long ? longHaulDestinations : (x: Airport) => DESTINATIONS[x.size];
+    if ((deg.get(m.a) ?? 0) >= lim(a) || (deg.get(m.b) ?? 0) >= lim(b) || (long && !longOk(m))) {
       m.rivalFreq = 0;
       m.airDemand = 0;
     } else {
-      degree.set(m.a, (degree.get(m.a) ?? 0) + 1);
-      degree.set(m.b, (degree.get(m.b) ?? 0) + 1);
+      deg.set(m.a, (deg.get(m.a) ?? 0) + 1);
+      deg.set(m.b, (deg.get(m.b) ?? 0) + 1);
     }
   }
   // Preserve calibrated regional totals on the retained network.
@@ -223,7 +265,7 @@ function buildMarkets(): Map<string, Market> {
     for (const m of retained) {
       if (m.group in AIR_TARGETS_M) continue;
       m.potential *= Math.pow((factors[m.a] ?? 1) * (factors[m.b] ?? 1), 0.35);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, maxPaxBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b]));
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }
@@ -234,7 +276,7 @@ function buildMarkets(): Map<string, Market> {
     for (const m of retained) {
       if (!(m.group in AIR_TARGETS_M)) continue;
       m.potential *= Math.pow(targetWeekly(m.group) / Math.max(totals[m.group], 1), 0.7);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, maxPaxBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b]));
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }

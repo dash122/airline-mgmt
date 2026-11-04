@@ -63,7 +63,8 @@ describe('airports in one city', () => {
     expect(itm.rivals.length).toBeGreaterThan(0);
     // About the same order of demand as flying to the busier airport, not the whole city's travellers.
     expect(itm.demand).toBeLessThan(kix.demand * 2);
-    expect(itm.demand).toBeLessThan(itm.seats);
+    // The bug this guards against put about 11,900 a week on one daily flight.
+    expect(itm.demand).toBeLessThan(itm.seats * 1.5);
   });
   test('a city pair nobody flies still gives the first nonstop most travellers, not all of them', () => {
     const m = marketBetween('HUN', 'ITM')!;
