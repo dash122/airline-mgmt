@@ -7,7 +7,8 @@ import {
   blockMinutes, competitionFor, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
   topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
-import { airChoice, blockHours } from './choice';
+import { airChoice } from './choice';
+import { typicalFlightHours } from './flighttime';
 import { distanceKm } from './geo';
 
 export interface BoardFlight {
@@ -238,7 +239,7 @@ export function estimateVia(plan: Plan, o: string, hub: string, d: string): numb
   if (!m || AIRPORT_BY_CODE[o].metro === AIRPORT_BY_CODE[d].metro) return 0;
   const l1 = km(o, hub), l2 = km(hub, d);
   if (!detourOk(m.distKm, l1 + l2)) return 0;
-  const blockH = blockHours(l1) + blockHours(l2);
+  const blockH = typicalFlightHours(l1) + typicalFlightHours(l2);
   const w1 = connectionWeight(blockH, minConnect(hub, o, d, plan.hub) + 30, hub, m.distKm);
   const mult = (fareMultOf(plan, pairKey(o, hub)) * l1 + fareMultOf(plan, pairKey(hub, d)) * l2) / (l1 + l2);
   return takeOneWay(plan, o, d, w1, mult) + takeOneWay(plan, d, o, w1, mult);

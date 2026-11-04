@@ -146,10 +146,19 @@ describe('transfers', () => {
     expect(minConnect('TPE', 'HKG', 'NRT')).toBeGreaterThan(minConnect('KHH', 'TSA', 'TPE'));
     expect(minConnect('TPE', 'HKG', 'NRT', 'TPE')).toBeLessThan(minConnect('TPE', 'HKG', 'NRT'));
   });
+  test('minimum connections are about as short as real airports allow', () => {
+    expect(minConnect('KHH', 'TSA', 'TPE')).toBeLessThanOrEqual(40);
+    expect(minConnect('TPE', 'HKG', 'NRT')).toBeLessThanOrEqual(65);
+  });
+  test('a long wait of up to 4 hours is still an ordinary connection', () => {
+    expect(layoverKind(230)).toBe('quick');
+    expect(layoverCostHours(240, 'TPE')).toBeLessThan(4);
+  });
   test('a connection just under the minimum is missed, and the hub setting catches it', () => {
-    // The inbound lands at TPE; leave 75 min later: under the 80 min international minimum, over the hub's 70.
+    // The inbound lands at TPE; leave 60 min later: under the 65 min international minimum, over the hub's 55.
+    expect(minConnect('TPE', 'HKG', 'NRT')).toBe(65);
     const land = 8 * 60 + blockMinutes('HKG', 'TPE', 'A20N');
-    const h = (land + 75) / 60;
+    const h = (land + 60) / 60;
     expect(simulate(withOnward(h)).connectingPax).toBe(0);
     expect(simulate(withOnward(h, 'TPE')).connectingPax).toBeGreaterThan(0);
   });

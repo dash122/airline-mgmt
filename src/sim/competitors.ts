@@ -4,7 +4,8 @@
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
-import { blockHours, departureQuality } from './choice';
+import { departureQuality } from './choice';
+import { flightMinutes } from './flighttime';
 import { distanceKm } from './geo';
 import { isLeisureAirport, LONG_HAUL_KM, marketBetween, marketsAt, pairKey, rivalPaxPerFlight, type Market } from './markets';
 
@@ -349,9 +350,12 @@ export const HUB_WAVES = [7 * 60 + 30, 10 * 60 + 30, 13 * 60 + 30, 16 * 60 + 30,
 /** Minutes before a wave that feeder flights land. */
 const WAVE_FEED_MIN = 60;
 
+/** Cruise speed of a rival's jet, for its timetable. */
+const RIVAL_JET_KMH = 850;
+
 /** Local arrival time (minutes after midnight) of a departure at `dep` local time. */
-function arrivalLocal(from: Airport, to: Airport, distKm: number, dep: number): number {
-  return wrap(dep + blockHours(distKm) * 60 + to.utcOffset - from.utcOffset);
+function arrivalLocal(from: Airport, to: Airport, dep: number): number {
+  return wrap(dep + flightMinutes(from, to, RIVAL_JET_KMH) + to.utcOffset - from.utcOffset);
 }
 
 /**
@@ -376,7 +380,7 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
   const jitter = (i: number, span: number) => hash(`${key}#${i}`) % span;
   if (distKm > LONG_HAUL_KM) {
     const slots: { dep: number; q: number }[] = [];
-    for (let dep = FIRST_DEP; dep <= LAST_DEP; dep += 15) slots.push({ dep, q: departureQuality(dep, arrivalLocal(from, to, distKm, dep), distKm) });
+    for (let dep = FIRST_DEP; dep <= LAST_DEP; dep += 15) slots.push({ dep, q: departureQuality(dep, arrivalLocal(from, to, dep), distKm) });
     // Best slots first, at least two hours apart.
     slots.sort((x, y) => y.q - x.q || x.dep - y.dep);
     const out: number[] = [];
@@ -390,7 +394,7 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
   if (al.bases.includes(from.code)) return within(spread(HUB_WAVES, perDay).map((w, i) => w + jitter(i, 20)));
   if (al.bases.includes(to.code)) {
     // Times at `from` that land about an hour before each wave at the hub, where those are sensible local times.
-    const block = blockHours(distKm) * 60 + to.utcOffset - from.utcOffset;
+    const block = flightMinutes(from, to, RIVAL_JET_KMH) + to.utcOffset - from.utcOffset;
     const feeds = HUB_WAVES.map((w) => wrap(w - WAVE_FEED_MIN - block)).filter((d) => d >= FIRST_DEP + 30 && d <= LAST_DEP - 60).sort((x, y) => x - y);
     if (feeds.length >= Math.min(perDay, 3)) return within(spread(feeds, perDay).map((d, i) => d - jitter(i, 20)));
   }
@@ -429,7 +433,7 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
         const times = scheduleTimes(al, AIRPORT_BY_CODE[from], AIRPORT_BY_CODE[to], m.distKm, n);
         const F = AIRPORT_BY_CODE[from], T = AIRPORT_BY_CODE[to];
-        const avgQ = times.reduce((s, t) => s + departureQuality(t, arrivalLocal(F, T, m.distKm, t), m.distKm), 0) / times.length;
+        const avgQ = times.reduce((s, t) => s + departureQuality(t, arrivalLocal(F, T, t), m.distKm), 0) / times.length;
         list.push({ airline: al, from, to, freq: n, times, effFreq: n * avgQ, fare: Math.round(m.refFare * al.fareMult), type });
       }
     }
