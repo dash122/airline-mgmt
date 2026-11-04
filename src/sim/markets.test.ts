@@ -77,3 +77,14 @@ test('busier routes get bigger aircraft as well as more flights', () => {
   expect(rivalPaxPerFlight(1e6, 800, 60)).toBe(60);
   expect(rivalPaxPerFlight(500, 9000)).toBeGreaterThanOrEqual(230);
 });
+
+test("a city's long-haul travellers go to its main long-haul airport, not its low-cost ones", () => {
+  for (const o of ['CAN', 'HKG', 'TPE', 'NRT']) {
+    const lhr = marketBetween(o, 'LHR')!.potential;
+    expect(marketBetween(o, 'STN')!.potential, `${o}-STN`).toBeLessThan(0.2 * lhr);
+    expect(marketBetween(o, 'LTN')!.potential, `${o}-LTN`).toBeLessThan(0.1 * lhr);
+    expect(marketBetween(o, 'LGW')!.potential, `${o}-LGW`).toBeLessThan(0.5 * lhr);
+  }
+  // A 33-million holiday airport draws far fewer travellers from Asia than a 60-million hub.
+  expect(marketBetween('TPE', 'PMI')!.potential).toBeLessThan(0.5 * marketBetween('TPE', 'FRA')!.potential);
+});

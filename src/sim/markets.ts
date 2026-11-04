@@ -169,6 +169,10 @@ const gravityKm = (distKm: number) => {
 /** Annual passengers assumed for an airport outside the home region with no traffic figure (small airports carry 0.3M to 1.1M). */
 const NO_DATA_TRAFFIC_M = 0.6;
 
+/** Annual passengers (millions) from which an airport draws its full share of long-haul travel; below it, in proportion. */
+const LONG_HAUL_HUB_M = 60;
+const LONG_HAUL_SIZE_EXPONENT = 1;
+
 function buildMarkets(): Map<string, Market> {
   // Outside the calibrated home region an airport's size comes from its real traffic, which already counts how much
   // its people and visitors fly, so the island uplift only applies to population-based sizes. Counting it twice made
@@ -176,11 +180,31 @@ function buildMarkets(): Map<string, Market> {
   // An airport with no traffic figure is a small one (under about a million passengers a year), so it is sized like
   // one: by its people it drew as much as a 6-million-passenger airport, and tiny airports in Madagascar or Cambodia
   // topped Tokyo's transit markets.
-  const mass = AIRPORTS.map((a) => {
+  const sizes = AIRPORTS.map((a) => {
     const curated = ['JP', 'TW', 'HK', 'MO'].includes(a.country);
     const size = curated ? a.catchment * (isIsland(a) ? ISLAND_PROPENSITY : 1)
       : ((ANNUAL_TRAFFIC_M[a.code] ?? Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6)) * 1e6) / 3;
-    return Math.pow(size * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism, MASS_EXPONENT);
+    return size * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism;
+  });
+  const mass = sizes.map((x) => Math.pow(x, MASS_EXPONENT));
+  // Long-haul travellers from a city with several airports go wherever the long-haul flights are: Londoners fly to
+  // Asia from Heathrow, not from Stansted, whose traffic is short-haul low-cost flights. So on long-haul markets the
+  // whole city's size is shared among its airports by the square of their long-haul reach (Heathrow about 74%,
+  // Gatwick 20%, Stansted 6%). Before this, Guangzhou-Stansted drew half of Guangzhou-Heathrow's travellers.
+  const metroSize = new Map<string, number>();
+  const metroReach = new Map<string, number>();
+  const reach = AIRPORTS.map((a) => longHaulDestinations(a) ** 2);
+  AIRPORTS.forEach((a, i) => {
+    metroSize.set(a.metro, (metroSize.get(a.metro) ?? 0) + sizes[i]);
+    metroReach.set(a.metro, (metroReach.get(a.metro) ?? 0) + reach[i]);
+  });
+  // Long-haul flights also gather at the biggest airports: a 30-million airport (Mallorca, Vienna) has only a
+  // small long-haul share next to Heathrow or Frankfurt, so long-haul draw grows faster than traffic below a hub.
+  const longShare = (a: Airport) => Math.min(1, (ANNUAL_TRAFFIC_M[a.code] ?? NO_DATA_TRAFFIC_M) / LONG_HAUL_HUB_M) ** LONG_HAUL_SIZE_EXPONENT;
+  const longMass = AIRPORTS.map((a, i) => {
+    const total = metroReach.get(a.metro)!;
+    const size = total > 0 ? (metroSize.get(a.metro)! * reach[i]) / total : sizes[i];
+    return Math.pow(size * longShare(a), MASS_EXPONENT);
   });
   const raw: { i: number; j: number; distKm: number; gravity: number; group: string; ground?: GroundOption }[] = [];
   for (let i = 0; i < AIRPORTS.length; i++) {
@@ -189,7 +213,8 @@ function buildMarkets(): Map<string, Market> {
       if (a.metro === b.metro) continue;
       const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
       if (distKm < MIN_MARKET_KM) continue;
-      const gravity = (mass[i] * mass[j]) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
+      const [mi, mj] = distKm > LONG_HAUL_KM ? [longMass[i], longMass[j]] : [mass[i], mass[j]];
+      const gravity = (mi * mj) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
       raw.push({ i, j, distKm, gravity, group: groupOf(a, b), ground: groundOption(a, b, distKm) });
     }
   }
