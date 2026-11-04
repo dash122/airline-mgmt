@@ -90,6 +90,7 @@ describe('arrival day markers', () => {
 
 import { estimateVia, hubOpportunities, linkages, viaGroup, viewFromHub } from './airports';
 import { AIRPORT_BY_CODE } from '../data/airports';
+import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
 describe('connecting markets', () => {
   const base = emptyPlan('TPE');
   const mk = (id: string, from: string, to: string, h: number) => ({ ...newAircraft(base, 'A20N'), id, reg: id, legs: [{ from, to, dep: utcFromLocal(from, h * 60) }] });
@@ -184,6 +185,20 @@ describe('transit potential from the hub', () => {
     expect(v.total).toBeGreaterThan(v.rows[0].est);
     // Small airports are not given a whole province's population.
     expect(v.rows[0].est).toBeLessThan(5000);
+  });
+  test('transit markets through the hub follow airport size, not holiday islands or tiny airports', () => {
+    const v = viewFromHub(emptyPlan('HKG'), null, 'HKG', 'TPE');
+    const top = v.rows.slice(0, 20).map((r) => r.d);
+    expect(top).not.toContain('PMI');
+    // Every top destination is a sizeable airport with real traffic data.
+    for (const d of top) expect(ANNUAL_TRAFFIC_M[d] ?? 0).toBeGreaterThan(4);
+    // Bangkok, with nonstops from Taipei and 60M passengers a year, draws more than Mallorca, which has neither.
+    const est = (d: string) => v.rows.find((r) => r.d === d)?.est ?? 0;
+    expect(est('BKK')).toBeGreaterThan(2 * est('PMI'));
+    for (const code of ['NRT', 'ICN']) {
+      const w = viewFromHub(emptyPlan('HKG'), null, 'HKG', code);
+      for (const r of w.rows.slice(0, 15)) expect(ANNUAL_TRAFFIC_M[r.d] ?? 0).toBeGreaterThan(4);
+    }
   });
   test('the estimate uses the same transit demand as the simulation', () => {
     const big = (id: string, legs: [string, string, number][]) => ({ ...newAircraft(base, 'B77W'), id, reg: id, legs: legs.map(([from, to, h]) => ({ from, to, dep: utcFromLocal(from, h * 60) })) });

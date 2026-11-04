@@ -166,11 +166,22 @@ const gravityKm = (distKm: number) => {
   return d <= LONG_HAUL_FLAT_KM ? d : LONG_HAUL_FLAT_KM + (d - LONG_HAUL_FLAT_KM) * 0.25;
 };
 
+/** Annual passengers assumed for an airport outside the home region with no traffic figure (small airports carry 0.3M to 1.1M). */
+const NO_DATA_TRAFFIC_M = 0.6;
+
 function buildMarkets(): Map<string, Market> {
-  const mass = AIRPORTS.map((a) =>
-    Math.pow((ANNUAL_TRAFFIC_M[a.code] && !['JP', 'TW', 'HK', 'MO'].includes(a.country) ? ANNUAL_TRAFFIC_M[a.code] * 1e6 / 3 : a.catchment)
-      * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism * (isIsland(a) ? ISLAND_PROPENSITY : 1), MASS_EXPONENT),
-  );
+  // Outside the calibrated home region an airport's size comes from its real traffic, which already counts how much
+  // its people and visitors fly, so the island uplift only applies to population-based sizes. Counting it twice made
+  // holiday islands such as Mallorca look like London to travellers from Asia.
+  // An airport with no traffic figure is a small one (under about a million passengers a year), so it is sized like
+  // one: by its people it drew as much as a 6-million-passenger airport, and tiny airports in Madagascar or Cambodia
+  // topped Tokyo's transit markets.
+  const mass = AIRPORTS.map((a) => {
+    const curated = ['JP', 'TW', 'HK', 'MO'].includes(a.country);
+    const size = curated ? a.catchment * (isIsland(a) ? ISLAND_PROPENSITY : 1)
+      : ((ANNUAL_TRAFFIC_M[a.code] ?? Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6)) * 1e6) / 3;
+    return Math.pow(size * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism, MASS_EXPONENT);
+  });
   const raw: { i: number; j: number; distKm: number; gravity: number; group: string; ground?: GroundOption }[] = [];
   for (let i = 0; i < AIRPORTS.length; i++) {
     for (let j = i + 1; j < AIRPORTS.length; j++) {
@@ -251,6 +262,9 @@ function buildMarkets(): Map<string, Market> {
   // Fit global airport traffic budgets on the retained network. Regional markets
   // remain fixed; terminal totals guide simulated OD demand, not exact route counts.
   // Scaling potential too ensures player demand and competitor service agree.
+  // Each airport's combined fit factor over all iterations: every retained market's potential ends up multiplied by
+  // (fit[a] * fit[b]) ** 0.35.
+  const fit: Record<string, number> = {};
   for (let iter = 0; iter < 40; iter++) {
     const totals: Record<string, number> = {};
     const fixed: Record<string, number> = {};
@@ -261,6 +275,7 @@ function buildMarkets(): Map<string, Market> {
     const factors: Record<string, number> = {};
     for (const [code, millions] of Object.entries(ANNUAL_TRAFFIC_M)) {
       factors[code] = Math.max(0.1, (millions * 1e6 - (fixed[code] ?? 0)) / Math.max(1, totals[code] ?? 0));
+      fit[code] = (fit[code] ?? 1) * factors[code];
     }
     for (const m of retained) {
       if (m.group in AIR_TARGETS_M) continue;
@@ -281,8 +296,31 @@ function buildMarkets(): Map<string, Market> {
       m.rivalFreq = b.freq;
     }
   }
+  // Markets nobody flies nonstop today (Taipei-Mallorca, say) still carry travellers who connect, and the player can
+  // win them through a hub. Where an airport's real traffic says raw gravity overstates its markets, scale its unserved
+  // markets down the same way, so they stay in proportion with the served ones (Taipei-London). Only ever down: small
+  // airports fit far upwards because all their traffic sits on a few routes, which says nothing about the others.
+  const shrink: Record<string, number> = {};
+  for (const m of retained) {
+    if (m.group in AIR_TARGETS_M) continue;
+    for (const c of [m.a, m.b]) shrink[c] = Math.min(1, Math.max(MIN_UNSERVED_FIT, fit[c] ?? 1));
+  }
+  // An airport with no fitted market of its own (Osaka Itami flies no international routes) follows the other
+  // airports of its city, so its unserved markets don't outgrow the served ones next door.
+  const byMetro = new Map<string, number>();
+  for (const [c, f] of Object.entries(shrink)) {
+    const k = AIRPORT_BY_CODE[c].metro;
+    byMetro.set(k, Math.min(byMetro.get(k) ?? 1, f));
+  }
+  for (const a of AIRPORTS) if (!(a.code in shrink) && byMetro.has(a.metro)) shrink[a.code] = byMetro.get(a.metro)!;
+  for (const m of out.values()) {
+    if (m.rivalFreq > 0 || m.group in AIR_TARGETS_M) continue;
+    m.potential *= Math.pow((shrink[m.a] ?? 1) * (shrink[m.b] ?? 1), 0.35);
+  }
   return out;
 }
+/** Lowest airport fit factor carried over to its unserved markets. */
+const MIN_UNSERVED_FIT = 0.01;
 
 let cache: Map<string, Market> | null = null;
 const airportMarkets = new Map<string, Market[]>();
