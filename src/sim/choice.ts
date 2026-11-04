@@ -65,19 +65,24 @@ export function groundUtility(g: GroundOption): number {
   return -THETA * (g.fare + VALUE_OF_TIME * g.hours) + g.comfort;
 }
 
+/** Not travelling: anchored to a reference weekly air service. Used to calibrate markets to today's traffic. */
+export function noTravelUtility(refFare: number, distKm: number): number {
+  return -THETA * airGeneralizedCost(refFare, distKm, 7) * 1.35;
+}
+
 /**
- * How far below daily air service at the reference fare staying home sits, in log weight. At e^-1 about a
- * quarter of the people who would fly with that service stay home, so the whole market shrinks when fares rise
- * (about 7% fewer fliers for +10% on a route nobody else flies) and grows with more flights.
+ * How far below daily air service at the reference fare staying home sits, in log weight, when the player
+ * changes fares or service. At e^-1 about a quarter of the people who would fly with that service stay home,
+ * so a market shrinks when fares rise (about 7% fewer fliers for +10% on a route nobody else flies).
  */
 export const NO_TRAVEL_GAP = 1;
 
 /**
- * Not travelling: anchored to a reference daily air service so demand responds to price and service by the
- * same amount on short and long routes. (It used to scale with the trip's total cost, so on long routes almost
- * nobody stayed home and fares stopped mattering when no other airline flew.)
+ * Staying home, for how a market responds to the player. Unlike `noTravelUtility` it is the same distance
+ * below air service on short and long routes; that one made almost nobody stay home on long routes, so fares
+ * stopped mattering wherever no other airline flew.
  */
-export function noTravelUtility(refFare: number, distKm: number): number {
+export function stayHomeUtility(refFare: number, distKm: number): number {
   return airUtility(refFare, distKm, 7) - NO_TRAVEL_GAP;
 }
 

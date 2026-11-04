@@ -2,9 +2,9 @@
 // Pure and deterministic: the same plan always gives the same result.
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, type Airport } from '../data/airports';
-import { airChoice, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
+import { airChoice, airUtility, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, stayHomeUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
 import { rivalsFrom } from './competitors';
-import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey } from './markets';
+import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey, type Market } from './markets';
 import { distanceKm } from './geo';
 
 export const DAY = 1440;
@@ -265,6 +265,22 @@ function buildFlights(plan: Plan): Flight[] {
   return out;
 }
 
+/**
+ * Weekly air travellers in one direction of a market, given the utility of everything flying in it. Starts from
+ * today's calibrated traffic (other airlines at the reference fare, or one daily flight where nobody flies) and
+ * scales it by how much more or less attractive flying has become, with staying home the same distance below
+ * air service on every route. Never more than everyone who might travel.
+ */
+function respondingAirTotal(m: Market, uAirNow: number): number {
+  const uGround = m.ground ? Math.exp(groundUtility(m.ground)) : 0;
+  const share = (uAir: number, uNone: number) => uAir / (uAir + uGround + uNone);
+  const baseFreq = m.airDemand > 0 ? m.rivalFreq : 7;
+  const uBase = Math.exp(airUtility(m.refFare, m.distKm, baseFreq));
+  const today = m.airDemand > 0 ? m.airDemand : m.potential * share(uBase, Math.exp(noTravelUtility(m.refFare, m.distKm)));
+  const uStay = Math.exp(stayHomeUtility(m.refFare, m.distKm));
+  return Math.min(m.potential, (today * share(Math.exp(uAirNow), uStay)) / share(uBase, uStay));
+}
+
 export function simulate(plan: Plan): NetworkResult {
   const flights = buildFlights(plan);
   const byFrom = new Map<string, Flight[]>();
@@ -311,10 +327,7 @@ export function simulate(plan: Plan): NetworkResult {
     const fare = m.refFare * (1 - Math.log(pSum / wSum) / FARE_SENSITIVITY);
     const rivals = rivalsFrom(o, d);
     const air = airChoice([{ freq: 7 * wSum, fare }, ...rivals.map((r) => ({ freq: r.effFreq, fare: r.fare, quality: r.airline.quality }))], m.distKm, m.refFare);
-    const uAir = Math.exp(air.utility);
-    const uGround = m.ground ? Math.exp(groundUtility(m.ground)) : 0;
-    const uNone = Math.exp(noTravelUtility(m.refFare, m.distKm));
-    const airTotal = (m.potential * uAir) / (uAir + uGround + uNone);
+    const airTotal = respondingAirTotal(m, air.utility);
     const mine = (airTotal * air.shares[0]) / 7;
     for (const it of list) demand.set(it, (mine * priced.get(it)!) / pSum);
     marketInfo.set(k, { airTotal, refFare: m.refFare, rivals: rivals.map((r, i) => ({ id: r.airline.id, pax: airTotal * air.shares[i + 1] })) });
