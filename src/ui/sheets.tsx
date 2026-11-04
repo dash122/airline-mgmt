@@ -10,7 +10,7 @@ import {
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
-import { RouteRivals } from './rivals';
+import { MarketShare, RouteRivals } from './rivals';
 import type { DayRecord } from './clock';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
@@ -189,11 +189,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         : <button className="fare-tip" onClick={() => setFare(best.mult)}>
             最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
           </button>)}
-      <div className="competition">
-        {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
-        <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
-      </div>
+      <MarketShare a={a} b={b} result={result} />
       {elsewhere && <div className="hint">{elsewhere}</div>}
+      {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
       <h4>航線班表</h4>
       <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛此航線" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
