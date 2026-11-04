@@ -4,7 +4,7 @@ import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from './markets';
 import {
-  blockMinutes, DAY, defaultAircraft, newAircraft, rotationInfo, routeProblem, utcFromLocal, weeklyDepartures,
+  blockMinutes, cycleOf, DAY, defaultAircraft, MAX_CYCLE_DAYS, newAircraft, rotationInfo, routeProblem, utcFromLocal, weeklyDepartures,
   type Aircraft, type Leg, type Plan,
 } from './simulate';
 
@@ -37,14 +37,14 @@ export const unitOf = (ac: Aircraft, legIndex: number): Unit =>
 
 /** How many minutes a unit can move earlier (min, ≤ 0) or later (max, ≥ 0) without touching other flights or going past 24 hours. */
 export function shiftWindow(ac: Aircraft, u: Unit): { min: number; max: number } {
-  const L = ac.legs, n = L.length;
+  const L = ac.legs, n = L.length, C = cycleOf(ac) * DAY;
   const first = u.start, last = u.start + u.count - 1;
   if (first === 0 && last === n - 1) return { min: -12 * 60, max: 12 * 60 };
-  let min = -DAY, max = DAY;
+  let min = -C, max = C;
   if (first > 0) min = ready(ac, L[first - 1]) - L[first].dep;
-  else min = ready(ac, L[n - 1]) - DAY - L[0].dep;
+  else min = ready(ac, L[n - 1]) - C - L[0].dep;
   if (last < n - 1) max = L[last + 1].dep - ready(ac, L[last]);
-  else max = L[0].dep + DAY - ready(ac, L[last]);
+  else max = L[0].dep + C - ready(ac, L[last]);
   min = Math.ceil(min / 5) * 5;
   max = Math.floor(max / 5) * 5;
   return { min: Math.min(0, min), max: Math.max(0, max) };
@@ -71,12 +71,13 @@ export function stationAt(ac: Aircraft, k: number): string | null {
 export function insertWindow(ac: Aircraft, k: number, from: string, to: string): { lo: number; hi: number } | null {
   const L = ac.legs, n = L.length, t = AIRCRAFT[ac.type].turnMin;
   const span = blockMinutes(from, to, ac.type) + t + blockMinutes(to, from, ac.type) + t;
-  if (span > DAY) return null;
+  const C = cycleOf(ac) * DAY;
+  if (span > C) return null;
   let lo = -Infinity, hi = Infinity;
   if (k > 0) lo = ready(ac, L[k - 1]);
   if (k < n) hi = L[k].dep - span;
-  if (n > 0 && k === 0) lo = Math.max(lo, ready(ac, L[n - 1]) - DAY);
-  if (n > 0 && k === n) hi = Math.min(hi, L[0].dep + DAY - span);
+  if (n > 0 && k === 0) lo = Math.max(lo, ready(ac, L[n - 1]) - C);
+  if (n > 0 && k === n) hi = Math.min(hi, L[0].dep + C - span);
   if (Number.isFinite(lo)) lo = Math.ceil(lo / 5) * 5;
   if (Number.isFinite(hi)) hi = Math.floor(hi / 5) * 5;
   return lo <= hi ? { lo, hi } : null;
@@ -177,7 +178,10 @@ export function leaseFor(plan: Plan, a: string, b: string, type: AircraftModel, 
   const ac = newAircraft(plan, type);
   const [from, to] = b === plan.base ? [b, a] : [a, b];
   const d = dep ?? morning(from);
-  const placed = insertRoundTrip(ac, 0, from, to, d);
+  let placed = insertRoundTrip(ac, 0, from, to, d);
+  // A round trip that takes more than a day runs every second or third day.
+  const duty = rotationInfo(placed).dutyMin;
+  if (duty > DAY) placed = { ...placed, cycleDays: Math.min(MAX_CYCLE_DAYS, Math.ceil(duty / DAY)) };
   return { plan: { ...plan, fleet: [...plan.fleet, placed] }, aircraftId: ac.id };
 }
 
@@ -231,6 +235,7 @@ export function moveUnit(plan: Plan, fromAcId: string, u: Unit, p: Placement): P
 export function gapAt(ac: Aircraft, t: number): number {
   if (!ac.legs.length) return 0;
   const first = ac.legs[0].dep;
-  const tt = first + ((((t - first) % DAY) + DAY) % DAY);
+  const C = cycleOf(ac) * DAY;
+  const tt = first + ((((t - first) % C) + C) % C);
   return ac.legs.filter((l) => l.dep < tt).length;
 }

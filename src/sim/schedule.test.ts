@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { addRoundTrip, emptyPlan, localMinutes, rotationInfo, type Plan } from './simulate';
+import { addRoundTrip, emptyPlan, localMinutes, rotationInfo, routeProblem, simulate, weeklyDepartures, type Plan } from './simulate';
 import {
   closeRoute, gapAt, insertWindow, leaseFor, moveUnit, placementOptions, removeOneRoundTrip, removeUnit, shiftUnit, shiftWindow, unitOf, units,
 } from './schedule';
@@ -72,5 +72,35 @@ describe('schedule editing', () => {
     const moved = moveUnit(two, ac.id, unitOf(ac, 2), target);
     expect(moved.fleet[0].legs).toHaveLength(4);
     expect(moved.fleet[1].legs).toHaveLength(4);
+  });
+});
+
+describe('long-haul rotations', () => {
+  const lh = () => {
+    const r = addRoundTrip(emptyPlan('TPE'), 'TPE', 'LHR', 'B789');
+    if ('error' in r) throw new Error(r.error);
+    return r.plan;
+  };
+  test('a round trip over a day runs every second day', () => {
+    const ac = lh().fleet[0];
+    expect(ac.cycleDays).toBe(2);
+    const info = rotationInfo(ac);
+    expect(info.fits).toBe(true);
+    expect(info.utilisation).toBeLessThan(0.6);
+  });
+  test('flights a week, seats and costs follow the cycle', () => {
+    const p = lh();
+    const res = simulate(p);
+    const route = res.routes['LHR-TPE'];
+    expect(route.flightsPerWeek).toBeCloseTo(7, 5); // 3.5 each way
+    expect(route.seats).toBeCloseTo(7 * 290, 3);
+    expect(res.flights).toBeCloseTo(7, 5);
+    expect(weeklyDepartures(p, 'TPE')).toBeCloseTo(3.5, 5);
+  });
+  test('a short round trip stays daily, and the aircraft cannot exceed three days', () => {
+    const r = addRoundTrip(emptyPlan('TPE'), 'TPE', 'HKG');
+    if ('error' in r) throw new Error(r.error);
+    expect(r.plan.fleet[0].cycleDays).toBeUndefined();
+    expect(routeProblem('TPE', 'SYD', 'ATR72')).not.toBeNull();
   });
 });

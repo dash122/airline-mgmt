@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE, airportMarkerRadius } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
-import { blockMinutes, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
+import { blockMinutes, cycleOf, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
 import { rivalsAt } from '../sim/competitors';
 import { fitView, nearestLongitude, projX, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
@@ -234,12 +234,14 @@ export default function MapCanvas(props: Props) {
 
       // Aircraft, placed by the game clock.
       const now = p.clock.now();
-      const clock = ((now % DAY) + DAY) % DAY;
       for (const ac of p.plan.fleet) {
+        // A rotation that takes several days repeats on that cycle, so position is measured within it.
+        const C = cycleOf(ac) * DAY;
+        const clock = ((now % C) + C) % C;
         const selectedAc = p.selection?.kind === 'aircraft' && p.selection.id === ac.id;
         for (const leg of ac.legs) {
           const block = blockMinutes(leg.from, leg.to, ac.type);
-          const t = (((clock - leg.dep) % DAY) + DAY) % DAY;
+          const t = (((clock - leg.dep) % C) + C) % C;
           if (t >= block) continue;
           const pts = arc(leg.from, leg.to);
           const f = (t / block) * ARC_STEPS;
