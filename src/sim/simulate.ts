@@ -271,7 +271,7 @@ function buildFlights(plan: Plan): Flight[] {
  * scales it by how much more or less attractive flying has become, with staying home the same distance below
  * air service on every route. Never more than everyone who might travel.
  */
-function respondingAirTotal(m: Market, uAirNow: number, comp: Competition): number {
+export function respondingAirTotal(m: Market, uAirNow: number, comp: Competition): number {
   const uGround = m.ground ? Math.exp(groundUtility(m.ground)) : 0;
   const share = (uAir: number, uNone: number) => uAir / (uAir + uGround + uNone);
   // Today's service: the market's own, or else flights from other airports in the same cities, or else one daily flight.
