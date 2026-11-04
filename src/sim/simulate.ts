@@ -150,6 +150,10 @@ export interface RouteResult {
   loadFactor: number;
   marketShare: number; // of local air travellers
   airTotal: number; // weekly air travellers in this market, all airlines, both directions
+  /** Weekly local travellers who chose the player's nonstops, before seats ran out (carried = localPax). */
+  localDemand: number;
+  /** Weekly travellers who connect on other airlines, where nobody flies these two cities nonstop. */
+  connectingPax: number;
   revenue: number; // weekly, prorated from itineraries
   flyingCost: number; // weekly
   fare: number; // one-way local fare
@@ -164,6 +168,8 @@ export interface RouteRival {
   freq: number; // flights a week, both directions
   pax: number; // weekly travellers, both directions
   fare: number;
+  /** Airport pairs it flies when they differ from this route's (same-city airports), e.g. "KIX-TPE". */
+  airports: string[];
 }
 
 export interface AircraftResult {
@@ -398,6 +404,22 @@ export function competitionFor(o: string, d: string): Competition {
   return c;
 }
 
+/**
+ * How one direction of a market splits today, without the player: weekly travellers per competitor service
+ * (same order as `competitionFor(o, d).services`) and on connections via other airlines.
+ */
+export function todaySplit(o: string, d: string): { total: number; rivals: number[]; connecting: number } {
+  const m = marketBetween(o, d);
+  const comp = competitionFor(o, d);
+  if (!m || !comp.offers.length) return { total: 0, rivals: comp.services.map(() => 0), connecting: 0 };
+  const ch = airChoice(comp.offers, m.distKm, m.refFare);
+  // Where nobody flies these two airports, today's travellers are the ones using other airports or connections.
+  const total = m.airDemand > 0 ? m.airDemand : respondingAirTotal(m, ch.utility, comp);
+  const rivals = comp.services.map((_, i) => total * ch.shares[i]);
+  const connecting = total * ch.shares.slice(comp.services.length).reduce((s, x) => s + x, 0);
+  return { total, rivals, connecting };
+}
+
 export function simulate(plan: Plan): NetworkResult {
   const flights = buildFlights(plan);
   const byFrom = new Map<string, Flight[]>();
@@ -429,7 +451,7 @@ export function simulate(plan: Plan): NetworkResult {
 
   // Demand per itinerary (daily).
   const demand = new Map<Itinerary, number>();
-  const marketInfo = new Map<string, { airTotal: number; refFare: number; rivals: { id: string; pax: number }[] }>();
+  const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[] }>();
   for (const [k, list] of itins) {
     const [o, d] = k.split('>');
     const m = marketBetween(o, d);
@@ -446,7 +468,8 @@ export function simulate(plan: Plan): NetworkResult {
     const airTotal = respondingAirTotal(m, air.utility, comp);
     const mine = (airTotal * air.shares[0]) / 7;
     for (const it of list) demand.set(it, (mine * priced.get(it)!) / pSum);
-    marketInfo.set(k, { airTotal, refFare: m.refFare, rivals: rivals.map((r, i) => ({ id: r.airline.id, pax: airTotal * air.shares[i + 1] })) });
+    const connecting = airTotal * air.shares.slice(rivals.length + 1).reduce((s, x) => s + x, 0);
+    marketInfo.set(k, { airTotal, refFare: m.refFare, mine: mine * 7, connecting, rivals: rivals.map((r, i) => ({ id: r.airline.id, pax: airTotal * air.shares[i + 1] })) });
   }
 
   // Capacity: scale itineraries down where a flight is oversold. Travellers already holding a seat on
@@ -512,30 +535,32 @@ export function simulate(plan: Plan): NetworkResult {
     if (!r) {
       const m = marketBetween(f.from, f.to);
       const [a, b] = key.split('-');
-      let localPax = 0, airTotal = 0;
+      let localPax = 0, airTotal = 0, localDemand = 0, connectingPax = 0;
       const rivals = new Map<string, RouteRival>();
       for (const lk of [`${a}>${b}`, `${b}>${a}`]) {
         for (const it of itins.get(lk) ?? []) if (it.flights.length === 1) localPax += 7 * (carried.get(it) ?? 0);
         const info = marketInfo.get(lk);
-        airTotal += info?.airTotal ?? 0; // weekly
         const [o, d] = lk.split('>');
         const comp = competitionFor(o, d);
         const services = comp.services;
         // A direction the player doesn't fly: competitors keep today's split.
-        const paxOf = info ? (i: number) => info.rivals[i]?.pax ?? 0 : (() => {
-          const ch = airChoice(comp.offers, m?.distKm ?? 0, m?.refFare ?? 1);
-          return (i: number) => (m?.airDemand ?? 0) * ch.shares[i];
-        })();
+        const today = info ? null : todaySplit(o, d);
+        airTotal += info?.airTotal ?? today!.total; // weekly
+        localDemand += info?.mine ?? 0;
+        connectingPax += info?.connecting ?? today!.connecting;
+        const paxOf = info ? (i: number) => info.rivals[i]?.pax ?? 0 : (i: number) => today!.rivals[i];
         services.forEach((sv, i) => {
-          const rr = rivals.get(sv.airline.id) ?? { id: sv.airline.id, freq: 0, pax: 0, fare: sv.fare };
+          const rr = rivals.get(sv.airline.id) ?? { id: sv.airline.id, freq: 0, pax: 0, fare: sv.fare, airports: [] };
           rr.freq += sv.freq;
           rr.pax += paxOf(i);
+          const pk = pairKey(sv.from, sv.to);
+          if (pk !== key && !rr.airports.includes(pk)) rr.airports.push(pk);
           rivals.set(sv.airline.id, rr);
         });
       }
       r = routes[key] = {
         key, a, b, distKm: f.distKm, flightsPerWeek: 0, seats: 0, pax: 0, localPax, demand: 0, spill: 0, loadFactor: 0,
-        marketShare: airTotal > 0 ? localPax / airTotal : 0, airTotal, revenue: 0, flyingCost: 0,
+        marketShare: airTotal > 0 ? localPax / airTotal : 0, airTotal, localDemand, connectingPax, revenue: 0, flyingCost: 0,
         fare: Math.round((m?.refFare ?? 0) * fareMultOf(plan, key)), rivalFreq: m?.rivalFreq ?? 0, rivals: [...rivals.values()].sort((x, y) => y.pax - x.pax), groundName: m?.ground?.name,
       };
     }
