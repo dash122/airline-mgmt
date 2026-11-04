@@ -3,9 +3,10 @@ import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { marketBetween, pairKey } from './markets';
 import { distanceKm } from './geo';
+import { departureQuality } from './choice';
 import { estimateNonstop } from './airports';
 import { insertRoundTrip, leaseFor, placementOptions, placeOn, typesFor, type Placement } from './schedule';
-import { blockMinutes, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, timeOfDayQuality, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
+import { blockMinutes, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
 
 /** Chinese country names, for searching "日本" or "泰國" and for the destination list. */
 export const COUNTRY_ZH: Record<string, string> = {
@@ -117,8 +118,11 @@ export interface RouteChoice {
 
 /** How well a round trip's two departures sell (each leg's local time-of-day appeal, added). */
 function tripAppeal(p: Placement, type: AircraftModel): number {
-  const back = p.dep + blockMinutes(p.from, p.to, type) + AIRCRAFT[type].turnMin;
-  return timeOfDayQuality(localMinutes(p.from, p.dep)) + timeOfDayQuality(localMinutes(p.to, back));
+  const block = blockMinutes(p.from, p.to, type);
+  const back = p.dep + block + AIRCRAFT[type].turnMin;
+  const A = AIRPORT_BY_CODE[p.from], B = AIRPORT_BY_CODE[p.to], km = distanceKm(A.lat, A.lon, B.lat, B.lon);
+  return departureQuality(localMinutes(p.from, p.dep), localMinutes(p.to, p.dep + block), km)
+    + departureQuality(localMinutes(p.to, back), localMinutes(p.from, back + block), km);
 }
 
 /** The free slot on an aircraft where the round trip sells best: tries each popular time and keeps the most attractive. */

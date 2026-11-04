@@ -3,8 +3,10 @@
 // existing service (Market.rivalFreq) is split between the airlines that would plausibly fly it.
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
-import { timeOfDayQuality } from './choice';
-import { marketBetween, marketsAt, pairKey, rivalPaxPerFlight, type Market } from './markets';
+import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
+import { blockHours, departureQuality } from './choice';
+import { distanceKm } from './geo';
+import { isLeisureAirport, LONG_HAUL_KM, marketBetween, marketsAt, pairKey, rivalPaxPerFlight, type Market } from './markets';
 
 export type AirlineKind = 'full' | 'low' | 'regional';
 
@@ -180,12 +182,35 @@ function pickName(pools: string[][], key: string, used: Set<string>): string {
 }
 
 const SIZE_WEIGHT = { hub: 5, major: 4, large: 3, medium: 2, small: 1 } as const;
-/** How busy an airport is, from its size tier and catchment. Cheap, so it works for any number of airports. */
-const busyness = (a: Airport) => SIZE_WEIGHT[a.size] * 1e8 + a.catchment * a.tourism;
+/** Annual passengers in millions, or 0 where the game has no figure. */
+const trafficOf = (a: Airport) => ANNUAL_TRAFFIC_M[a.code] ?? 0;
+/**
+ * How busy an airport is: its real traffic first, then its size tier and catchment. Population alone made
+ * Chongqing (whose municipality counts 32 million people) China's main hub instead of Shanghai, Guangzhou or Beijing.
+ */
+const busyness = (a: Airport) => trafficOf(a) * 1e9 + SIZE_WEIGHT[a.size] * 1e8 + a.catchment * a.tourism;
 
 /** People in a country's airport catchments before it has a low-cost airline, and airports before it has a regional one. */
 const LOW_COST_MIN_CATCHMENT = 10_000_000;
 const REGIONAL_MIN_AIRPORTS = 4;
+/**
+ * A country's annual air passengers (millions) before it has a second and a third full-service airline, and a second
+ * low-cost one. Japan, the UK and Spain get two full-service airlines; the US and China get three, each with its own
+ * hubs, and two low-cost airlines.
+ */
+const SECOND_FULL_M = 250, THIRD_FULL_M = 600, SECOND_LOW_M = 600;
+/** Annual passengers (millions) at a city's main airport before a full-service airline can make it a hub. */
+const HUB_CITY_M = 25;
+/**
+ * Each full-service airline gets its own main hub only where the country's next hub city is at least this share of
+ * the busiest one's traffic (Dallas and Denver next to Atlanta). Otherwise they share the main city: Osaka is far
+ * smaller than Tokyo, so both Japanese airlines fly from Tokyo, as both British ones fly from London.
+ */
+const OWN_HUB_SHARE = 0.5;
+/** Most cities a full-service airline runs as hubs or bases, and a low-cost airline as bases. */
+const MAX_FULL_BASES = 5, MAX_LOW_BASES = 6;
+/** Annual passengers (millions) a low-cost airline needs per base: a country with 120 million passengers gets 3. */
+const LOW_BASE_PER_M = 40;
 
 function buildAirlines(): Airline[] {
   const byCountry = new Map<string, Airport[]>();
@@ -193,9 +218,10 @@ function buildAirlines(): Airline[] {
   const countries = [...byCountry.keys()].sort();
   const used = new Set<string>();
   const out: Airline[] = [];
-  const make = (country: string, kind: AirlineKind, bases: string[], name: string) => {
+  const make = (country: string, kind: AirlineKind, n: number, bases: string[], name: string) => {
     const s = KIND_SETTINGS[kind];
-    out.push({ id: `${country}-${kind}`, name, kind, country, color: COLORS[hash(`${country}${kind}`) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality });
+    const id = n === 0 ? `${country}-${kind}` : `${country}-${kind}-${n + 1}`;
+    out.push({ id, name, kind, country, color: COLORS[hash(id) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality });
   };
   for (const c of countries) {
     const list = [...byCountry.get(c)!].sort((x, y) => busyness(y) - busyness(x));
@@ -204,17 +230,39 @@ function buildAirlines(): Airline[] {
     for (const a of list) if (!metros.some((m) => m.metro === a.metro)) metros.push(a);
     if (!metros.length) continue;
     const people = list.reduce((s, a) => s + a.catchment, 0);
-    const top = metros[0], second = metros[1];
-    // The main hub, other big airports in the same city, and a second city if it is nearly as big.
-    const fullBases = [top.code, ...list.filter((a) => a.metro === top.metro && a.code !== top.code && a.size === top.size).map((a) => a.code)];
-    if (second && second.size === top.size) fullBases.push(second.code);
-    make(c, 'full', fullBases, `${pickFullName(c, used)}航空`);
+    const traffic = list.reduce((s, a) => s + trafficOf(a), 0);
+    // A city's big airports work as one base (Tokyo's Haneda and Narita, New York's JFK and Newark).
+    const cityBase = (top: Airport) => [top.code, ...list.filter((a) => a.metro === top.metro && a.code !== top.code && a.size === top.size).map((a) => a.code)];
+
+    // Full-service airlines. Where the country has a hub city for each, every airline gets its own main hub and the
+    // other hub cities are dealt out in turn; otherwise they share the main city, as Japan's and the UK's do.
+    const fullCount = traffic >= THIRD_FULL_M ? 3 : traffic >= SECOND_FULL_M ? 2 : 1;
+    // Holiday airports (Mallorca) are low-cost and charter bases, not hubs.
+    const hubCities = metros.filter((a) => trafficOf(a) >= HUB_CITY_M && !isLeisureAirport(a));
+    const fullBases: Airport[][] = Array.from({ length: fullCount }, () => []);
+    const ownHubs = fullCount > 1 && hubCities.length >= fullCount
+      && trafficOf(hubCities[fullCount - 1]) >= OWN_HUB_SHARE * trafficOf(hubCities[0]);
+    if (ownHubs) {
+      hubCities.slice(0, fullCount * MAX_FULL_BASES).forEach((a, i) => fullBases[i % fullCount].push(a));
+    } else {
+      for (const b of fullBases) b.push(metros[0]);
+      // A second city if it is nearly as big, as before.
+      if (metros[1] && metros[1].size === metros[0].size && !isLeisureAirport(metros[1])) fullBases[0].push(metros[1]);
+      hubCities.slice(1).forEach((a, i) => { const b = fullBases[i % fullCount]; if (!b.includes(a) && b.length < MAX_FULL_BASES) b.push(a); });
+    }
+    fullBases.forEach((b, n) => make(c, 'full', n, b.flatMap(cityBase), `${pickFullName(c, used)}航空`));
+
+    // Low-cost airlines: bases in the busiest cities, more of them in bigger markets, dealt out between airlines.
     if (people > LOW_COST_MIN_CATCHMENT) {
-      make(c, 'low', metros.slice(0, 3).map((a) => a.code), `${pickName([NAME_POOLS[nameAreaOf(c)].low, comboNames(nameAreaOf(c))], `${c}low`, used)}航空`);
+      const lowCount = traffic >= SECOND_LOW_M ? 2 : 1;
+      const perAirline = Math.max(3, Math.min(MAX_LOW_BASES, Math.round(traffic / LOW_BASE_PER_M / lowCount)));
+      const lowBases: string[][] = Array.from({ length: lowCount }, () => []);
+      metros.slice(0, perAirline * lowCount).forEach((a, i) => lowBases[i % lowCount].push(a.code));
+      lowBases.forEach((b, n) => make(c, 'low', n, b, `${pickName([NAME_POOLS[nameAreaOf(c)].low, comboNames(nameAreaOf(c))], `${c}low${n || ''}`, used)}航空`));
     }
     const small = list.filter((a) => a.size === 'medium' || a.size === 'small');
     if (small.length >= REGIONAL_MIN_AIRPORTS) {
-      make(c, 'regional', list.map((a) => a.code), `${pickName([NAME_POOLS[nameAreaOf(c)].regional, NAME_POOLS[nameAreaOf(c)].full, comboNames(nameAreaOf(c))], `${c}regional`, used)}航空`);
+      make(c, 'regional', 0, list.map((a) => a.code), `${pickName([NAME_POOLS[nameAreaOf(c)].regional, NAME_POOLS[nameAreaOf(c)].full, comboNames(nameAreaOf(c))], `${c}regional`, used)}航空`);
     }
   }
   return out;
@@ -230,15 +278,32 @@ function appeal(al: Airline, a: Airport, b: Airport, distKm: number): number {
   const hub = al.bases[0] === a.code || al.bases[0] === b.code;
   switch (al.kind) {
     case 'full':
-      return hub ? 1 : atBase ? 0.6 : 0;
+      return hub ? 1 : atBase ? 0.75 : 0;
     case 'low':
-      return atBase ? 0.7 : distKm < 2500 ? 0.2 : 0;
+      // Low-cost airlines fly from their bases only; routes between two other cities go to the airline based nearest.
+      return hub ? 0.8 : atBase ? 0.7 : 0;
     case 'regional': {
       if (a.country !== b.country || a.country !== al.country) return 0;
       const thin = [a, b].some((x) => x.size === 'medium' || x.size === 'small');
       return thin ? 1.2 : 0.15;
     }
   }
+}
+
+/** The home-country full-service or low-cost airline with a base closest to either end of a market. */
+function nearestAirline(airlines: Airline[], A: Airport, B: Airport, distKm: number): Airline | undefined {
+  let best: Airline | undefined, bestKm = Infinity;
+  for (const al of airlines) {
+    if (al.kind === 'regional' || distKm > KIND_SETTINGS[al.kind].maxKm || (al.country !== A.country && al.country !== B.country)) continue;
+    for (const code of al.bases) {
+      const base = AIRPORT_BY_CODE[code];
+      const km = Math.min(distanceKm(base.lat, base.lon, A.lat, A.lon), distanceKm(base.lat, base.lon, B.lat, B.lon));
+      // Full-service airlines win ties, so long routes from small cities stay with them.
+      const score = km + (al.kind === 'low' ? 1 : 0);
+      if (score < bestKm) { bestKm = score; best = al; }
+    }
+  }
+  return best;
 }
 
 function canFly(type: AircraftModel, a: Airport, b: Airport, distKm: number): boolean {
@@ -271,6 +336,67 @@ function departureTimes(key: string, freq: number): number[] {
   return out;
 }
 
+const DAY_MIN = 24 * 60;
+const wrap = (min: number) => ((Math.round(min) % DAY_MIN) + DAY_MIN) % DAY_MIN;
+const round5 = (min: number) => Math.round(min / 5) * 5;
+/** Earliest and latest local departure a rival schedules. */
+const FIRST_DEP = 6 * 60, LAST_DEP = 23 * 60 + 30;
+/**
+ * Departure waves at an airline's hubs and bases (local time). Flights in arrive about an hour before a wave and
+ * flights out leave in it, so travellers can connect, as at real hubs.
+ */
+export const HUB_WAVES = [7 * 60 + 30, 10 * 60 + 30, 13 * 60 + 30, 16 * 60 + 30, 19 * 60 + 30];
+/** Minutes before a wave that feeder flights land. */
+const WAVE_FEED_MIN = 60;
+
+/** Local arrival time (minutes after midnight) of a departure at `dep` local time. */
+function arrivalLocal(from: Airport, to: Airport, distKm: number, dep: number): number {
+  return wrap(dep + blockHours(distKm) * 60 + to.utcOffset - from.utcOffset);
+}
+
+/**
+ * `count` times from `slots`: spread out when there are fewer than slots (the middle one of each equal share), and
+ * several to a slot, 25 minutes apart, when there are more (a busy route's flights in every wave).
+ */
+function spread(slots: number[], count: number): number[] {
+  if (count <= slots.length) return Array.from({ length: count }, (_, i) => slots[Math.floor(((i + 0.5) * slots.length) / count)]);
+  return Array.from({ length: count }, (_, i) => slots[i % slots.length] + Math.floor(i / slots.length) * 25);
+}
+
+/**
+ * When a rival's flights leave, local time at `from`.
+ * - Long-haul: the times travellers like best (`departureQuality`): late evening where that lands at a sensible
+ *   hour, otherwise in the morning.
+ * - From a hub or base: in its departure waves. Into one: landing about an hour before a wave.
+ * - Elsewhere: spread over the day.
+ */
+function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, freq: number): number[] {
+  const perDay = Math.max(1, Math.round(freq / 7));
+  const key = `${al.id}${from.code}${to.code}`;
+  const jitter = (i: number, span: number) => hash(`${key}#${i}`) % span;
+  if (distKm > LONG_HAUL_KM) {
+    const slots: { dep: number; q: number }[] = [];
+    for (let dep = FIRST_DEP; dep <= LAST_DEP; dep += 15) slots.push({ dep, q: departureQuality(dep, arrivalLocal(from, to, distKm, dep), distKm) });
+    // Best slots first, at least two hours apart.
+    slots.sort((x, y) => y.q - x.q || x.dep - y.dep);
+    const out: number[] = [];
+    for (const s of slots) {
+      if (out.length >= perDay) break;
+      if (out.every((t) => Math.abs(t - s.dep) >= 120)) out.push(s.dep);
+    }
+    return out.map((t, i) => Math.min(LAST_DEP, round5(t + jitter(i, 40)))).sort((x, y) => x - y);
+  }
+  const within = (ts: number[]) => ts.map((t) => Math.min(LAST_DEP, Math.max(FIRST_DEP, round5(t)))).sort((x, y) => x - y);
+  if (al.bases.includes(from.code)) return within(spread(HUB_WAVES, perDay).map((w, i) => w + jitter(i, 20)));
+  if (al.bases.includes(to.code)) {
+    // Times at `from` that land about an hour before each wave at the hub, where those are sensible local times.
+    const block = blockHours(distKm) * 60 + to.utcOffset - from.utcOffset;
+    const feeds = HUB_WAVES.map((w) => wrap(w - WAVE_FEED_MIN - block)).filter((d) => d >= FIRST_DEP + 30 && d <= LAST_DEP - 60).sort((x, y) => x - y);
+    if (feeds.length >= Math.min(perDay, 3)) return within(spread(feeds, perDay).map((d, i) => d - jitter(i, 20)));
+  }
+  return departureTimes(key, freq);
+}
+
 const OTHER: Airline = { id: 'other', name: '其他航空', kind: 'full', country: '', color: '#8a9aa6', bases: [], fareMult: 1, quality: 0 };
 const AVERAGE_LOAD = 0.8;
 
@@ -279,8 +405,11 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
     if (m.rivalFreq <= 0) return [];
     const A = AIRPORT_BY_CODE[m.a], B = AIRPORT_BY_CODE[m.b];
     let cands = airlines.map((al) => ({ al, w: appeal(al, A, B, m.distKm) })).filter((x) => x.w > 0);
-    // Nobody based here: the home flag carriers fly it point to point.
-    if (!cands.length) cands = airlines.filter((al) => al.kind === 'full' && (al.country === A.country || al.country === B.country)).map((al) => ({ al, w: 0.3 }));
+    // Nobody based at either end: the home airline based nearest flies it, as an outstation route from its network.
+    if (!cands.length) {
+      const near = nearestAirline(airlines, A, B, m.distKm);
+      if (near) cands = [{ al: near, w: 1 }];
+    }
     const W = cands.reduce((s, x) => s + x.w, 0);
     let alloc = cands.map((x) => ({ al: x.al, freq: (m.rivalFreq * x.w) / (W || 1) }));
     // Drop token service: an airline needs at least 3 flights a week to be in a market.
@@ -298,8 +427,9 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
       const seatsNeeded = rivalPaxPerFlight(m.airDemand, m.distKm) / AVERAGE_LOAD;
       const type = pickType(al, A, B, m.distKm, seatsNeeded) ?? 'A20N';
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
-        const times = departureTimes(`${al.id}${from}${to}`, n);
-        const avgQ = times.reduce((s, t) => s + timeOfDayQuality(t), 0) / times.length;
+        const times = scheduleTimes(al, AIRPORT_BY_CODE[from], AIRPORT_BY_CODE[to], m.distKm, n);
+        const F = AIRPORT_BY_CODE[from], T = AIRPORT_BY_CODE[to];
+        const avgQ = times.reduce((s, t) => s + departureQuality(t, arrivalLocal(F, T, m.distKm, t), m.distKm), 0) / times.length;
         list.push({ airline: al, from, to, freq: n, times, effFreq: n * avgQ, fare: Math.round(m.refFare * al.fareMult), type });
       }
     }

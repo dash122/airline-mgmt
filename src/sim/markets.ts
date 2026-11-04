@@ -30,14 +30,33 @@ export const MIN_MARKET_KM = 100;
 export const LONG_HAUL_KM = 4500;
 /** Most nonstop destinations competitors serve from an airport, short and medium haul. */
 export const DESTINATIONS = { hub: 100, major: 60, large: 30, medium: 12, small: 4 } as const;
+/** Annual passengers per resident of the catchment above which an airport is mostly a holiday destination. */
+const LEISURE_TRIPS_PER_RESIDENT = 20;
 /**
- * Most long-haul destinations, on top of DESTINATIONS: 0.8 per million annual passengers (Heathrow about 67,
- * Hong Kong 42, Taipei 36), or 8 for a major airport without a traffic figure. Only hubs and majors fly long-haul.
+ * A holiday airport: far more passengers than people living around it (Mallorca 35 a resident, Cancún 35, Phuket 39,
+ * against about 10 for London Heathrow or Madrid). Its flights are holiday flights from its visitors' home cities.
+ */
+export function isLeisureAirport(a: Airport): boolean {
+  const traffic = ANNUAL_TRAFFIC_M[a.code];
+  // Hubs are left out: transfer hubs such as Denver and Charlotte also carry far more passengers than residents.
+  return !!traffic && a.size !== 'hub' && a.catchment > 0 && (traffic * 1e6) / a.catchment > LEISURE_TRIPS_PER_RESIDENT;
+}
+/** Long-haul budget share kept by a holiday airport (Cancún's seasonal flights from Europe, a couple at Mallorca). */
+const LEISURE_LONG_HAUL_SHARE = 0.25;
+/** Annual passengers (millions) at which an airport has a full long-haul role; below it, long-haul slots fall away faster. */
+const LONG_HAUL_GATEWAY_M = 60;
+
+/**
+ * Most long-haul destinations, on top of DESTINATIONS: 0.8 per million annual passengers at a 60-million gateway
+ * (Heathrow about 67, Hong Kong 37, Taipei 27, Vienna 13), fewer at smaller and holiday airports, or 4 for a major
+ * airport without a traffic figure. Only hubs and majors fly long-haul.
  */
 export function longHaulDestinations(a: Airport): number {
   if (a.size !== 'hub' && a.size !== 'major') return 0;
   const traffic = ANNUAL_TRAFFIC_M[a.code];
-  return traffic ? Math.max(5, Math.round(traffic * 0.8)) : 8;
+  if (!traffic) return 4;
+  const n = traffic * 0.8 * Math.min(1, traffic / LONG_HAUL_GATEWAY_M) * (isLeisureAirport(a) ? LEISURE_LONG_HAUL_SHARE : 1);
+  return Math.max(isLeisureAirport(a) ? 0 : 3, Math.round(n));
 }
 const SEATS_PER_RIVAL_FLIGHT = 150 * 0.8;
 const MIN_RIVAL_FREQ = 3;
@@ -200,7 +219,10 @@ function buildMarkets(): Map<string, Market> {
   });
   // Long-haul flights also gather at the biggest airports: a 30-million airport (Mallorca, Vienna) has only a
   // small long-haul share next to Heathrow or Frankfurt, so long-haul draw grows faster than traffic below a hub.
-  const longShare = (a: Airport) => Math.min(1, (ANNUAL_TRAFFIC_M[a.code] ?? NO_DATA_TRAFFIC_M) / LONG_HAUL_HUB_M) ** LONG_HAUL_SIZE_EXPONENT;
+  // A holiday airport's traffic is mostly short-haul visitors (Mallorca's from Germany and the UK), so it keeps the
+  // same small share of long-haul draw as of long-haul slots.
+  const longShare = (a: Airport) => Math.min(1, (ANNUAL_TRAFFIC_M[a.code] ?? NO_DATA_TRAFFIC_M) / LONG_HAUL_HUB_M) ** LONG_HAUL_SIZE_EXPONENT
+    * (isLeisureAirport(a) ? LEISURE_LONG_HAUL_SHARE : 1);
   const longMass = AIRPORTS.map((a, i) => {
     const total = metroReach.get(a.metro)!;
     const size = total > 0 ? (metroSize.get(a.metro)! * reach[i]) / total : sizes[i];
