@@ -4,11 +4,10 @@ import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, marketsAt, pairKey } from './markets';
 import {
-  blockMinutes, connectionWeight, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
+  blockMinutes, competitionFor, connectionWeight, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
   topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
 import { airChoice, blockHours } from './choice';
-import { rivalsFrom } from './competitors';
 import { distanceKm } from './geo';
 
 export interface BoardFlight {
@@ -219,9 +218,9 @@ const km = (a: string, b: string) => {
 function takeOneWay(plan: Plan, o: string, d: string, dailyWeight: number, fareMult = fareMultOf(plan, pairKey(o, d))): number {
   const m = marketBetween(o, d);
   if (!m || dailyWeight <= 0) return 0;
-  const rivals = rivalsFrom(o, d);
-  const air = airChoice([{ freq: 7 * dailyWeight, fare: m.refFare * fareMult }, ...rivals.map((r) => ({ freq: r.effFreq, fare: r.fare, quality: r.airline.quality }))], m.distKm, m.refFare);
-  return respondingAirTotal(m, air.utility) * air.shares[0];
+  const comp = competitionFor(o, d);
+  const air = airChoice([{ freq: 7 * dailyWeight, fare: m.refFare * fareMult }, ...comp.offers], m.distKm, m.refFare);
+  return respondingAirTotal(m, air.utility, comp) * air.shares[0];
 }
 
 /** Seats a week, both directions, on one daily round trip with the usual aircraft for the route (0 if none can fly it). */
