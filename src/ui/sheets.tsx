@@ -6,11 +6,11 @@ import { units } from '../sim/schedule';
 import { bestFare, clampFare, fareCurve, FARE_MAX, FARE_MIN, FARE_STEP } from '../sim/fares';
 import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
-  blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
+  blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
-import { RouteRivals } from './rivals';
+import { MarketShare, RouteRivals } from './rivals';
 import type { DayRecord } from './clock';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
@@ -139,6 +139,13 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const best = bestFare(curve);
   const now = curve.find((p) => Math.abs(p.mult - fareMult) < 0.01);
   const full = !!result && result.spill > 1 && result.loadFactor >= 0.97;
+  // Nobody flies these two airports: say where travellers fly today instead.
+  const elsewhere = useMemo(() => {
+    const comp = [competitionFor(a, b), competitionFor(b, a)];
+    if (comp.some((c) => c.services.length && !c.otherAirports)) return null;
+    const pairs = [...new Set(comp.flatMap((c) => c.services.map((s) => pairKey(s.from, s.to))))].map((k) => k.replace('-', '–'));
+    return pairs.length ? `沒有其他航空直飛這兩個機場。旅客現在改從同城市的其他機場出發（${pairs.join('、')}），你和這些航班競爭。` : '目前沒有航空飛這兩個城市，旅客只能轉機：你是唯一的直飛。';
+  }, [a, b]);
   const types = [...new Set(flights.map((f) => AIRCRAFT[f.ac.type].name))].join('、');
   return (
     <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose}>
@@ -182,10 +189,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         : <button className="fare-tip" onClick={() => setFare(best.mult)}>
             最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
           </button>)}
-      <div className="competition">
-        {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
-        <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
-      </div>
+      <MarketShare a={a} b={b} result={result} />
+      {elsewhere && <div className="hint">{elsewhere}</div>}
+      {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
       <h4>航線班表</h4>
       <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛此航線" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />

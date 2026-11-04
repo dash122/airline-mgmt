@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { addRoundTrip, emptyPlan, simulate, type Plan } from './simulate';
 import { bestFare, fareCurve } from './fares';
+import { marketBetween } from './markets';
 
 const must = (r: ReturnType<typeof addRoundTrip>) => {
   if ('error' in r) throw new Error(r.error);
@@ -39,7 +40,8 @@ describe('fares', () => {
     expect(lo.demand).toBeCloseTo(lo.pax + lo.spill, 6);
   });
   test('a fare on one leg reaches the connecting travellers on it', () => {
-    const net = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3), 'TPE', 'NRT', 2);
+    // Widebodies on the HKG leg, so no flight fills up and a cheaper fare isn't lost to spill.
+    const net = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3, 'A359'), 'TPE', 'NRT', 2);
     const conn = (mult: number) => { const r = at(net, 'HKG-TPE', mult).routes['HKG-TPE']; return r.pax - r.localPax; };
     expect(conn(1)).toBeGreaterThan(50);
     expect(conn(1.2)).toBeLessThan(conn(1) * 0.95);
@@ -51,5 +53,23 @@ describe('fares', () => {
     for (const p of curve) expect(best.profit).toBeGreaterThanOrEqual(p.profit - 1);
     expect(best.mult).toBeGreaterThan(0.7);
     expect(best.mult).toBeLessThan(1.4);
+  });
+});
+
+describe('airports in one city', () => {
+  test('a route nobody flies competes with flights from the other airport in the same city', () => {
+    const itm = simulate(trips(emptyPlan('TPE'), 'TPE', 'ITM', 1)).routes['ITM-TPE'];
+    const kix = simulate(trips(emptyPlan('TPE'), 'TPE', 'KIX', 1)).routes['KIX-TPE'];
+    expect(itm.rivals.length).toBeGreaterThan(0);
+    // About the same order of demand as flying to the busier airport, not the whole city's travellers.
+    expect(itm.demand).toBeLessThan(kix.demand * 2);
+    expect(itm.demand).toBeLessThan(itm.seats);
+  });
+  test('a city pair nobody flies still gives the first nonstop most travellers, not all of them', () => {
+    const m = marketBetween('KHH', 'ITM')!;
+    const r = simulate(trips(emptyPlan('KHH'), 'KHH', 'ITM', 3)).routes['ITM-KHH'];
+    expect(r.rivals).toHaveLength(0);
+    expect(r.demand).toBeGreaterThan(m.potential * 0.5);
+    expect(r.demand).toBeLessThan(m.potential * 2 * 0.9);
   });
 });

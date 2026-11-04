@@ -3,7 +3,7 @@ import { AIRPORTS } from '../data/airports';
 import { marketBetween, markets, modelledAnnualPax } from './markets';
 import { AIR_TARGETS_M } from '../data/calibration';
 import {
-  addRoundTrip, blockMinutes, CONNECT_FARE_SHARE, connectFareShare, detourOk, emptyPlan, HUB_COST_PER_WEEK, minConnect, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
+  addRoundTrip, blockMinutes, CONNECT_FARE_SHARE, connectFareShare, connectionWeight, detourOk, layoverCostHours, layoverKind, MIN_CONNECT_FARE_SHARE, STOPOVER_FARE_SHARE, stopoverAppealHours, emptyPlan, HUB_COST_PER_WEEK, minConnect, newAircraft, rotationInfo, routeProblem, simulate, utcFromLocal, withLeg, type Plan,
 } from './simulate';
 
 const must = (r: ReturnType<typeof addRoundTrip>) => {
@@ -79,9 +79,11 @@ describe('simulate', () => {
     const timed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 11 * 60) }] }] };
     const untimed = { ...base, fleet: [{ ...a1, legs: [hkgTpe] }, { ...a2, legs: [{ from: 'TPE', to: 'NRT', dep: utcFromLocal('TPE', 19 * 60) }] }] };
     expect(simulate(timed).connectingPax).toBeGreaterThan(0);
-    // A 9 hour layover is still possible, just far less popular.
-    expect(simulate(untimed).connectingPax).toBeGreaterThan(0);
-    expect(simulate(untimed).connectingPax).toBeLessThan(simulate(timed).connectingPax / 5);
+    // A 9 hour layover is a stopover: clearly less popular, but far from nothing.
+    const stop = simulate(untimed);
+    expect(stop.connectingPax).toBeGreaterThan(simulate(timed).connectingPax / 10);
+    expect(stop.connectingPax).toBeLessThan(simulate(timed).connectingPax / 2);
+    expect(stop.transfers.TPE.stopover).toBeCloseTo(stop.transfers.TPE.pax);
   });
   test('an idle aircraft still costs its lease', () => {
     const idle = { ...emptyPlan('TPE'), fleet: [newAircraft(emptyPlan('TPE'), 'A20N')] };
@@ -184,7 +186,7 @@ describe('transfers', () => {
     expect(r.transfers.TPE.pax).toBeCloseTo(r.connectingPax);
     expect(r.transfers.TPE.flows[0]).toMatchObject({ from: 'HKG', to: 'NRT' });
   });
-  test('connectors keep their seat before local travellers on a full second flight', () => {
+  test('a full flight never carries more than its seats', () => {
     const full: Plan = { ...base, fleet: [hkgTpe(), ac('b', 'ATR72', [{ from: 'TPE', to: 'KHH', h: 11 }]), ac('c', 'B77W', [{ from: 'KHH', to: 'OKA', h: 14 }])] };
     const r = simulate(full);
     for (const x of Object.values(r.routes)) expect(x.pax).toBeLessThanOrEqual(x.seats + 1e-6);
@@ -196,11 +198,29 @@ describe('transfers', () => {
     expect(long.connectingPax).toBeGreaterThan(0);
     expect(long.connectingPax).toBeLessThan(short.connectingPax);
   });
-  test('the connecting fare share falls with the layover down to a floor', () => {
+  test('the connecting fare share falls over a long layover, and recovers for a stopover', () => {
     expect(connectFareShare(90)).toBe(CONNECT_FARE_SHARE);
     expect(connectFareShare(180)).toBe(CONNECT_FARE_SHARE);
     expect(connectFareShare(360)).toBeLessThan(CONNECT_FARE_SHARE);
-    expect(connectFareShare(360)).toBeGreaterThan(connectFareShare(600));
-    expect(connectFareShare(2000)).toBeGreaterThanOrEqual(0.55);
+    expect(connectFareShare(360)).toBeGreaterThan(connectFareShare(470));
+    expect(connectFareShare(470)).toBeGreaterThanOrEqual(MIN_CONNECT_FARE_SHARE);
+    expect(connectFareShare(600)).toBe(STOPOVER_FARE_SHARE);
+    expect(connectFareShare(600)).toBeGreaterThan(connectFareShare(470));
+    expect(connectFareShare(600)).toBeLessThan(CONNECT_FARE_SHARE);
+  });
+  test('long waits feel shorter than they are, and a stopover in a popular city stops growing', () => {
+    expect(layoverCostHours(90, 'TPE')).toBeCloseTo(1.5);
+    expect(layoverCostHours(360, 'TPE')).toBeLessThan(6);
+    expect(layoverCostHours(360, 'TPE')).toBeGreaterThan(3);
+    expect(layoverCostHours(600, 'TPE')).toBe(layoverCostHours(1200, 'TPE'));
+    expect(layoverCostHours(600, 'HND')).toBeLessThan(layoverCostHours(360, 'HND'));
+    expect(stopoverAppealHours('HND')).toBeGreaterThan(stopoverAppealHours('KNH'));
+    expect(layoverKind(120)).toBe('quick');
+    expect(layoverKind(300)).toBe('long');
+    expect(layoverKind(600)).toBe('stopover');
+    // A stopover still loses to a quick connection, but keeps a real share of travellers.
+    const quick = connectionWeight(4, 90, 'TPE', 2800), stop = connectionWeight(4, 600, 'TPE', 2800);
+    expect(stop).toBeLessThan(quick);
+    expect(stop).toBeGreaterThan(quick / 10);
   });
 });

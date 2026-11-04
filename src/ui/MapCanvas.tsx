@@ -20,6 +20,8 @@ interface Props {
   clock: GameClock;
   selection: Selection | null;
   connectFrom: string | null;
+  /** Legs to sketch while transit ideas are on screen: flown ones glow, missing ones are dashed. */
+  hint?: [string, string][] | null;
   theme: Theme;
   onTapAirport: (code: string) => void;
   onTapRoute: (id: string) => void;
@@ -184,7 +186,7 @@ export default function MapCanvas(props: Props) {
       for (const offset of worldCopies(v, w)) {
       worldOffset = offset;
       // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
-      const rivalFocus = p.selection?.kind === 'airport' ? p.selection.id : null;
+      const rivalFocus = p.selection?.kind === 'airport' && !p.hint?.length ? p.selection.id : null;
       if (rivalFocus) {
         for (const r of rivalsAt(rivalFocus)) {
           const pts = arc(rivalFocus, r.to).map(([la, lo]) => screen(la, lo));
@@ -204,6 +206,7 @@ export default function MapCanvas(props: Props) {
 
       // Routes
       const pairs = routePairs(p.plan);
+      const hintedNodes = new Set((p.hint ?? []).flat());
       for (const r of pairs) {
         const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
         const res = p.result?.routes[r.key];
@@ -224,12 +227,36 @@ export default function MapCanvas(props: Props) {
         const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
         if (focus) {
           if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
+          else if (hintedNodes.has(r.a) || hintedNodes.has(r.b)) { /* part of a transit idea: keep it visible */ }
           else ctx.globalAlpha = 0.18;
         }
         if (!res) ctx.setLineDash([6, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
+      }
+
+      // Transit ideas: legs through the hub that would connect the selected airport's markets.
+      if (p.hint?.length) {
+        const flownKeys = new Set(pairs.map((r) => r.key));
+        for (const [a, b] of p.hint) {
+          if (!AIRPORT_BY_CODE[a] || !AIRPORT_BY_CODE[b]) continue;
+          const pts = arc(a, b).map(([la, lo]) => screen(la, lo));
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.strokeStyle = pal.sel;
+          ctx.lineCap = 'round';
+          ctx.lineWidth = 3;
+          ctx.globalAlpha = 0.9;
+          if (!flownKeys.has(a < b ? `${a}-${b}` : `${b}-${a}`)) {
+            ctx.setLineDash([7, 6]);
+            ctx.lineDashOffset = -time / 60;
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+          ctx.globalAlpha = 1;
+        }
       }
 
       // Aircraft, placed by the game clock.
@@ -281,6 +308,7 @@ export default function MapCanvas(props: Props) {
 
       // Airports
       const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
+      const hinted = new Set((p.hint ?? []).flat());
       ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
       ctx.textBaseline = 'middle';
       const labels: { prio: number; text: string; x: number; y: number }[] = [];
@@ -305,9 +333,9 @@ export default function MapCanvas(props: Props) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = isBase ? pal.sel : pal.airport;
         ctx.stroke();
-        const showLabel = a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
+        const showLabel = hinted.has(a.code) || a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
         if (showLabel) {
-          const prio = selected || isBase ? 0 : inPlan.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
+          const prio = selected || isBase ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
           labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
         }
       }

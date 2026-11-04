@@ -88,7 +88,7 @@ describe('arrival day markers', () => {
   });
 });
 
-import { linkages } from './airports';
+import { estimateVia, hubOpportunities, linkages, viaGroup, viewFromHub } from './airports';
 import { AIRPORT_BY_CODE } from '../data/airports';
 describe('connecting markets', () => {
   const base = emptyPlan('TPE');
@@ -117,10 +117,12 @@ describe('connecting markets', () => {
     expect(l.missing[0]).not.toBe('HKG');
     expect(AIRPORT_BY_CODE[l.missing[0]]).toBeDefined();
   });
-  test('flights that miss each other get a suggested time, and taking it connects the market', () => {
+  test('flights that only make a stopover get a suggested time, and taking it makes a quick connection', () => {
     const miss: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', 19)] };
     const l = find(linkages(miss, simulate(miss), 'TPE', 50), 'HKG', 'NRT')!;
-    expect(l.status).toBe('timing');
+    expect(l.status).toBe('long');
+    expect(l.viaPax).toBeGreaterThan(0); // the stopover still carries some
+    expect(l.wait).toBeGreaterThan(8 * 60);
     expect(l.suggest).toBeDefined();
     const fixed: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', l.suggest!.local / 60)] };
     const after = find(linkages(fixed, simulate(fixed), 'TPE', 50), 'HKG', 'NRT')!;
@@ -128,8 +130,70 @@ describe('connecting markets', () => {
     expect(after.viaPax).toBeGreaterThan(0);
     expect(after.lost).toBeLessThan(after.demand);
   });
+  test('when the quick fix would leave at night, an earlier flight in is suggested instead', () => {
+    const late: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 21), mk('b', 'TPE', 'NRT', 11)] };
+    const l = find(linkages(late, simulate(late), 'TPE', 50), 'HKG', 'NRT')!;
+    expect(l.suggest).toBeDefined();
+    expect(l.suggest!.from).toBe('HKG');
+    expect(l.suggest!.to).toBe('TPE');
+    expect(l.suggest!.before).toBe(11 * 60);
+    expect(l.suggest!.local).toBeGreaterThanOrEqual(6 * 60);
+  });
   test('slots were expanded', () => {
     expect(AIRPORT_BY_CODE.TPE.slotCap).toBeGreaterThanOrEqual(1000);
     expect(AIRPORT_BY_CODE.KNH.slotCap).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe('transit potential from the hub', () => {
+  const base = emptyPlan('TPE');
+  const mk = (id: string, from: string, to: string, h: number) => ({ ...newAircraft(base, 'A20N'), id, reg: id, legs: [{ from, to, dep: utcFromLocal(from, h * 60) }] });
+  test('new routes from the hub count the travellers who would connect onto routes already flown', () => {
+    const p: Plan = { ...base, fleet: [mk('a', 'TPE', 'HKG', 8), mk('b', 'TPE', 'NRT', 8), mk('c', 'TPE', 'BKK', 8)] };
+    const ideas = hubOpportunities(p, 'TPE');
+    expect(ideas.length).toBeGreaterThan(0);
+    expect(ideas.every((i) => !['HKG', 'NRT', 'BKK'].includes(i.to))).toBe(true);
+    expect(ideas.some((i) => i.via > 0 && i.markets.length > 0)).toBe(true);
+    for (let k = 1; k < ideas.length; k++) expect(ideas[k - 1].local + ideas[k - 1].via).toBeGreaterThanOrEqual(ideas[k].local + ideas[k].via);
+  });
+  test('tapping another airport shows where its travellers could go through the hub, and what opening the leg unlocks', () => {
+    const p: Plan = { ...base, fleet: [mk('a', 'TPE', 'HKG', 8), mk('b', 'TPE', 'NRT', 8)] };
+    const v = viewFromHub(p, simulate(p), 'TPE', 'MNL');
+    expect(v.legFlown).toBe(false);
+    expect(v.local).toBeGreaterThan(0);
+    expect(v.rows.length).toBeGreaterThan(0);
+    expect(v.rows.every((r) => r.o === 'MNL' && r.missing.includes('MNL'))).toBe(true);
+    expect(v.unlockCount).toBeGreaterThan(0);
+    expect(v.unlock).toBeGreaterThan(0);
+  });
+  test('once the leg is flown, its connections show as carried', () => {
+    const p: Plan = { ...base, fleet: [{ ...mk('a', 'MNL', 'TPE', 7), legs: [{ from: 'MNL', to: 'TPE', dep: utcFromLocal('MNL', 7 * 60) }] }, mk('b', 'TPE', 'NRT', 11)] };
+    const v = viewFromHub(p, simulate(p), 'TPE', 'MNL');
+    expect(v.legFlown).toBe(true);
+    const nrt = v.rows.find((r) => r.d === 'NRT')!;
+    expect(nrt).toBeDefined();
+    expect(nrt.viaPax).toBeGreaterThan(0);
+  });
+  test('from any airport, every market through the hub is listed, on legs flown and not yet flown, biggest first', () => {
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [mk('a', 'HKG', 'BKK', 8), mk('b', 'HKG', 'SIN', 8)] };
+    const v = viewFromHub(p, simulate(p), 'HKG', 'TPE');
+    expect(v.rows.length).toBeGreaterThan(50);
+    expect(v.rows.some((r) => viaGroup(r) === 'flown' && r.d === 'BKK')).toBe(true);
+    expect(v.rows.some((r) => viaGroup(r) === 'hubLeg' && r.d === 'LHR')).toBe(true);
+    for (let k = 1; k < v.rows.length; k++) expect(Math.max(v.rows[k - 1].est, v.rows[k - 1].viaPax)).toBeGreaterThanOrEqual(Math.max(v.rows[k].est, v.rows[k].viaPax));
+    expect(v.total).toBeGreaterThan(v.rows[0].est);
+    // Small airports are not given a whole province's population.
+    expect(v.rows[0].est).toBeLessThan(5000);
+  });
+  test('the estimate uses the same transit demand as the simulation', () => {
+    const big = (id: string, legs: [string, string, number][]) => ({ ...newAircraft(base, 'B77W'), id, reg: id, legs: legs.map(([from, to, h]) => ({ from, to, dep: utcFromLocal(from, h * 60) })) });
+    // TPE to Manila through Hong Kong with a 1 h 40 min connection each way, on big aircraft so no one is turned away.
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [big('a', [['TPE', 'HKG', 8], ['HKG', 'MNL', 11.5]]), big('b', [['MNL', 'HKG', 8], ['HKG', 'TPE', 12]])] };
+    const r = simulate(p);
+    const sim = r.transfers.HKG.flows.filter((f) => (f.from === 'TPE' && f.to === 'MNL') || (f.from === 'MNL' && f.to === 'TPE')).reduce((s, f) => s + f.pax, 0);
+    const est = estimateVia(p, 'TPE', 'HKG', 'MNL');
+    expect(sim).toBeGreaterThan(0);
+    expect(est / sim).toBeGreaterThan(0.5);
+    expect(est / sim).toBeLessThan(2);
   });
 });

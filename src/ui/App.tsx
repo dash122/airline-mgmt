@@ -62,6 +62,7 @@ export default function App() {
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>(null);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [transitHint, setTransitHint] = useState<[string, string][] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [schedAirport, setSchedAirport] = useState<{ airport: string } | null>(null);
 
@@ -130,7 +131,7 @@ export default function App() {
   const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setConnectFrom(null); };
   const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setConnectFrom(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
 
-  const addTrip = (a: string, b: string, type?: AircraftModel) => {
+  const addTrip = (a: string, b: string, type?: AircraftModel, stay = false) => {
     const r = addRoundTrip(plan, a, b, type);
     if ('error' in r) { setToast(r.error); return; }
     update(r.plan);
@@ -139,7 +140,7 @@ export default function App() {
     const reg = added.reg;
     const cadence = cycleOf(added) > 1 ? `每 ${cycleOf(added)} 天來回一班（長程）` : '每日來回一班';
     setToast(isNew ? `租了新飛機 ${reg}，${cadence}。可在「班表」調整時間` : `由 ${reg} 加飛一班來回`);
-    select({ kind: 'route', id: [a, b].sort().join('-') });
+    if (!stay) select({ kind: 'route', id: [a, b].sort().join('-') });
   };
   const removeOne = (key: string) => {
     const next = removeOneRoundTrip(plan, key, localMinutes);
@@ -166,6 +167,7 @@ export default function App() {
         clock={clock}
         selection={selection ?? (editing ? { kind: 'aircraft', id: editing.id } : null)}
         connectFrom={connectFrom}
+        hint={airport ? transitHint : null}
         theme={theme}
         onTapAirport={(code) => {
           if (connectFrom && connectFrom !== code) {
@@ -209,7 +211,7 @@ export default function App() {
         <AirportSheet key={airport} plan={plan} result={result} code={airport}
           onConnect={() => { setSelection(null); setConnectFrom(airport); }}
           onOpen={(to: string) => addTrip(airport, to)}
-          onOpenPair={(a: string, b: string) => addTrip(a, b)}
+          onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
           onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'add', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } })}
           onOpenRoute={(key) => select({ kind: 'route', id: key })}
           onToggleHub={() => {
@@ -218,6 +220,8 @@ export default function App() {
             setToast(on ? '已取消轉運站' : `${AIRPORT_BY_CODE[airport].name}設為轉運站：轉機最短時間縮短，每週多一筆費用`);
           }}
           onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
+          onPickAirport={(code) => select({ kind: 'airport', id: code })}
+          onHint={setTransitHint}
           onClose={() => select(null)} />
       )}
       {showPanel === 'routes' && (
