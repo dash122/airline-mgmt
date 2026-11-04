@@ -472,22 +472,27 @@ export function simulate(plan: Plan): NetworkResult {
     marketInfo.set(k, { airTotal, refFare: m.refFare, mine: mine * 7, connecting, rivals: rivals.map((r, i) => ({ id: r.airline.id, pax: airTotal * air.shares[i + 1] })) });
   }
 
-  // Capacity: scale itineraries down where a flight is oversold. Travellers already holding a seat on
-  // their first flight (connectors) keep their seat on the second, so local travellers are turned away first.
-  const carried = new Map(demand);
-  for (let pass = 0; pass < 4; pass++) {
-    const conn = new Map<Flight, number>(), loc = new Map<Flight, number>();
-    for (const [it, n] of carried) for (const f of it.flights) (it.flights.length > 1 ? conn : loc).set(f, ((it.flights.length > 1 ? conn : loc).get(f) ?? 0) + n);
-    const connFactor = (f: Flight) => Math.min(1, f.seats / (conn.get(f) || 1));
-    const locFactor = (f: Flight) => {
-      const l = loc.get(f) ?? 0;
-      return l <= 0 ? 1 : Math.min(1, Math.max(0, f.seats - (conn.get(f) ?? 0) * connFactor(f)) / l);
-    };
-    for (const [it, n] of carried) {
-      const factor = Math.min(1, ...it.flights.map((f) => (it.flights.length > 1 ? connFactor(f) : locFactor(f))));
-      carried.set(it, n * factor);
+  // Capacity: where a flight is oversold, everyone who wants it (local and connecting) loses seats in the same
+  // proportion. Each flight accepts a share of the travellers who want it; a connection gets the smaller share of
+  // its two flights, and seats a connection can't use on one flight go back to the others on the next pass.
+  const accept = new Map<Flight, number>(flights.map((f) => [f, 1]));
+  const carried = new Map<Itinerary, number>();
+  const load = () => {
+    for (const [it, n] of demand) carried.set(it, n * Math.min(...it.flights.map((f) => accept.get(f)!)));
+    const onboard = new Map<Flight, number>();
+    for (const [it, n] of carried) for (const f of it.flights) onboard.set(f, (onboard.get(f) ?? 0) + n);
+    return onboard;
+  };
+  for (let pass = 0; pass < 12; pass++) {
+    const onboard = load();
+    for (const f of flights) {
+      const n = onboard.get(f) ?? 0;
+      if (n > 0) accept.set(f, Math.min(1, (accept.get(f)! * f.seats) / n));
     }
   }
+  // Never more travellers than seats.
+  const finalLoad = load();
+  for (const [it, n] of carried) carried.set(it, n * Math.min(1, ...it.flights.map((f) => f.seats / Math.max(finalLoad.get(f) ?? 0, f.seats))));
 
   // Tally per flight.
   const flightPax = new Map<Flight, number>();

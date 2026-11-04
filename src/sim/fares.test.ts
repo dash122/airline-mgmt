@@ -40,7 +40,8 @@ describe('fares', () => {
     expect(lo.demand).toBeCloseTo(lo.pax + lo.spill, 6);
   });
   test('a fare on one leg reaches the connecting travellers on it', () => {
-    const net = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3), 'TPE', 'NRT', 2);
+    // Widebodies on the HKG leg, so no flight fills up and a cheaper fare isn't lost to spill.
+    const net = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 3, 'A359'), 'TPE', 'NRT', 2);
     const conn = (mult: number) => { const r = at(net, 'HKG-TPE', mult).routes['HKG-TPE']; return r.pax - r.localPax; };
     expect(conn(1)).toBeGreaterThan(50);
     expect(conn(1.2)).toBeLessThan(conn(1) * 0.95);
