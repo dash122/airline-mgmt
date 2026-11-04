@@ -6,6 +6,7 @@ import { airChoice, airUtility, type AirOffer, departureQuality, FARE_SENSITIVIT
 import { rivalsFrom, type RivalService } from './competitors';
 import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey, type Market } from './markets';
 import { distanceKm } from './geo';
+import { flightMinutes, typicalFlightHours } from './flighttime';
 
 export const DAY = 1440;
 
@@ -56,9 +57,8 @@ export const hhmm = (min: number) => {
 
 /** Minutes from gate to gate, rounded to 5. */
 export function blockMinutes(a: string, b: string, type: AircraftModel): number {
-  const A = AIRPORT_BY_CODE[a], B = AIRPORT_BY_CODE[b];
-  const h = distanceKm(A.lat, A.lon, B.lat, B.lon) / AIRCRAFT[type].speedKmh + 0.5;
-  return Math.round((h * 60) / 5) * 5;
+  // Taxiing, climb and descent, airways a little longer than the great circle, and the jet stream (flighttime.ts).
+  return flightMinutes(AIRPORT_BY_CODE[a], AIRPORT_BY_CODE[b], AIRCRAFT[type].speedKmh);
 }
 
 /** How attractive a departure at this local time is (1 = about average over 06:00-22:00). */
@@ -251,22 +251,25 @@ export interface NetworkResult {
   avgUtilisation: number;
 }
 
-export const MIN_CONNECT = 45;
+export const MIN_CONNECT = 35;
 /** Minimum connection when the trip crosses a border at the transfer airport. */
-export const MIN_CONNECT_INTL = 70;
+export const MIN_CONNECT_INTL = 55;
 /** Extra minutes needed at the biggest hubs (long walks, many terminals). */
 export const BIG_AIRPORT_EXTRA = 10;
 /** Minutes a transfer hub setting takes off the minimum connection. */
 export const HUB_MCT_CUT = 10;
 /** What the hub setting costs per week, NT$. */
 export const HUB_COST_PER_WEEK = 1_200_000;
-const CONNECTION_PENALTY_H = 1;
+/** The bother of changing planes, in hours, on top of the wait itself. */
+const CONNECTION_PENALTY_H = 0.6;
 /** Staying on the same aircraft is nearly as good as flying nonstop. */
 const THROUGH_PENALTY_H = 0.3;
 /** One-stop travellers pay this share of the nonstop fare for the same trip, with a layover of up to LONG_LAYOVER_MIN. */
 export const CONNECT_FARE_SHARE = 0.85;
 /** Up to here a layover is an ordinary connection. */
-export const LONG_LAYOVER_MIN = 180;
+export const LONG_LAYOVER_MIN = 240;
+/** Waiting counts in full only up to here; later hours feel half as long (travellers plan around them). */
+export const FULL_WAIT_MIN = 120;
 /** From here travellers leave the airport and see the city: the trip becomes a stopover. */
 export const STOPOVER_MIN = 480;
 /** Each extra hour of a long layover (past LONG_LAYOVER_MIN, before a stopover) takes this much off the fare share. */
@@ -290,19 +293,19 @@ export function stopoverAppealHours(code: string): number {
 }
 
 /**
- * Hours of waiting a traveller feels at a layover of `waitMin` at `at`. The first 3 hours count in full, later
+ * Hours of waiting a traveller feels at a layover of `waitMin` at `at`. The first 2 hours count in full, later
  * hours count half (people plan around long waits), up to MAX_LAYOVER_COST_H. From STOPOVER_MIN the traveller
  * leaves the airport, so the wait stops growing and the city's appeal makes up part of it.
  */
 export function layoverCostHours(waitMin: number, at: string): number {
   const h = waitMin / 60;
-  if (waitMin <= LONG_LAYOVER_MIN) return h;
-  if (waitMin < STOPOVER_MIN) return Math.min(MAX_LAYOVER_COST_H, LONG_LAYOVER_MIN / 60 + 0.5 * (h - LONG_LAYOVER_MIN / 60));
+  if (waitMin <= FULL_WAIT_MIN) return h;
+  if (waitMin < STOPOVER_MIN) return Math.min(MAX_LAYOVER_COST_H, FULL_WAIT_MIN / 60 + 0.5 * (h - FULL_WAIT_MIN / 60));
   return Math.max(2, MAX_LAYOVER_COST_H - stopoverAppealHours(at));
 }
 
 /**
- * Any layover is allowed. Up to 3 hours travellers pay 85% of the nonstop fare; long layovers only sell at a
+ * Any layover is allowed. Up to 4 hours travellers pay 85% of the nonstop fare; long layovers only sell at a
  * discount; stopovers sell close to a normal connection, because travellers pick them for the extra city.
  */
 export function connectFareShare(layoverMin: number): number {
@@ -318,7 +321,7 @@ export function connectFareShare(layoverMin: number): number {
  */
 export function connectionWeight(blockH: number, waitMin: number, via: string, directKm: number, through = false): number {
   const felt = blockH + (through ? waitMin / 60 : layoverCostHours(waitMin, via));
-  const direct = directKm / 820 + 0.5;
+  const direct = typicalFlightHours(directKm);
   return Math.exp(-THETA * VALUE_OF_TIME * (felt - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
 }
 /**

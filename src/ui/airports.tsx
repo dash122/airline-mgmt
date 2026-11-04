@@ -125,7 +125,7 @@ function LinkRow({ hub, l, onOpenPair, onSuggest }: {
         <>
           <small className="why">
             {l.status === 'long' && l.wait !== null
-              ? <>最快的轉機要在{hub}{waitLabel(l.wait)} {hm(l.wait)}。{layoverKind(l.wait) === 'stopover' ? '有人會順便進城玩，' : '仍有人搭，'}但比 3 小時內的轉機少。</>
+              ? <>最快的轉機要在{hub}{waitLabel(l.wait)} {hm(l.wait)}。{layoverKind(l.wait) === 'stopover' ? '有人會順便進城玩，' : '仍有人搭，'}但比 4 小時內的轉機少。</>
               : <>兩段航線都有，但班次接不上。</>}
             {l.suggest.before === undefined
               ? <>{hhmm(l.suggest.arriveLocal)} 抵達{hub}後，排一班 {hhmm(l.suggest.local)} 往 {l.suggest.to} 就能快速轉機。</>
@@ -245,7 +245,7 @@ function FromHub({ plan, view, filter, onFilter, onOpenPair, onSuggest, onPickHu
 function LayoverLegend({ hub }: { hub: string }) {
   return (
     <div className="hint">
-      轉機時間：3 小時內是一般轉機（票價約直飛 {pct(CONNECT_FARE_SHARE)}）；3 到 8 小時是長轉機，旅客較少、票價打折；8 小時以上旅客會進城停留，
+      轉機時間：4 小時內是一般轉機（票價約直飛 {pct(CONNECT_FARE_SHARE)}）；4 到 8 小時是長轉機，旅客較少、票價打折；8 小時以上旅客會進城停留，
       {name(hub)}的停留吸引力約抵 {stopoverAppealHours(hub).toFixed(1)} 小時，票價約 {pct(STOPOVER_FARE_SHARE)}。
     </div>
   );
