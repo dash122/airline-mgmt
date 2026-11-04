@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { airlines, airlinesAt, COUNTRY_NAMES, NAME_POOLS, nameAreaOf, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
+import { airlines, airlinesAt, COUNTRY_NAMES, HUB_WAVES, NAME_POOLS, nameAreaOf, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
 import { DESTINATIONS, LONG_HAUL_KM, longHaulDestinations, marketBetween, markets, marketsAt, modelledAnnualPax } from './markets';
 import { AIRPORTS } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
@@ -141,5 +141,49 @@ describe('competitor airlines', () => {
     const tpe = marketBetween('HKG', 'TPE')!.rivalFreq;
     expect(tpe).toBeGreaterThan(70);
     expect(tpe).toBeLessThan(150);
+  });
+});
+
+describe('competitor networks', () => {
+  test('hubs follow real traffic, and the biggest markets have several full-service airlines with their own hubs', () => {
+    const hubs = (c: string) => airlines().filter((a) => a.country === c && a.kind === 'full').map((a) => a.bases[0]);
+    expect(hubs('CN').sort()).toEqual(['CAN', 'PEK', 'PVG']);
+    expect(hubs('US')).toContain('ATL');
+    expect(hubs('US')).toHaveLength(3);
+    // Osaka is far smaller than Tokyo and Manchester than London, so both airlines share the main city.
+    expect(hubs('JP')).toEqual(['HND', 'HND']);
+    expect(hubs('GB')).toEqual(['LHR', 'LHR']);
+    expect(hubs('TW')).toEqual(['TPE']);
+  });
+
+  test('low-cost airlines only fly from their bases', () => {
+    for (const m of markets().values()) {
+      if (m.rivalFreq <= 0) continue;
+      for (const s of rivalsFrom(m.a, m.b)) {
+        if (s.airline.kind !== 'low') continue;
+        const bases = s.airline.bases;
+        const based = bases.includes(m.a) || bases.includes(m.b);
+        // The only exception: a route between two other cities that it flies because its base is the nearest.
+        if (!based) expect(rivalsFrom(m.a, m.b).map((x) => x.airline.id), `${m.a}-${m.b}`).toEqual([s.airline.id]);
+      }
+    }
+  });
+
+  test('holiday airports get few long-haul routes', () => {
+    const longAt = (c: string) => [...markets().values()].filter((m) => m.rivalFreq > 0 && m.distKm > LONG_HAUL_KM && (m.a === c || m.b === c)).length;
+    expect(longAt('PMI')).toBeLessThanOrEqual(5);
+    expect(longAt('AGP')).toBeLessThanOrEqual(10);
+    expect(longAt('FRA')).toBeGreaterThan(30);
+  });
+
+  test('flights leave in waves at the airline hub, and long-haul flights at long-haul times', () => {
+    const inWave = (t: number) => HUB_WAVES.some((w) => t >= w && t <= w + 3 * 25 + 20);
+    for (const { to, services } of rivalsAt('TPE')) {
+      for (const s of services) {
+        if (s.airline.bases.includes('TPE') && marketBetween('TPE', to)!.distKm <= LONG_HAUL_KM) for (const t of s.times) expect(inWave(t), `TPE-${to} ${t}`).toBe(true);
+      }
+    }
+    // Los Angeles-Taipei leaves late in the evening and lands at dawn.
+    for (const s of rivalsFrom('LAX', 'TPE')) for (const t of s.times) expect(t).toBeGreaterThanOrEqual(20 * 60);
   });
 });

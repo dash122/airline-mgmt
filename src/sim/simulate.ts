@@ -2,7 +2,7 @@
 // Pure and deterministic: the same plan always gives the same result.
 import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
-import { airChoice, airUtility, type AirOffer, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, stayHomeUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
+import { airChoice, airUtility, type AirOffer, departureQuality, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, stayHomeUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
 import { rivalsFrom, type RivalService } from './competitors';
 import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey, type Market } from './markets';
 import { distanceKm } from './geo';
@@ -122,6 +122,9 @@ export function weeklyDepartures(plan: Plan, code: string): number {
 }
 
 // ---------- Simulation ----------
+
+/** How attractive a player flight's times are to travellers (departure, and on long-haul also arrival). */
+const flightTimeQuality = (f: Flight) => departureQuality(localMinutes(f.from, f.dep), localMinutes(f.to, f.arr), f.distKm);
 
 interface Flight {
   key: string; // `${acId}#${index}`
@@ -464,7 +467,7 @@ export function simulate(plan: Plan): NetworkResult {
   };
   for (const f1 of flights) {
     const mult1 = fareMultOf(plan, pairKey(f1.from, f1.to));
-    add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
+    add(f1.from, f1.to, { flights: [f1], weight: flightTimeQuality(f1), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
     for (const f2 of byFrom.get(f1.to) ?? []) {
       if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) continue;
       const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
@@ -476,7 +479,7 @@ export function simulate(plan: Plan): NetworkResult {
       const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
       // Connecting fares follow the fares the player sets on the legs, weighted by distance.
       const mult = (mult1 * f1.distKm + fareMultOf(plan, pairKey(f2.from, f2.to)) * f2.distKm) / (f1.distKm + f2.distKm);
-      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait, perWeek: Math.min(f1.perWeek, f2.perWeek) });
+      add(f1.from, f2.to, { flights: [f1, f2], weight: flightTimeQuality(f1) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait, perWeek: Math.min(f1.perWeek, f2.perWeek) });
     }
   }
 

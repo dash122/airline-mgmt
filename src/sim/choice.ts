@@ -97,3 +97,18 @@ export function timeOfDayQuality(localMin: number): number {
   if (h < 22) return 0.75;
   return 0.25;
 }
+
+/** Flights longer than this (km) are long-haul: travellers like to leave late, sleep on board and land in the morning. */
+export const LONG_HAUL_TIMES_KM = 4500;
+
+/**
+ * How attractive a flight's times are: its departure's time-of-day appeal on short and medium routes. On long-haul
+ * flights a late-evening departure sells best and a landing in the small hours (00:30 to 05:00) badly, so
+ * Los Angeles-Taipei leaves near midnight and lands at dawn, as real flights do.
+ */
+export function departureQuality(depLocal: number, arrLocal: number, distKm: number): number {
+  if (distKm <= LONG_HAUL_TIMES_KM) return timeOfDayQuality(depLocal);
+  const h = depLocal / 60, a = arrLocal / 60;
+  const dep = h < 2 ? 0.9 : h < 6 ? 0.2 : h < 10 ? 1.2 : h < 16 ? 0.9 : h < 20 ? 1.1 : 1.35;
+  return dep * (a >= 0.5 && a < 5 ? 0.5 : 1);
+}
