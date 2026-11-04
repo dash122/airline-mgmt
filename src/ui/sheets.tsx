@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { units } from '../sim/schedule';
+import { bestFare, clampFare, fareCurve, FARE_MAX, FARE_MIN, FARE_STEP } from '../sim/fares';
 import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
   blockMinutes, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
@@ -132,7 +133,12 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const flights = flightsOn(plan, routeKey);
   const daily = flights.length / 2;
   const fareMult = plan.fares[routeKey] ?? 1;
-  const setFare = (x: number) => onFare(Math.max(0.7, Math.min(1.4, Math.round(x * 20) / 20)));
+  const setFare = (x: number) => onFare(clampFare(x));
+  // Try every fare step on this route. Uses the whole network's profit, since connecting travellers pay part of it too.
+  const curve = useMemo(() => (flights.length ? fareCurve(plan, routeKey) : []), [plan, routeKey, flights.length]);
+  const best = bestFare(curve);
+  const now = curve.find((p) => Math.abs(p.mult - fareMult) < 0.01);
+  const full = !!result && result.spill > 1 && result.loadFactor >= 0.97;
   const types = [...new Set(flights.map((f) => AIRCRAFT[f.ac.type].name))].join('、');
   return (
     <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose}>
@@ -151,13 +157,15 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} />
           <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} />
           <Stat label="市占" value={pct(result.marketShare)} />
-          <Stat label="週載客" value={count(result.pax)} />
+          <Stat label="週需求" value={count(result.demand)} />
           <Stat label="轉機旅客" value={count(result.pax - result.localPax)} />
           <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} />
         </div>
       )}
-      {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客只付直飛票價的 85%，且需要接得上：看「機場」的轉機分頁。</div>}
-      {result && result.spill > 1 && <div className="hint">有旅客買不到位子：加一班或換大一點的飛機。</div>}
+      {result && <DemandBar seats={result.seats} pax={result.pax} spill={result.spill} />}
+      {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客付直飛票價的 85%，再按兩段航線的票價設定（依距離加權）調整，所以這裡改票價也會影響他們。要接得上：看「機場」的轉機分頁。</div>}
+      {full && <div className="hint warn">客滿：每週 {count(result!.spill)} 人買不到位子（溢出），不付錢。這時降價只會少賺；漲價先減少溢出，載客率不變。或加班次、換大飛機。</div>}
+      {result && result.spill > 1 && !full && <div className="hint warn">部分航班客滿（溢出 {count(result.spill)} 人），其他航班還有空位：先調整熱門時段的班次或機型，降價幫不上忙。</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint">載客率偏低：減一班或降低票價。</div>}
       <div className="fare">
         <div className="grow">
@@ -165,10 +173,15 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <div className="price">NT${count((m?.refFare ?? 0) * fareMult)} <small>參考價的 {pct(fareMult)}</small></div>
         </div>
         <div className="pm small">
-          <button onClick={() => setFare(fareMult - 0.05)} disabled={fareMult <= 0.7} aria-label="降價 5%">−5%</button>
-          <button onClick={() => setFare(fareMult + 0.05)} disabled={fareMult >= 1.4} aria-label="漲價 5%">+5%</button>
+          <button onClick={() => setFare(fareMult - FARE_STEP)} disabled={fareMult <= FARE_MIN} aria-label="降價 5%">−5%</button>
+          <button onClick={() => setFare(fareMult + FARE_STEP)} disabled={fareMult >= FARE_MAX} aria-label="漲價 5%">+5%</button>
         </div>
       </div>
+      {best && now && (best === now
+        ? <div className="hint">這已經是最賺的票價。</div>
+        : <button className="fare-tip" onClick={() => setFare(best.mult)}>
+            最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
+          </button>)}
       <div className="competition">
         {m?.ground && <span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span>}
         <span>航空旅客 每週 {count(result ? result.airTotal / 2 : m?.airDemand ?? 0)}（單向）</span>
@@ -177,6 +190,26 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛此航線" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
     </Sheet>
+  );
+}
+
+/** Seats against the travellers who want them: the part past the seats is spill. */
+function DemandBar({ seats, pax, spill }: { seats: number; pax: number; spill: number }) {
+  const want = pax + spill;
+  const scale = Math.max(seats, want, 1);
+  return (
+    <div className="demand-bar" aria-label={`每週座位 ${count(seats)}，想搭 ${count(want)}，載客 ${count(pax)}，溢出 ${count(spill)}`}>
+      <div className="track">
+        <div className="seats" style={{ width: `${(100 * seats) / scale}%` }} />
+        <div className="pax" style={{ width: `${(100 * pax) / scale}%` }} />
+        {spill > 1 && <div className="spill" style={{ left: `${(100 * pax) / scale}%`, width: `${(100 * spill) / scale}%` }} />}
+      </div>
+      <div className="legend">
+        <span><i className="pax" />載客 {count(pax)}</span>
+        <span><i className="seats" />座位 {count(seats)}</span>
+        {spill > 1 && <span><i className="spill" />溢出 {count(spill)}</span>}
+      </div>
+    </div>
   );
 }
 
