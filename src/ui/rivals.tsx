@@ -4,7 +4,7 @@ import { CompactTimetable } from './CompactTimetable';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { airlinesAt, KIND_NAMES, rivalsAt, rivalsBetween, type Airline, type RivalService } from '../sim/competitors';
 import { type Plan, type RouteResult } from '../sim/simulate';
-import { marketSplit, type ShareRow } from '../sim/share';
+import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
 import { count, pct } from './format';
 
 export function AirlineName({ airline }: { airline: Airline }) {
@@ -22,19 +22,28 @@ const CONNECTING_COLOR = 'var(--muted)';
 const rowColor = (r: ShareRow) => (r.kind === 'own' ? OWN_COLOR : r.kind === 'connecting' ? CONNECTING_COLOR : r.airline?.color ?? CONNECTING_COLOR);
 const rowName = (r: ShareRow) => (r.kind === 'own' ? '你的航空' : r.kind === 'connecting' ? '轉機（其他航空）' : r.airline?.name ?? r.id);
 
+/** One or two sentences on who carries the route's travellers. Never calls the player the biggest when it carries nobody. */
+export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: MarketSplit): string {
+  const own = rows.find((r) => r.kind === 'own');
+  const rivals = rows.filter((r) => r.kind === 'rival');
+  if (!own) return rivals.length ? `你還沒飛這條航線，${rivals.length} 家航空分食這些旅客。` : '目前沒有航空直飛，旅客只能轉機。';
+  const parts: string[] = [];
+  const top = rivals.reduce<ShareRow | undefined>((x, r) => (!x || r.pax > x.pax ? r : x), undefined);
+  if (own.pax < 1) parts.push('你的航班沒有載到這個市場的旅客。');
+  else if (!top) parts.push(`你是唯一直飛的航空，載了 ${pct(own.share)} 的旅客。`);
+  else if (own.pax >= top.pax) parts.push(`你是這條航線最大的航空，占 ${pct(own.share)}；第二是${rowName(top)}，占 ${pct(top.share)}。`);
+  else parts.push(`${rowName(top)}領先，占 ${pct(top.share)}；你占 ${pct(own.share)}。`);
+  if (rivals.length && ownFreqShare > 0) parts.push(`你的班次占全部直飛的 ${pct(ownFreqShare)}。`);
+  if (ownTurnedAway >= 1) parts.push(`另有 ${pct(ownTurnedAway / total)}（${count(ownTurnedAway)} 人）想搭你但客滿。`);
+  return parts.join('');
+}
+
 /** The route's travellers by airline: the player against each competitor, as a bar and a ranked list. */
 export function MarketShare({ a, b, result }: { a: string; b: string; result?: RouteResult }) {
   const split = useMemo(() => marketSplit(a, b, result), [a, b, result]);
   const { total, rows, ownTurnedAway } = split;
   if (total < 1) return null;
-  const rivals = rows.filter((r) => r.kind === 'rival');
-  const own = rows.find((r) => r.kind === 'own');
-  const leader = rows.filter((r) => r.kind !== 'connecting').reduce<ShareRow | undefined>((x, r) => (!x || r.pax > x.pax ? r : x), undefined);
-  const summary = !own
-    ? (rivals.length ? `你還沒飛這條航線，${rivals.length} 家航空分食這些旅客。` : '目前沒有航空直飛，旅客只能轉機。')
-    : leader === own
-      ? `你是這條航線最大的航空，占 ${pct(own.share)}。`
-      : `${rowName(leader!)}領先，占 ${pct(leader!.share)}；你占 ${pct(own.share)}。`;
+  const summary = marketSummary(split);
   const segments = rows.flatMap((r) => {
     const el = <div key={r.id} style={{ width: `${100 * r.share}%`, background: rowColor(r) }} />;
     return r.kind === 'own' && ownTurnedAway >= 1
@@ -44,7 +53,7 @@ export function MarketShare({ a, b, result }: { a: string; b: string; result?: R
   return (
     <div className="market-share">
       <h4>市場占有率 <small>每週 {count(total)} 人（雙向）</small></h4>
-      <p className="schedule-note">{summary}{own && split.ownFreqShare > 0 ? `你的班次占全部直飛的 ${pct(split.ownFreqShare)}。` : ''}</p>
+      <p className="schedule-note">{summary}</p>
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
       <ul className="share-list">
         {rows.map((r) => {
