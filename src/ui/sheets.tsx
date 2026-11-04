@@ -132,9 +132,9 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 // ---------- Route ----------
 
-export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute }: {
+export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action }: {
   plan: Plan; routeKey: string; result?: RouteResult; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
-  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void;
+  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode;
 }) {
   const [a, b] = routeKey.split('-');
   const m = marketBetween(a, b);
@@ -160,7 +160,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
-    <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose}>
+    <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose} action={action}>
       <div className="big-step">
         <div>
           <div className="label">每日來回</div>
