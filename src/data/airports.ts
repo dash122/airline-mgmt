@@ -33,6 +33,8 @@ export interface Airport {
 export const SLOT_SCALE = 10;
 
 const CURATED_PLACES = ['JP', 'TW', 'HK', 'MO'];
+/** Most people a small airport (one without a traffic figure) is taken to serve. */
+export const SMALL_AIRPORT_MAX_CATCHMENT = 2_000_000;
 const reference = referenceData as Record<string, { pax?: number; pop?: number }>;
 
 /**
@@ -48,7 +50,10 @@ export const AIRPORTS: Airport[] = (data as Airport[]).map((a) => {
   const curated = CURATED_PLACES.includes(a.country);
   const size = traffic ? (curated ? (traffic >= 35 ? 'hub' : 'major') : tierFromTraffic(traffic)) : curated ? a.size : 'small';
   const pop = reference[a.code]?.pop;
-  const catchment = !curated && pop ? Math.round(pop * ((traffic ?? 0.3) / (metroTraffic.get(metroKey(a)) ?? 1))) : a.catchment;
+  const share = !curated && pop ? Math.round(pop * ((traffic ?? 0.3) / (metroTraffic.get(metroKey(a)) ?? 1))) : a.catchment;
+  // Some reference populations are a whole state or province (Noida 246M, Gwadar 224M). An airport with no traffic
+  // figure is a small one, so it never serves more than a mid-sized city.
+  const catchment = !curated && !traffic ? Math.min(share, SMALL_AIRPORT_MAX_CATCHMENT) : share;
   return { ...a, size, catchment, slotCap: Math.max(a.slotCap, size === 'hub' ? 140 : size === 'major' ? 84 : 0) * SLOT_SCALE };
 });
 

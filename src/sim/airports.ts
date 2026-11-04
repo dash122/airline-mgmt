@@ -403,28 +403,43 @@ export interface HubView {
   unlockCount: number;
   /** Seats a week, both directions, on one daily round trip between this airport and the hub. */
   seats: number;
+  /** Every destination this airport's travellers could reach by changing planes at the hub, biggest first. */
   rows: Linkage[];
+  /** Weekly transit demand (both directions) over all those destinations, if every leg were flown and well timed. */
+  total: number;
 }
 
+/** Destinations with less weekly transit demand than this are left out of the list. */
+const MIN_VIA_PAX = 5;
+
+/** Which bucket a destination falls in, seen from the selected airport. */
+export type ViaGroup = 'flown' | 'hubLeg' | 'nonstop';
+export const viaGroup = (l: Linkage): ViaGroup =>
+  l.status === 'nonstop' ? 'nonstop' : l.missing.some((m) => m !== l.o) ? 'hubLeg' : 'flown';
+
 /**
- * Another airport seen from the hub: where its travellers could go by changing planes at the hub,
- * what is already carried, and which legs are missing.
+ * Another airport seen from the hub: every place its travellers could reach by changing planes at the hub, on routes
+ * you fly and routes you have not opened yet, with the transit demand of each and the legs that are missing.
+ * Uses the same demand and connection rules as the simulation (see estimateVia).
  */
-export function viewFromHub(plan: Plan, result: NetworkResult | null, hub: string, code: string, limit = 10): HubView {
+export function viewFromHub(plan: Plan, result: NetworkResult | null, hub: string, code: string): HubView {
   const c = pairContext(plan, result, hub);
   const pool = new Set<string>(c.flownSet);
-  for (const m of [...marketsAt(code)].sort((p, q) => q.airDemand - p.airDemand).slice(0, 20)) pool.add(m.a === code ? m.b : m.a);
+  for (const m of marketsAt(hub)) pool.add(m.a === hub ? m.b : m.a);
   const rows: Linkage[] = [];
-  for (const d of pool) {
-    const l = code === hub ? null : classify(c, code, d);
-    if (!l || l.status === 'detour' || Math.max(l.est, l.viaPax) < 1) continue;
-    rows.push(l);
+  if (code !== hub) {
+    for (const d of pool) {
+      const l = classify(c, code, d);
+      if (!l || l.status === 'detour' || Math.max(l.est, l.viaPax) < MIN_VIA_PAX) continue;
+      rows.push(l);
+    }
   }
+  rows.sort((x, y) => Math.max(y.est, y.viaPax) - Math.max(x.est, x.viaPax));
   const unlocking = rows.filter((l) => l.missing.length === 1 && l.missing[0] === code && l.status === 'leg');
-  rows.sort((x, y) => Number(x.status === 'nonstop') - Number(y.status === 'nonstop') || x.missing.length - y.missing.length || y.est - x.est);
   return {
     hub, code, legFlown: c.flownSet.has(code), local: code === hub ? 0 : estimateNonstop(plan, code, hub),
-    unlock: unlocking.reduce((s, l) => s + l.est, 0), unlockCount: unlocking.length, seats: code === hub ? 0 : dailySeats(code, hub), rows: rows.slice(0, limit),
+    unlock: unlocking.reduce((s, l) => s + l.est, 0), unlockCount: unlocking.length, seats: code === hub ? 0 : dailySeats(code, hub),
+    rows, total: rows.filter((l) => l.status !== 'nonstop').reduce((s, l) => s + l.est, 0),
   };
 }
 

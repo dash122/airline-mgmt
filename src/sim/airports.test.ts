@@ -88,7 +88,7 @@ describe('arrival day markers', () => {
   });
 });
 
-import { hubOpportunities, linkages, viewFromHub } from './airports';
+import { estimateVia, hubOpportunities, linkages, viaGroup, viewFromHub } from './airports';
 import { AIRPORT_BY_CODE } from '../data/airports';
 describe('connecting markets', () => {
   const base = emptyPlan('TPE');
@@ -173,5 +173,27 @@ describe('transit potential from the hub', () => {
     const nrt = v.rows.find((r) => r.d === 'NRT')!;
     expect(nrt).toBeDefined();
     expect(nrt.viaPax).toBeGreaterThan(0);
+  });
+  test('from any airport, every market through the hub is listed, on legs flown and not yet flown, biggest first', () => {
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [mk('a', 'HKG', 'BKK', 8), mk('b', 'HKG', 'SIN', 8)] };
+    const v = viewFromHub(p, simulate(p), 'HKG', 'TPE');
+    expect(v.rows.length).toBeGreaterThan(50);
+    expect(v.rows.some((r) => viaGroup(r) === 'flown' && r.d === 'BKK')).toBe(true);
+    expect(v.rows.some((r) => viaGroup(r) === 'hubLeg' && r.d === 'LHR')).toBe(true);
+    for (let k = 1; k < v.rows.length; k++) expect(Math.max(v.rows[k - 1].est, v.rows[k - 1].viaPax)).toBeGreaterThanOrEqual(Math.max(v.rows[k].est, v.rows[k].viaPax));
+    expect(v.total).toBeGreaterThan(v.rows[0].est);
+    // Small airports are not given a whole province's population.
+    expect(v.rows[0].est).toBeLessThan(5000);
+  });
+  test('the estimate uses the same transit demand as the simulation', () => {
+    const big = (id: string, legs: [string, string, number][]) => ({ ...newAircraft(base, 'B77W'), id, reg: id, legs: legs.map(([from, to, h]) => ({ from, to, dep: utcFromLocal(from, h * 60) })) });
+    // TPE to Manila through Hong Kong with a 1 h 40 min connection each way, on big aircraft so no one is turned away.
+    const p: Plan = { ...emptyPlan('HKG'), hub: 'HKG', fleet: [big('a', [['TPE', 'HKG', 8], ['HKG', 'MNL', 11.5]]), big('b', [['MNL', 'HKG', 8], ['HKG', 'TPE', 12]])] };
+    const r = simulate(p);
+    const sim = r.transfers.HKG.flows.filter((f) => (f.from === 'TPE' && f.to === 'MNL') || (f.from === 'MNL' && f.to === 'TPE')).reduce((s, f) => s + f.pax, 0);
+    const est = estimateVia(p, 'TPE', 'HKG', 'MNL');
+    expect(sim).toBeGreaterThan(0);
+    expect(est / sim).toBeGreaterThan(0.5);
+    expect(est / sim).toBeLessThan(2);
   });
 });
