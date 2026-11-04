@@ -8,3 +8,5 @@ export function money(n: number): string {
 
 export const count = (n: number) => Math.round(n).toLocaleString('zh-TW');
 export const pct = (n: number) => `${Math.round(n * 100)}%`;
+/** A count that fits a small tile: 934,393 → 93 萬, 12,345 → 1.2 萬. */
+export const short = (n: number) => (Math.abs(n) >= 1e5 ? `${Math.round(n / 1e4).toLocaleString('zh-TW')} 萬` : Math.abs(n) >= 1e4 ? `${(n / 1e4).toFixed(1)} 萬` : count(n));

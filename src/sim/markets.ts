@@ -49,7 +49,14 @@ export const refFare = (distKm: number) => Math.max(1800, Math.round((1500 + 2.6
 export const pairKey = (a: string, b: string) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 export const groupOf = (a: Airport, b: Airport) => [a.country, b.country].sort().join('-');
 
-export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !a.landmass.startsWith('main-');
+/** Land links the coastline data misses: Xiamen and Zhuhai are joined to the mainland by bridges and tunnels. */
+const LAND_LINKS: Record<string, string> = { 'ring-1016': 'main-0', 'isl-ZUH': 'main-0' };
+/** The landmass an airport can reach by rail or road. */
+export const landOf = (a: Airport) => LAND_LINKS[a.landmass] ?? a.landmass;
+/** High-speed rail at this end. China's network reaches nearly every city with a big airport. */
+export const hasHsr = (a: Airport) => a.hsr || a.country === 'CN';
+
+export const isIsland = (a: Airport) => !['jp-main', 'tw-main', 'prd'].includes(a.landmass) && !landOf(a).startsWith('main-');
 
 /** Nearest mainland airport within ferry range of an island airport (a stand-in for the ferry port). */
 const ferryCache = new Map<string, { port: Airport; km: number } | null>();
@@ -77,10 +84,10 @@ function landOption(a: Airport, b: Airport, distKm: number): GroundOption | unde
     const km = distKm * GROUND.detour, mode = GROUND.hsr;
     return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
   }
-  if (a.landmass !== b.landmass) return undefined;
+  if (landOf(a) !== landOf(b)) return undefined;
   if (a.landmass === 'prd') return { name: GROUND.bridge.name, hours: GROUND.bridge.hours, fare: GROUND.bridge.fare, comfort: GROUND.bridge.comfort };
   const km = distKm * GROUND.detour;
-  const mode = a.hsr && b.hsr ? GROUND.hsr : GROUND.conventional;
+  const mode = hasHsr(a) && hasHsr(b) ? GROUND.hsr : GROUND.conventional;
   return { name: mode.name, hours: km / mode.speed + GROUND.accessHours, fare: km * mode.farePerKm, comfort: mode.comfort };
 }
 

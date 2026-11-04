@@ -66,8 +66,8 @@ describe('airports in one city', () => {
     expect(itm.demand).toBeLessThan(itm.seats);
   });
   test('a city pair nobody flies still gives the first nonstop most travellers, not all of them', () => {
-    const m = marketBetween('KHH', 'ITM')!;
-    const r = simulate(trips(emptyPlan('KHH'), 'KHH', 'ITM', 3)).routes['ITM-KHH'];
+    const m = marketBetween('HUN', 'ITM')!;
+    const r = simulate(trips(emptyPlan('HUN'), 'HUN', 'ITM', 3)).routes['HUN-ITM'];
     expect(r.rivals).toHaveLength(0);
     expect(r.demand).toBeGreaterThan(m.potential * 0.5);
     expect(r.demand).toBeLessThan(m.potential * 2 * 0.9);

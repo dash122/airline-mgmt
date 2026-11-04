@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { airlines, airlinesAt, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
+import { airlines, airlinesAt, COUNTRY_NAMES, NAME_POOLS, nameAreaOf, rivalsAt, rivalsBetween, rivalsFrom } from './competitors';
 import { marketBetween, markets, marketsAt, modelledAnnualPax } from './markets';
 import { AIRPORTS } from '../data/airports';
 import { addRoundTrip, emptyPlan, simulate } from './simulate';
@@ -69,6 +69,20 @@ describe('competitor airlines', () => {
     for (const c of new Set(all.map((a) => a.country))) expect(all.some((a) => a.country === c && a.kind === 'full')).toBe(true);
   });
 
+  test('names fit where the airline is based and never carry numbers', () => {
+    const all = airlines();
+    expect(all.every((a) => !/[0-9]/.test(a.name))).toBe(true);
+    const base = (a: { name: string }) => a.name.replace(/航空$/, '').replace(/(之星|之翼|快線|國際|聯合)$/, '');
+    for (const a of all) {
+      const p = NAME_POOLS[nameAreaOf(a.country)];
+      expect([...p.full, ...p.low, ...p.regional, ...(COUNTRY_NAMES[a.country] ?? [])].includes(base(a)) || base(a).length === 2).toBe(true);
+    }
+    expect(all.find((a) => a.country === 'FR' && a.kind === 'full')!.name).toBe('塞納航空');
+    expect(nameAreaOf('DE')).toBe('europe');
+    expect(nameAreaOf('BR')).toBe('latam');
+    expect(nameAreaOf('JP')).toBe('japan');
+  });
+
   test('existing service in each market is split between airlines without losing flights', () => {
     for (const m of markets().values()) {
       if (m.rivalFreq <= 0) continue;
@@ -104,5 +118,15 @@ describe('competitor airlines', () => {
     const rivalPax = route.rivals.reduce((s, x) => s + x.pax, 0);
     // Rival travellers are counted before seats run out, so they add up with our demand (carried plus spill).
     expect(rivalPax + route.localDemand + route.connectingPax).toBeCloseTo(route.airTotal, -1);
+  });
+
+  test('competitor frequencies stay close to real ones on busy Hong Kong routes', () => {
+    // Hong Kong–Guangzhou is a 50-minute train ride: almost nobody flies it.
+    expect(marketBetween('HKG', 'CAN')!.ground?.name).toBe('高鐵/新幹線');
+    expect(marketBetween('HKG', 'CAN')!.rivalFreq).toBeLessThan(15);
+    // Hong Kong–Taipei is one of Asia's busiest routes, mostly on widebodies: about 15 to 20 a day each way.
+    const tpe = marketBetween('HKG', 'TPE')!.rivalFreq;
+    expect(tpe).toBeGreaterThan(70);
+    expect(tpe).toBeLessThan(150);
   });
 });

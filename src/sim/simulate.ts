@@ -167,11 +167,30 @@ export interface RouteResult {
   connectingPax: number;
   revenue: number; // weekly, prorated from itineraries
   flyingCost: number; // weekly
+  /** Where the route's weekly revenue and flying cost come from (they add up to revenue and flyingCost). */
+  money: RouteMoney;
+  /** Flights a week that were full, with travellers turned away. */
+  fullFlights: number;
   fare: number; // one-way local fare
   rivalFreq: number;
   /** Competitor airlines on this route, both directions, weekly. */
   rivals: RouteRival[];
   groundName?: string;
+}
+
+export interface RouteMoney {
+  /** Fares of travellers flying only this route. */
+  localRevenue: number;
+  /** This route's part of connecting travellers' fares (split by distance). */
+  connectingRevenue: number;
+  /** Fuel, crew and maintenance: per block hour. */
+  blockCost: number;
+  /** Landing, handling and navigation fees: per departure. */
+  departureCost: number;
+  /** Catering, check-in and airport passenger fees: per traveller. */
+  paxCost: number;
+  /** Sales, distribution and card fees: a share of fares. */
+  salesCost: number;
 }
 
 export interface RouteRival {
@@ -509,6 +528,7 @@ export function simulate(plan: Plan): NetworkResult {
   // Tally per flight.
   const flightPax = new Map<Flight, number>();
   const flightRevenue = new Map<Flight, number>();
+  const flightLocalRevenue = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
@@ -534,6 +554,7 @@ export function simulate(plan: Plan): NetworkResult {
       for (const f of it.flights) {
         flightPax.set(f, (flightPax.get(f) ?? 0) + n);
         flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (n * fare * f.distKm) / dist);
+        if (it.flights.length === 1) flightLocalRevenue.set(f, (flightLocalRevenue.get(f) ?? 0) + n * fare);
         flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / it.flights.length);
       }
     }
@@ -578,6 +599,7 @@ export function simulate(plan: Plan): NetworkResult {
       r = routes[key] = {
         key, a, b, distKm: f.distKm, flightsPerWeek: 0, seats: 0, pax: 0, localPax, demand: 0, spill: 0, loadFactor: 0,
         marketShare: airTotal > 0 ? localPax / airTotal : 0, airTotal, localDemand, connectingPax, revenue: 0, flyingCost: 0,
+        money: { localRevenue: 0, connectingRevenue: 0, blockCost: 0, departureCost: 0, paxCost: 0, salesCost: 0 }, fullFlights: 0,
         fare: Math.round((m?.refFare ?? 0) * fareMultOf(plan, key)), rivalFreq: m?.rivalFreq ?? 0, rivals: [...rivals.values()].sort((x, y) => y.pax - x.pax), groundName: m?.ground?.name,
       };
     }
@@ -587,6 +609,15 @@ export function simulate(plan: Plan): NetworkResult {
     r.spill += f.perWeek * (flightSpill.get(f) ?? 0);
     r.revenue += f.perWeek * (flightRevenue.get(f) ?? 0);
     r.flyingCost += f.perWeek * flightCost(f);
+    const spec = AIRCRAFT[f.ac.type];
+    const rev = flightRevenue.get(f) ?? 0, local = flightLocalRevenue.get(f) ?? 0;
+    r.money.localRevenue += f.perWeek * local;
+    r.money.connectingRevenue += f.perWeek * (rev - local);
+    r.money.blockCost += f.perWeek * f.blockH * spec.costPerBlockHour;
+    r.money.departureCost += f.perWeek * spec.costPerDeparture;
+    r.money.paxCost += f.perWeek * (flightPax.get(f) ?? 0) * PAX_COST_PER_SEGMENT;
+    r.money.salesCost += f.perWeek * rev * SALES_COST_SHARE;
+    if ((flightSpill.get(f) ?? 0) > 0.5) r.fullFlights += f.perWeek;
   }
   for (const r of Object.values(routes)) {
     r.loadFactor = r.seats ? r.pax / r.seats : 0;
