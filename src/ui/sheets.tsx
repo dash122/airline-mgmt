@@ -239,7 +239,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
   return (
     <Sheet title={`${ac.reg} · ${spec.name}`} sub={`${spec.seats} 座 · 租金 ${money(spec.ownershipPerWeek)}/週 · 飛行 ${money(spec.costPerBlockHour)}/小時`} onClose={onClose}>
       <div className="util-row">
-        <div className="label">利用率 {pct(info.utilisation)} · 每日飛 {(info.blockMin / 60).toFixed(1)} 小時 · 地面 {((DAY - info.blockMin) / 60).toFixed(1)} 小時（{AIRPORT_BY_CODE[plan.base].name}時間）</div>
+        <div className="label">利用率 {pct(info.utilisation)} · {info.cycleDays > 1 ? `每 ${info.cycleDays} 天一輪（長程）· ` : ''}平均每日飛 {(info.blockMin / 60).toFixed(1)} 小時 · 地面 {((DAY - info.blockMin) / 60).toFixed(1)} 小時（{AIRPORT_BY_CODE[plan.base].name}時間）</div>
         <DayBar ac={ac} base={plan.base} onLeg={onEditFlight} />
       </div>
       {!info.closed && (
@@ -248,7 +248,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
           {canReturn && <button onClick={addReturn}>加回程至 {start}</button>}
         </div>
       )}
-      {!info.fits && <div className="warn-box"><span>排班超過 24 小時，請取消一班。</span></div>}
+      {!info.fits && <div className="warn-box"><span>排班超過 {info.cycleDays * 24} 小時，請取消一班。</span></div>}
       {result && (
         <div className="stats">
           <Stat label="週載客" value={count(result.pax)} />

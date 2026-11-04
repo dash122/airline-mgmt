@@ -200,7 +200,7 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           const info = rotationInfo(ac);
           const r = result?.aircraft[ac.id];
           const p = r ? r.revenue - r.flyingCost - r.ownershipCost : 0;
-          const warn = !ac.legs.length ? '沒有航班' : !info.closed ? '沒回到起點' : !info.fits ? '超過 24 小時' : info.utilisation < 0.3 ? '閒置太久' : '';
+          const warn = !ac.legs.length ? '沒有航班' : !info.closed ? '沒回到起點' : !info.fits ? `超過 ${info.cycleDays * 24} 小時` : info.utilisation < 0.3 ? '閒置太久' : '';
           return (
             <li key={ac.id} onClick={() => onPick(ac.id)}>
               <div className="fleet-top">

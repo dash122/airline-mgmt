@@ -20,9 +20,16 @@ export interface Aircraft {
   id: string;
   reg: string;
   type: AircraftModel;
-  /** Daily rotation, in order. It repeats every day. */
+  /** Rotation, in order. It repeats every `cycleDays` days (1 = daily). */
   legs: Leg[];
+  /** Days to fly the rotation once. Long-haul aircraft need 2 or 3: a round trip across an ocean takes more than a day. */
+  cycleDays?: number;
 }
+
+export const MAX_CYCLE_DAYS = 3;
+export const cycleOf = (ac: Aircraft) => ac.cycleDays ?? 1;
+/** Departures a week of each flight in the rotation. */
+export const perWeekOf = (ac: Aircraft) => 7 / cycleOf(ac);
 
 export interface Plan {
   version: 2;
@@ -74,21 +81,23 @@ export function routeProblem(a: string, b: string, aircraft: AircraftModel): str
 }
 
 export interface RotationInfo {
-  blockMin: number; // per day
+  blockMin: number; // per day, averaged over the cycle
   dutyMin: number; // first departure to last arrival + turn
-  closed: boolean; // ends where it starts, so it can repeat daily
-  fits: boolean; // fits in 24 hours
-  utilisation: number; // block hours / 24
+  closed: boolean; // ends where it starts, so it can repeat
+  fits: boolean; // fits in the cycle (24 hours x cycleDays)
+  utilisation: number; // block hours / hours in the cycle
+  cycleDays: number;
 }
 
 export function rotationInfo(ac: Aircraft): RotationInfo {
-  if (!ac.legs.length) return { blockMin: 0, dutyMin: 0, closed: true, fits: true, utilisation: 0 };
+  const cycle = cycleOf(ac);
+  if (!ac.legs.length) return { blockMin: 0, dutyMin: 0, closed: true, fits: true, utilisation: 0, cycleDays: cycle };
   let block = 0;
   for (const l of ac.legs) block += blockMinutes(l.from, l.to, ac.type);
   const last = ac.legs[ac.legs.length - 1];
   const end = last.dep + blockMinutes(last.from, last.to, ac.type) + AIRCRAFT[ac.type].turnMin;
   const duty = end - ac.legs[0].dep;
-  return { blockMin: block, dutyMin: duty, closed: last.to === ac.legs[0].from, fits: duty <= DAY, utilisation: block / DAY };
+  return { blockMin: block / cycle, dutyMin: duty, closed: last.to === ac.legs[0].from, fits: duty <= cycle * DAY, utilisation: block / (cycle * DAY), cycleDays: cycle };
 }
 
 /** Earliest departure (UTC minutes) for the aircraft's next leg, or a default morning slot if it has none. */
@@ -108,7 +117,7 @@ export function earliestDeparture(ac: Aircraft, index: number): number | null {
 
 export function weeklyDepartures(plan: Plan, code: string): number {
   let n = 0;
-  for (const ac of plan.fleet) for (const l of ac.legs) if (l.from === code) n += 7;
+  for (const ac of plan.fleet) for (const l of ac.legs) if (l.from === code) n += perWeekOf(ac);
   return n;
 }
 
@@ -121,6 +130,7 @@ interface Flight {
   from: string;
   to: string;
   dep: number; // UTC minutes mod DAY
+  perWeek: number; // departures a week (7 for a daily rotation)
   arr: number; // dep + block (may exceed DAY)
   seats: number;
   blockH: number;
@@ -131,6 +141,7 @@ interface Itinerary {
   flights: Flight[];
   weight: number; // relative attractiveness (time of day, connection penalty)
   fareShare: number; // of the nonstop fare that this itinerary's travellers pay
+  perWeek: number; // departures a week of the itinerary (the rarer of its flights)
   fareMult: number; // the player's fare setting: the route's own, or for a connection the distance-weighted mix of its legs
   wait?: number; // layover minutes, for connections
 }
@@ -324,7 +335,7 @@ function buildFlights(plan: Plan): Flight[] {
       const A = AIRPORT_BY_CODE[l.from], B = AIRPORT_BY_CODE[l.to];
       const bm = blockMinutes(l.from, l.to, ac.type);
       const dep = mod(l.dep, DAY);
-      out.push({ key: `${ac.id}#${i}`, idx: i, ac, from: l.from, to: l.to, dep, arr: dep + bm, seats: spec.seats, blockH: bm / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon) });
+      out.push({ key: `${ac.id}#${i}`, idx: i, ac, from: l.from, to: l.to, dep, perWeek: perWeekOf(ac), arr: dep + bm, seats: spec.seats, blockH: bm / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon) });
     });
   }
   return out;
@@ -433,7 +444,7 @@ export function simulate(plan: Plan): NetworkResult {
   };
   for (const f1 of flights) {
     const mult1 = fareMultOf(plan, pairKey(f1.from, f1.to));
-    add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)), fareShare: 1, fareMult: mult1 });
+    add(f1.from, f1.to, { flights: [f1], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
     for (const f2 of byFrom.get(f1.to) ?? []) {
       if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) continue;
       const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
@@ -445,7 +456,7 @@ export function simulate(plan: Plan): NetworkResult {
       const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
       // Connecting fares follow the fares the player sets on the legs, weighted by distance.
       const mult = (mult1 * f1.distKm + fareMultOf(plan, pairKey(f2.from, f2.to)) * f2.distKm) / (f1.distKm + f2.distKm);
-      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait });
+      add(f1.from, f2.to, { flights: [f1, f2], weight: timeOfDayQuality(localMinutes(f1.from, f1.dep)) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait, perWeek: Math.min(f1.perWeek, f2.perWeek) });
     }
   }
 
@@ -456,9 +467,10 @@ export function simulate(plan: Plan): NetworkResult {
     const [o, d] = k.split('>');
     const m = marketBetween(o, d);
     if (!m) continue;
+    // An itinerary that runs less often than daily attracts proportionally fewer travellers.
     // Each itinerary's weight, after travellers' reaction to its price versus that itinerary's usual price.
-    const priced = new Map(list.map((it) => [it, it.weight * Math.exp(-it.fareShare * fareResponse(it.fareMult * m.refFare, m.refFare))]));
-    const wSum = list.reduce((s, it) => s + it.weight, 0);
+    const priced = new Map(list.map((it) => [it, it.weight * (it.perWeek / 7) * Math.exp(-it.fareShare * fareResponse(it.fareMult * m.refFare, m.refFare))]));
+    const wSum = list.reduce((s, it) => s + it.weight * (it.perWeek / 7), 0);
     const pSum = [...priced.values()].reduce((s, w) => s + w, 0);
     // One fare that has the same pull as the player's mix of itineraries and prices.
     const fare = m.refFare * (1 - Math.log(pSum / wSum) / FARE_SENSITIVITY);
@@ -498,7 +510,7 @@ export function simulate(plan: Plan): NetworkResult {
   const flightPax = new Map<Flight, number>();
   const flightRevenue = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
-  let tripsDaily = 0, connectingDaily = 0, revenueDaily = 0;
+  let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
@@ -506,18 +518,18 @@ export function simulate(plan: Plan): NetworkResult {
     for (const it of list) {
       const n = carried.get(it) ?? 0;
       const want = demand.get(it) ?? 0;
-      tripsDaily += n;
+      tripsWeekly += n * it.perWeek;
       const fare = Math.round(info.refFare * it.fareMult) * it.fareShare;
       if (it.flights.length > 1) {
-        connectingDaily += n;
+        connectingWeekly += n * it.perWeek;
         const tk = `${it.flights[0].to}|${it.flights[0].from}|${it.flights[1].to}`;
         const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
-        tf.pax += n * 7;
+        tf.pax += n * it.perWeek;
         const kind = layoverKind(it.wait ?? 0);
-        if (kind !== 'quick') tf[kind] += n * 7;
+        if (kind !== 'quick') tf[kind] += n * it.perWeek;
         transferFlows.set(tk, tf);
       }
-      revenueDaily += n * fare;
+      revenueWeekly += n * fare * it.perWeek;
       const dist = it.flights.reduce((s, f) => s + f.distKm, 0);
       for (const f of it.flights) {
         flightPax.set(f, (flightPax.get(f) ?? 0) + n);
@@ -543,7 +555,7 @@ export function simulate(plan: Plan): NetworkResult {
       let localPax = 0, airTotal = 0, localDemand = 0, connectingPax = 0;
       const rivals = new Map<string, RouteRival>();
       for (const lk of [`${a}>${b}`, `${b}>${a}`]) {
-        for (const it of itins.get(lk) ?? []) if (it.flights.length === 1) localPax += 7 * (carried.get(it) ?? 0);
+        for (const it of itins.get(lk) ?? []) if (it.flights.length === 1) localPax += it.perWeek * (carried.get(it) ?? 0);
         const info = marketInfo.get(lk);
         const [o, d] = lk.split('>');
         const comp = competitionFor(o, d);
@@ -569,12 +581,12 @@ export function simulate(plan: Plan): NetworkResult {
         fare: Math.round((m?.refFare ?? 0) * fareMultOf(plan, key)), rivalFreq: m?.rivalFreq ?? 0, rivals: [...rivals.values()].sort((x, y) => y.pax - x.pax), groundName: m?.ground?.name,
       };
     }
-    r.flightsPerWeek += 7;
-    r.seats += 7 * f.seats;
-    r.pax += 7 * (flightPax.get(f) ?? 0);
-    r.spill += 7 * (flightSpill.get(f) ?? 0);
-    r.revenue += 7 * (flightRevenue.get(f) ?? 0);
-    r.flyingCost += 7 * flightCost(f);
+    r.flightsPerWeek += f.perWeek;
+    r.seats += f.perWeek * f.seats;
+    r.pax += f.perWeek * (flightPax.get(f) ?? 0);
+    r.spill += f.perWeek * (flightSpill.get(f) ?? 0);
+    r.revenue += f.perWeek * (flightRevenue.get(f) ?? 0);
+    r.flyingCost += f.perWeek * flightCost(f);
   }
   for (const r of Object.values(routes)) {
     r.loadFactor = r.seats ? r.pax / r.seats : 0;
@@ -588,10 +600,10 @@ export function simulate(plan: Plan): NetworkResult {
   }
   for (const f of flights) {
     const a = aircraft[f.ac.id];
-    a.pax += 7 * (flightPax.get(f) ?? 0);
-    a.seats += 7 * f.seats;
-    a.revenue += 7 * (flightRevenue.get(f) ?? 0);
-    a.flyingCost += 7 * flightCost(f);
+    a.pax += f.perWeek * (flightPax.get(f) ?? 0);
+    a.seats += f.perWeek * f.seats;
+    a.revenue += f.perWeek * (flightRevenue.get(f) ?? 0);
+    a.flyingCost += f.perWeek * flightCost(f);
   }
 
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
@@ -600,7 +612,7 @@ export function simulate(plan: Plan): NetworkResult {
   const ownershipCost = sum(acs.map((a) => a.ownershipCost));
   const seats = sum(acs.map((a) => a.seats));
   const onboard = sum(acs.map((a) => a.pax));
-  const revenue = revenueDaily * 7;
+  const revenue = revenueWeekly;
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const cost = flyingCost + ownershipCost + hubCost;
   const transfers: NetworkResult['transfers'] = {};
@@ -616,8 +628,8 @@ export function simulate(plan: Plan): NetworkResult {
   return {
     routes,
     aircraft,
-    pax: tripsDaily * 7,
-    connectingPax: connectingDaily * 7,
+    pax: tripsWeekly,
+    connectingPax: connectingWeekly,
     transfers,
     hubCost,
     seats,
@@ -628,7 +640,7 @@ export function simulate(plan: Plan): NetworkResult {
     costRecovery: cost > 0 ? revenue / cost : 0,
     loadFactor: seats > 0 ? onboard / seats : 0,
     fleet: plan.fleet.length,
-    flights: flights.length * 7,
+    flights: flights.reduce((n, f) => n + f.perWeek, 0),
     avgUtilisation: acs.length ? sum(acs.map((a) => a.utilisation)) / acs.length : 0,
   };
 }
@@ -683,7 +695,13 @@ export function addRoundTrip(plan: Plan, a: string, b: string, type?: AircraftMo
   // Otherwise lease one, based at the end that is the player's base (or the bigger airport).
   const size = (c: string) => AIRPORT_BY_CODE[c].catchment;
   const [from, to] = b === plan.base || (a !== plan.base && size(b) > size(a)) ? [b, a] : [a, b];
-  const fresh = withRoundTrip(newAircraft(plan, t), from, to);
+  let fresh = withRoundTrip(newAircraft(plan, t), from, to);
+  // A round trip that takes more than a day runs every second or third day instead.
+  const duty = rotationInfo(fresh).dutyMin;
+  if (duty > DAY) {
+    if (duty > MAX_CYCLE_DAYS * DAY) return { error: '來回飛行時間超過三天' };
+    fresh = { ...fresh, cycleDays: Math.ceil(duty / DAY) };
+  }
   return { plan: { ...plan, fleet: [...plan.fleet, fresh] }, aircraftId: fresh.id };
 }
 
@@ -694,7 +712,7 @@ export function routePairs(plan: Plan): { key: string; a: string; b: string; fli
     const key = pairKey(l.from, l.to);
     const [a, b] = key.split('-');
     const r = m.get(key) ?? { key, a, b, flightsPerDay: 0 };
-    r.flightsPerDay++;
+    r.flightsPerDay += 1 / cycleOf(ac);
     m.set(key, r);
   }
   return [...m.values()];

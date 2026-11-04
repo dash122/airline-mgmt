@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
@@ -136,8 +136,10 @@ export default function App() {
     if ('error' in r) { setToast(r.error); return; }
     update(r.plan);
     const isNew = !plan.fleet.some((ac) => ac.id === r.aircraftId);
-    const reg = r.plan.fleet.find((ac) => ac.id === r.aircraftId)!.reg;
-    setToast(isNew ? `租了新飛機 ${reg}，每日來回一班。可在「班表」調整時間` : `由 ${reg} 加飛一班來回`);
+    const added = r.plan.fleet.find((ac) => ac.id === r.aircraftId)!;
+    const reg = added.reg;
+    const cadence = cycleOf(added) > 1 ? `每 ${cycleOf(added)} 天來回一班（長程）` : '每日來回一班';
+    setToast(isNew ? `租了新飛機 ${reg}，${cadence}。可在「班表」調整時間` : `由 ${reg} 加飛一班來回`);
     if (!stay) select({ kind: 'route', id: [a, b].sort().join('-') });
   };
   const removeOne = (key: string) => {
@@ -264,7 +266,7 @@ export default function App() {
             if (to) {
               const r = leaseFor(plan, plan.base, to, type);
               update(r.plan);
-              setToast(`租了 ${r.plan.fleet.find((x) => x.id === r.aircraftId)!.reg}（${AIRCRAFT[type].name}），每日來回${AIRPORT_BY_CODE[to].name}`);
+              setToast(`租了 ${r.plan.fleet.find((x) => x.id === r.aircraftId)!.reg}（${AIRCRAFT[type].name}），${cycleOf(r.plan.fleet.find((x) => x.id === r.aircraftId)!) > 1 ? '長程，每幾天' : '每日'}來回${AIRPORT_BY_CODE[to].name}`);
             } else {
               const ac = newAircraft(plan, type);
               update({ ...plan, fleet: [...plan.fleet, ac] });
