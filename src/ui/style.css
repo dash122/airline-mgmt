@@ -698,8 +698,8 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 /* Per-flight load factor */
 .flight-loads { margin-top: 10px; }
 .flight-loads-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.flight-loads-head .seg.small { flex: 0 0 auto; }
-.flight-loads-head .seg.small button { font-size: 12px; padding: 5px 10px; }
+.flight-loads-head .seg.small, .sec-head .seg.small { flex: 0 0 auto; }
+.flight-loads-head .seg.small button, .sec-head .seg.small button { font-size: 12px; padding: 5px 10px; }
 .flight-loads-dirname { font-size: 12px; font-weight: 700; margin: 10px 0 2px; }
 .flight-load-list { list-style: none; margin: 0; padding: 0; }
 .flight-load-list li { border-bottom: 1px solid var(--line); }
@@ -719,3 +719,17 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .flight-load-right small.bad { color: var(--bad); }
 .timetable .loads { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .leg-load { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Explanations live behind a small "i" and open on tap. */
+.info-dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; vertical-align: 2px;
+  border-radius: 9px; border: 1px solid var(--line); color: var(--muted); font: italic 600 11px/1 Georgia, serif; background: transparent; padding: 0; }
+.info-dot.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.info-note { font-size: 12px; line-height: 1.55; color: var(--muted); background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 10px; padding: 8px 10px; margin: 2px 0 6px; }
+.info-note p { margin: 0 0 4px; }
+.info-note p:last-child { margin: 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.sec-head h4 { margin: 0; }
+.sec-head small.muted { font-size: 12px; color: var(--muted); }
+.legend-line { font-size: 11px; color: var(--muted); margin: 2px 0 4px; }
+.legend-line .k { display: inline; min-width: 0; }

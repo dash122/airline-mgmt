@@ -44,14 +44,14 @@ export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
   return <div className="compact-schedule">
     <div className="schedule-filters" role="group" aria-label="顯示航空公司">
       {plan && <button aria-pressed={mode === 'own'} onClick={() => setMode('own')}>只看自家</button>}
-      <button aria-pressed={mode === 'all'} onClick={() => setMode('all')}>全部航空</button>
+      <button aria-pressed={mode === 'all'} onClick={() => setMode('all')}>全部</button>
       <button aria-pressed={mode === 'select'} onClick={() => { if (mode !== 'select' && !selected.length) setSelected([...(plan ? ['own'] : []), ...carriers.map((c) => c.id)]); setMode('select'); }}>自選航空</button>
     </div>
     {mode === 'select' && <fieldset className="carrier-picker"><legend>選擇要比較的航空</legend>
       {plan && <label><input type="checkbox" checked={selected.includes('own')} onChange={() => toggle('own')} /><CarrierMark name="你的航空" own />你的航空</label>}
       {carriers.map((c) => <label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggle(c.id)} /><CarrierMark name={c.name} color={c.color} />{c.name}</label>)}
     </fieldset>}
-    <div className="schedule-caption"><span>{visible.length} 個出發時段 · 當地時間</span><span>點選查看詳情</span></div>
+    <div className="schedule-caption"><span>{visible.length} 班 · 當地時間</span></div>
     <div className="compact-columns" aria-hidden="true"><span>航空</span><span>{from} 出發</span><span>{to} 抵達</span><span>飛行</span></div>
     <ul className="compact-flights">
       {visible.map((r) => {
@@ -72,7 +72,7 @@ export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
         </details></li>;
       })}
     </ul>
-    {!visible.length && <p className="schedule-empty">沒有符合篩選的航班。請選擇其他航空或切換方向。</p>}
-    <p className="schedule-footnote">按出發時間排序 · +1／−1 表示抵達日期差 · 時段不代表每天均有航班</p>
+    {!visible.length && <p className="schedule-empty">沒有符合篩選的航班</p>}
+    {visible.some((r) => dayShiftBetween(from, to, r.dep, r.arr)) && <p className="schedule-footnote">+1 隔天抵達 · −1 前一天抵達</p>}
   </div>;
 }
