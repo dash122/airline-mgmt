@@ -1,0 +1,81 @@
+import { useState } from 'react';
+import { localMinutes, hhmm, type FlightResult, type Plan } from '../sim/simulate';
+import { count, money, pct } from './format';
+
+export const lfTone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
+
+/** A flight's load factor as a small coloured pill, with 客滿 when it turned travellers away. */
+export function LoadPill({ f }: { f: FlightResult }) {
+  const full = f.spill > 0.5;
+  return <span className={`pill ${full ? 'warn' : lfTone(f.loadFactor)}`} title={`載客 ${count(f.pax)} / ${f.seats} 座`}>
+    {full ? '客滿' : pct(f.loadFactor)}
+  </span>;
+}
+
+/** One line on a flight's load: carried / seats, connecting, spill. */
+export const loadLine = (f: FlightResult) =>
+  `載客 ${count(f.pax)}/${f.seats}${f.connectingPax >= 0.5 ? ` · 轉機 ${count(f.connectingPax)}` : ''}${f.spill > 0.5 ? ` · 溢出 ${count(f.spill)}` : ''}`;
+
+type Sort = 'time' | 'lf';
+
+/** Load factor of every departure on a route, split by direction. Tap a flight to adjust it. */
+export function FlightLoads({ a, b, flights, plan, onEdit }: {
+  a: string; b: string; flights: FlightResult[]; plan: Plan; onEdit?: (acId: string, leg: number) => void;
+}) {
+  const [sort, setSort] = useState<Sort>('time');
+  if (!flights.length) return null;
+  const reg = (id: string) => plan.fleet.find((x) => x.id === id)?.reg ?? '';
+  const order = (list: FlightResult[]) => [...list].sort((x, y) => sort === 'lf'
+    ? y.loadFactor - x.loadFactor || y.spill - x.spill
+    : localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
+  const lfs = flights.map((f) => f.loadFactor);
+  const spread = Math.max(...lfs) - Math.min(...lfs);
+  const full = flights.filter((f) => f.spill > 0.5).length;
+  const empty = flights.filter((f) => f.loadFactor < 0.6).length;
+  return <section className="flight-loads" aria-label="每班載客率">
+    <div className="flight-loads-head">
+      <h4>每班載客率 <small>每次出發</small></h4>
+      <div className="seg two small" aria-label="排序">
+        <button className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>按時間</button>
+        <button className={sort === 'lf' ? 'on' : ''} onClick={() => setSort('lf')}>按載客率</button>
+      </div>
+    </div>
+    {flights.length > 1 && <div className="hint">
+      {full || empty
+        ? `${full ? `${full} 班客滿` : ''}${full && empty ? '、' : ''}${empty ? `${empty} 班不到六成` : ''}：把客滿的時段加班或換大飛機，空的時段移到熱門時間或取消。`
+        : spread < 0.05 ? '各班載客率差不多。' : `各班相差 ${pct(spread)}。`}
+    </div>}
+    {[[a, b], [b, a]].map(([from, to]) => {
+      const list = order(flights.filter((f) => f.from === from));
+      if (!list.length) return null;
+      return <div key={from} className="flight-loads-dir">
+        <div className="flight-loads-dirname">{from} → {to}</div>
+        <ul className="flight-load-list">
+          {list.map((f) => {
+            const profit = f.revenue - f.cost;
+            const body = <>
+              <time>{hhmm(localMinutes(f.from, f.dep))}</time>
+              <span className="flight-load-mid">
+                <span className="flight-load-bar" aria-hidden="true">
+                  <i className={lfTone(f.loadFactor)} style={{ width: `${Math.min(100, 100 * f.loadFactor)}%` }} />
+                </span>
+                <small>{loadLine(f)} · {reg(f.acId)}{f.perWeek < 7 ? ` · 每週 ${+f.perWeek.toFixed(1)} 班` : ''}</small>
+              </span>
+              <span className="flight-load-right">
+                <b className={`num ${lfTone(f.loadFactor)}`}>{pct(f.loadFactor)}</b>
+                <small className={profit >= 0 ? 'good' : 'bad'}>{profit >= 0 ? '+' : ''}{money(profit)}/班</small>
+              </span>
+            </>;
+            return <li key={f.key}>
+              {onEdit
+                ? <button className="flight-load-row" onClick={() => onEdit(f.acId, f.index)}
+                    aria-label={`${hhmm(localMinutes(f.from, f.dep))} ${from} 到 ${to}，載客率 ${pct(f.loadFactor)}，${loadLine(f)}，點選調整`}>{body}</button>
+                : <div className="flight-load-row">{body}</div>}
+            </li>;
+          })}
+        </ul>
+      </div>;
+    })}
+    <p className="schedule-footnote">當地出發時間 · 損益為每次出發的票價收入減飛行成本（不含租金）· 點航班可調整</p>
+  </section>;
+}

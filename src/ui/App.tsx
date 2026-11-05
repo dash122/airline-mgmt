@@ -283,7 +283,7 @@ export default function App() {
       )}
 
       {overlay?.kind === 'edit' && (
-        <FlightEditor plan={plan} acId={overlay.acId} leg={overlay.leg}
+        <FlightEditor plan={plan} result={result} acId={overlay.acId} leg={overlay.leg}
           onChange={(next, msg) => { update(next); if (msg) setToast(msg); }}
           onMove={(acId, unit) => { const l = plan.fleet.find((x) => x.id === acId)!.legs[unit.start]; setOverlay({ kind: 'move', acId, unit, key: [l.from, l.to].sort().join('-') }); }}
           onClose={() => setOverlay(null)} />

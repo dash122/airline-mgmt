@@ -3,7 +3,8 @@ import { AIRCRAFT } from '../data/aircraft';
 import { dayShiftBetween } from '../sim/airports';
 import type { RivalService } from '../sim/competitors';
 import { marketBetween, pairKey } from '../sim/markets';
-import { blockMinutes, flightsOn, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
+import { blockMinutes, flightsOn, hhmm, localMinutes, utcFromLocal, type FlightResult, type Plan } from '../sim/simulate';
+import { loadLine, LoadPill } from './FlightLoads';
 import { count } from './format';
 
 export function CarrierMark({ name, color, own = false }: { name: string; color?: string; own?: boolean }) {
@@ -12,7 +13,7 @@ export function CarrierMark({ name, color, own = false }: { name: string; color?
 
 type Row = {
   id: string; carrier: string; name: string; color?: string; dep: number; arr: number;
-  type: string; freq: number; fare?: number; reg?: string; edit?: () => void;
+  type: string; freq: number; fare?: number; reg?: string; edit?: () => void; load?: FlightResult;
 };
 
 /** A repeating timetable: sort by the departure airport's local clock, not raw UTC. */
@@ -20,8 +21,8 @@ export function chronological<T extends { dep: number; id: string }>(rows: T[], 
   return [...rows].sort((a, b) => localMinutes(from, a.dep) - localMinutes(from, b.dep) || a.id.localeCompare(b.id));
 }
 
-export function CompactTimetable({ from, to, services, plan, onEdit }: {
-  from: string; to: string; services: RivalService[]; plan?: Plan; onEdit?: (ac: string, leg: number) => void;
+export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
+  from: string; to: string; services: RivalService[]; plan?: Plan; loads?: FlightResult[]; onEdit?: (ac: string, leg: number) => void;
 }) {
   const [mode, setMode] = useState<'own' | 'all' | 'select'>('all');
   const [selected, setSelected] = useState<string[]>([]);
@@ -35,7 +36,7 @@ export function CompactTimetable({ from, to, services, plan, onEdit }: {
     for (const { ac, index, leg } of flightsOn(plan, pairKey(from, to)).filter((f) => f.leg.from === from)) {
       rows.push({ id: ac.id + '-' + index, carrier: 'own', name: '你的航空', dep: leg.dep,
         arr: leg.dep + blockMinutes(from, to, ac.type), type: AIRCRAFT[ac.type].name, freq: 7, reg: ac.reg, fare: (marketBetween(from, to)?.refFare ?? 0) * (plan.fares[pairKey(from, to)] ?? 1),
-        edit: onEdit ? () => onEdit(ac.id, index) : undefined });
+        edit: onEdit ? () => onEdit(ac.id, index) : undefined, load: loads?.find((f) => f.acId === ac.id && f.index === index) });
     }
   }
   const visible = chronological(rows.filter((r) => mode === 'all' || (mode === 'own' ? r.carrier === 'own' : selected.includes(r.carrier))), from);
@@ -61,10 +62,11 @@ export function CompactTimetable({ from, to, services, plan, onEdit }: {
             <CarrierMark name={r.name} color={r.color} own={r.carrier === 'own'} />
             <time>{hhmm(localMinutes(from, r.dep))}</time>
             <span className="compact-arrival"><time>{hhmm(localMinutes(to, r.arr))}</time>{shift !== 0 && <sup>{shift > 0 ? '+' : ''}{shift}</sup>}</span>
-            <span className="compact-duration">{Math.floor(duration / 60)}h{String(duration % 60).padStart(2, '0')}</span>
+            <span className="compact-duration">{Math.floor(duration / 60)}h{String(duration % 60).padStart(2, '0')}{r.load && <><br /><LoadPill f={r.load} /></>}</span>
           </summary>
           <div className="compact-flight-detail"><b>{r.name}</b><span>{r.type}{r.reg ? ' · ' + r.reg : ''}{r.fare !== undefined ? ' · NT$' + count(r.fare) : ''}</span>
             <span>{r.carrier === 'own' ? '每日營運' : `此方向每週 ${r.freq} 班`}{r.freq < 7 ? ' · 未指定營運星期' : ''}{shift !== 0 ? ` · 抵達日期差 ${shift > 0 ? '+' : ''}${shift} 天` : ''}</span>
+            {r.load && <span>載客率 {Math.round(r.load.loadFactor * 100)}% · {loadLine(r.load)}</span>}
             {r.edit && <button onClick={r.edit}>調整這班航班</button>}
           </div>
         </details></li>;

@@ -91,7 +91,7 @@ export function MarketShare({ a, b, result, split: given }: { a: string; b: stri
 }
 
 /** Who else flies this route: flights, fares, departure times and share of fliers. */
-export function RouteRivals({ a, b, plan, onEdit }: { a: string; b: string; result?: RouteResult; plan?: Plan; onEdit?: (ac: string, leg: number) => void }) {
+export function RouteRivals({ a, b, plan, result, onEdit }: { a: string; b: string; result?: RouteResult; plan?: Plan; onEdit?: (ac: string, leg: number) => void }) {
   const [reverse, setReverse] = useState(false);
   const from = reverse ? b : a;
   const to = reverse ? a : b;
@@ -101,6 +101,6 @@ export function RouteRivals({ a, b, plan, onEdit }: { a: string; b: string; resu
       <button aria-pressed={!reverse} onClick={() => setReverse(false)}>{a} → {b}</button>
       <button aria-pressed={reverse} onClick={() => setReverse(true)}>{b} → {a}</button>
     </div>
-    <CompactTimetable from={from} to={to} services={services} plan={plan} onEdit={onEdit} />
+    <CompactTimetable from={from} to={to} services={services} plan={plan} loads={result?.flights} onEdit={onEdit} />
   </div>;
 }

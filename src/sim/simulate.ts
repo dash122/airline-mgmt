@@ -179,6 +179,28 @@ export interface RouteResult {
   /** Competitor airlines on this route, both directions, weekly. */
   rivals: RouteRival[];
   groundName?: string;
+  /** Each scheduled flight on the route, both directions. */
+  flights: FlightResult[];
+}
+
+/** One scheduled flight (one leg of one aircraft's rotation). Counts are per departure, not per week. */
+export interface FlightResult {
+  key: string; // `${acId}#${index}`
+  acId: string;
+  index: number; // leg index in the aircraft's rotation
+  from: string;
+  to: string;
+  dep: number; // UTC minutes mod DAY
+  perWeek: number; // departures a week
+  seats: number;
+  pax: number; // onboard, local + connecting
+  localPax: number;
+  connectingPax: number;
+  /** Travellers who wanted this departure but found it full. */
+  spill: number;
+  loadFactor: number;
+  revenue: number; // this flight's share of fares
+  cost: number; // flying cost, without aircraft rent
 }
 
 export interface RouteMoney {
@@ -214,6 +236,8 @@ export interface AircraftResult {
   revenue: number;
   flyingCost: number;
   ownershipCost: number;
+  /** Per-flight results, by leg index in the rotation. */
+  flights: FlightResult[];
 }
 
 export interface TransferFlow {
@@ -233,6 +257,8 @@ export interface TransferInfo {
 
 export interface NetworkResult {
   routes: Record<string, RouteResult>;
+  /** Every scheduled flight, by `${acId}#${legIndex}`. */
+  byFlight: Record<string, FlightResult>;
   aircraft: Record<string, AircraftResult>;
   pax: number; // weekly trips (a connecting trip counts once)
   connectingPax: number;
@@ -536,6 +562,7 @@ export function simulate(plan: Plan): NetworkResult {
   const flightPax = new Map<Flight, number>();
   const flightRevenue = new Map<Flight, number>();
   const flightLocalRevenue = new Map<Flight, number>();
+  const flightLocalPax = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
@@ -561,9 +588,15 @@ export function simulate(plan: Plan): NetworkResult {
       for (const f of it.flights) {
         flightPax.set(f, (flightPax.get(f) ?? 0) + n);
         flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (n * fare * f.distKm) / dist);
-        if (it.flights.length === 1) flightLocalRevenue.set(f, (flightLocalRevenue.get(f) ?? 0) + n * fare);
-        flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / it.flights.length);
+        if (it.flights.length === 1) {
+          flightLocalRevenue.set(f, (flightLocalRevenue.get(f) ?? 0) + n * fare);
+          flightLocalPax.set(f, (flightLocalPax.get(f) ?? 0) + n);
+        }
       }
+      // Travellers turned away count against the flight that was full (both legs only if both were).
+      const fullLegs = it.flights.filter((f) => accept.get(f)! < 0.999);
+      const blame = fullLegs.length ? fullLegs : it.flights;
+      for (const f of blame) flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / blame.length);
     }
   }
 
@@ -572,6 +605,16 @@ export function simulate(plan: Plan): NetworkResult {
     return f.blockH * spec.costPerBlockHour + spec.costPerDeparture
       + (flightPax.get(f) ?? 0) * PAX_COST_PER_SEGMENT + (flightRevenue.get(f) ?? 0) * SALES_COST_SHARE;
   };
+
+  const perFlight: Record<string, FlightResult> = {};
+  for (const f of flights) {
+    const pax = flightPax.get(f) ?? 0, localPax = flightLocalPax.get(f) ?? 0;
+    perFlight[f.key] = {
+      key: f.key, acId: f.ac.id, index: f.idx, from: f.from, to: f.to, dep: f.dep, perWeek: f.perWeek, seats: f.seats,
+      pax, localPax, connectingPax: Math.max(0, pax - localPax), spill: Math.max(0, flightSpill.get(f) ?? 0),
+      loadFactor: f.seats ? pax / f.seats : 0, revenue: flightRevenue.get(f) ?? 0, cost: flightCost(f),
+    };
+  }
 
   const routes: Record<string, RouteResult> = {};
   for (const f of flights) {
@@ -608,8 +651,10 @@ export function simulate(plan: Plan): NetworkResult {
         marketShare: airTotal > 0 ? localPax / airTotal : 0, airTotal, localDemand, connectingPax, revenue: 0, flyingCost: 0,
         money: { localRevenue: 0, connectingRevenue: 0, blockCost: 0, departureCost: 0, paxCost: 0, salesCost: 0 }, fullFlights: 0,
         fare: Math.round((m?.refFare ?? 0) * fareMultOf(plan, key)), rivalFreq: m?.rivalFreq ?? 0, rivals: [...rivals.values()].sort((x, y) => y.pax - x.pax), groundName: m?.ground?.name,
+        flights: [],
       };
     }
+    r.flights.push(perFlight[f.key]);
     r.flightsPerWeek += f.perWeek;
     r.seats += f.perWeek * f.seats;
     r.pax += f.perWeek * (flightPax.get(f) ?? 0);
@@ -634,7 +679,7 @@ export function simulate(plan: Plan): NetworkResult {
   const aircraft: Record<string, AircraftResult> = {};
   for (const ac of plan.fleet) {
     const info = rotationInfo(ac);
-    aircraft[ac.id] = { id: ac.id, blockHoursPerDay: info.blockMin / 60, utilisation: info.utilisation, pax: 0, seats: 0, revenue: 0, flyingCost: 0, ownershipCost: AIRCRAFT[ac.type].ownershipPerWeek };
+    aircraft[ac.id] = { id: ac.id, blockHoursPerDay: info.blockMin / 60, utilisation: info.utilisation, pax: 0, seats: 0, revenue: 0, flyingCost: 0, ownershipCost: AIRCRAFT[ac.type].ownershipPerWeek, flights: [] };
   }
   for (const f of flights) {
     const a = aircraft[f.ac.id];
@@ -642,6 +687,7 @@ export function simulate(plan: Plan): NetworkResult {
     a.seats += f.perWeek * f.seats;
     a.revenue += f.perWeek * (flightRevenue.get(f) ?? 0);
     a.flyingCost += f.perWeek * flightCost(f);
+    a.flights[f.idx] = perFlight[f.key];
   }
 
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
@@ -665,6 +711,7 @@ export function simulate(plan: Plan): NetworkResult {
   for (const t of Object.values(transfers)) t.flows.sort((x, y) => y.pax - x.pax);
   return {
     routes,
+    byFlight: perFlight,
     aircraft,
     pax: tripsWeekly,
     connectingPax: connectingWeekly,
