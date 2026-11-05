@@ -4,7 +4,7 @@ import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
 import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
-import MapCanvas, { type Selection, type Theme } from './MapCanvas';
+import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
@@ -12,7 +12,8 @@ import { AirlineLink, AirlineSheet, AirlinesPanel } from './airlines';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { count, money, pct } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
-import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type GameState, type Speed } from './clock';
+import { Ring, Spark } from './viz';
+import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type GameState, type Speed } from './clock';
 
 const SAVE_KEY = 'waypoint.plan.v2';
 const GAME_KEY = 'waypoint.game.v1';
@@ -207,13 +208,21 @@ export default function App() {
         onDragRoute={(a, b) => planRoute(a, b)}
       />
 
-      <TopBar result={result} balance={game?.balance ?? 0} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
+      <TopBar result={result} balance={game?.balance ?? 0} history={game?.history ?? []} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReset={() => {
           if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
       <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
 
       {toast && <div className="toast">{toast}</div>}
+      {result && !selection && !overlay && !panel && (
+        <div className="map-legend" aria-label="地圖圖例：航線顏色是載客率，越粗旅客越多">
+          <span><i style={{ background: LF_COLORS.good }} />80%+</span>
+          <span><i style={{ background: LF_COLORS.ok }} />60%</span>
+          <span><i style={{ background: LF_COLORS.bad }} />低</span>
+          <span className="w"><i className="thin" /><i className="thick" />客量</span>
+        </div>
+      )}
 
       {routeKey && routeExists && (
         <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={result?.routes[routeKey]} net={result}
@@ -394,18 +403,29 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
   );
 }
 
-function TopBar({ result, balance, theme, onTheme, onReset }: { result: NetworkResult | null; balance: number; theme: Theme; onTheme: () => void; onReset: () => void }) {
+function TopBar({ result, balance, history, theme, onTheme, onReset }: { result: NetworkResult | null; balance: number; history: DayRecord[]; theme: Theme; onTheme: () => void; onReset: () => void }) {
   const cr = result?.costRecovery ?? 0;
+  // Running balance at the end of each recorded day, ending at today's balance.
+  const trend = useMemo(() => {
+    let b = balance;
+    const out = [b];
+    for (let i = history.length - 1; i >= 0; i--) { b -= history[i].revenue - history[i].cost; out.push(b); }
+    return out.reverse();
+  }, [history, balance]);
   return (
     <div className="topbar">
       <div className="kpi main">
         <span className="label">成本回收率</span>
-        <span className={`value ${result ? (cr >= 1 ? 'good' : 'bad') : ''}`}>{result ? pct(cr) : '—'}</span>
+        <span className="kpi-row">
+          {result && <Ring value={Math.min(cr, 2) / 2} tone={cr >= 1 ? 'good' : 'bad'} size={18} stroke={3.5} label={`成本回收率 ${pct(cr)}，半圈是收支平衡`} />}
+          <span className={`value ${result ? (cr >= 1 ? 'good' : 'bad') : ''}`}>{result ? pct(cr) : '—'}</span>
+        </span>
       </div>
       <div className="kpi"><span className="label">週旅客</span><span className="value">{result ? count(result.pax) : '—'}</span></div>
       <div className="kpi"><span className="label">載客率</span><span className="value">{result ? pct(result.loadFactor) : '—'}</span></div>
       <div className="kpi"><span className="label">利用率</span><span className="value">{result ? pct(result.avgUtilisation) : '—'}</span></div>
-      <div className="kpi"><span className="label">累計損益</span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span></div>
+      <div className="kpi"><span className="label">累計損益</span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span>
+        <Spark values={trend} width={56} height={12} label="累計損益走勢" /></div>
       <div className="top-actions">
         <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>
         <button onClick={onReset} aria-label="重新開始">↺</button>
