@@ -14,6 +14,7 @@ import { MarketShare, RouteRivals } from './rivals';
 import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
+import { FlightLoads, LoadPill } from './FlightLoads';
 
 export const routeName = (a: string, b: string) => `${AIRPORT_BY_CODE[a].name} ⇄ ${AIRPORT_BY_CODE[b].name}`;
 export const tone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
@@ -186,7 +187,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       {result && <DemandBar seats={result.seats} pax={result.pax} spill={result.spill} />}
       {result && result.pax - result.localPax > 1 && <div className="hint">轉機旅客付直飛票價的 85%，再按兩段航線的票價設定（依距離加權）調整，所以這裡改票價也會影響他們。要接得上：看「機場」的轉機分頁。</div>}
       {full && <div className="hint warn">客滿：每週 {count(result!.spill)} 人買不到位子（溢出），不付錢。這時降價只會少賺；漲價先減少溢出，載客率不變。或加班次、換大飛機。</div>}
-      {result && result.spill > 1 && !full && <div className="hint warn">部分航班客滿（溢出 {count(result.spill)} 人），其他航班還有空位：先調整熱門時段的班次或機型，降價幫不上忙。</div>}
+      {result && result.spill > 1 && !full && <div className="hint warn">部分航班客滿（溢出 {count(result.spill)} 人），其他航班還有空位：看下方「每班載客率」，先調整客滿時段的班次或機型，降價幫不上忙。</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint">載客率偏低：減一班或降低票價。</div>}
       <div className="fare">
         <div className="grow">
@@ -203,6 +204,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         : <button className="fare-tip" onClick={() => setFare(best.mult)}>
             最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
           </button>)}
+      {result && <FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} />}
       <MarketShare a={a} b={b} result={result} net={net} split={split} />
       {elsewhere && <div className="hint">{elsewhere}</div>}
       {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
@@ -283,6 +285,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
                 {u.count === 2 ? `${l.from} ⇄ ${l.to}` : `${l.from} → ${l.to}`}
                 <small>{u.count === 2 ? `回到 ${l.from} ${arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last))}` : `抵達 ${arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}`} · {AIRPORT_BY_CODE[l.to].name}</small>
               </span>
+              {result && <span className="loads" aria-label="載客率">{Array.from({ length: u.count }, (_, k) => result.flights[u.start + k]).filter(Boolean).map((f) => <LoadPill key={f.key} f={f} />)}</span>}
               <span className="chev">調整 ›</span>
             </li>
           );

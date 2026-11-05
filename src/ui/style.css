@@ -695,3 +695,27 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .dvt > div { min-width: 0; border-top: 3px solid var(--text); padding-top: 3px; display: flex; gap: 4px; align-items: baseline; flex-wrap: wrap; }
 .dvt > div.t { border-top-style: dashed; }
 .dvt small { color: var(--muted); }
+/* Per-flight load factor */
+.flight-loads { margin-top: 10px; }
+.flight-loads-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.flight-loads-head .seg.small { flex: 0 0 auto; }
+.flight-loads-head .seg.small button { font-size: 12px; padding: 5px 10px; }
+.flight-loads-dirname { font-size: 12px; font-weight: 700; margin: 10px 0 2px; }
+.flight-load-list { list-style: none; margin: 0; padding: 0; }
+.flight-load-list li { border-bottom: 1px solid var(--line); }
+.flight-load-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 8px 0; text-align: left; background: none; border: 0; color: inherit; font: inherit; }
+.flight-load-row time { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
+.flight-load-mid { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.flight-load-mid small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flight-load-bar { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.flight-load-bar i { display: block; height: 100%; border-radius: 4px; }
+.flight-load-bar i.good { background: var(--good); }
+.flight-load-bar i.warn { background: var(--warn); }
+.flight-load-bar i.bad { background: var(--bad); }
+.flight-load-right { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.flight-load-right b { font-size: 15px; }
+.flight-load-right small { font-size: 10px; }
+.flight-load-right small.good { color: var(--good); }
+.flight-load-right small.bad { color: var(--bad); }
+.timetable .loads { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.leg-load { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }

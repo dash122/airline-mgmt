@@ -233,3 +233,30 @@ describe('transfers', () => {
     expect(stop).toBeGreaterThan(quick / 10);
   });
 });
+
+describe('per-flight results', () => {
+  const p = trips(emptyPlan('HKG'), 'HKG', 'TPE', 3);
+  const res = simulate(p);
+  const r = res.routes['HKG-TPE'];
+  test('each scheduled flight gets its own result, and they add up to the route', () => {
+    expect(r.flights.length).toBe(6);
+    const sum = (k: 'seats' | 'pax' | 'spill') => r.flights.reduce((s, f) => s + f.perWeek * f[k], 0);
+    expect(sum('seats')).toBeCloseTo(r.seats);
+    expect(sum('pax')).toBeCloseTo(r.pax);
+    expect(sum('spill')).toBeCloseTo(r.spill);
+    for (const f of r.flights) {
+      expect(res.byFlight[f.key]).toBe(f);
+      expect(res.aircraft[f.acId].flights[f.index]).toBe(f);
+      expect(f.loadFactor).toBeCloseTo(f.pax / f.seats);
+      expect(f.loadFactor).toBeLessThanOrEqual(1 + 1e-9);
+      expect(f.localPax + f.connectingPax).toBeCloseTo(f.pax);
+    }
+  });
+  test('departures at different times fill differently', () => {
+    const lfs = r.flights.map((f) => f.loadFactor);
+    expect(Math.max(...lfs) - Math.min(...lfs)).toBeGreaterThan(0.01);
+  });
+  test('only full flights turn travellers away', () => {
+    for (const f of Object.values(res.byFlight)) if (f.spill > 0.5) expect(f.loadFactor).toBeGreaterThan(0.99);
+  });
+});
