@@ -132,8 +132,8 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 // ---------- Route ----------
 
-export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action }: {
-  plan: Plan; routeKey: string; result?: RouteResult; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
+export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net }: {
+  plan: Plan; routeKey: string; result?: RouteResult; net?: NetworkResult | null; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
   onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode;
 }) {
   const [a, b] = routeKey.split('-');
@@ -156,7 +156,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   }, [a, b]);
   const types = [...new Set(flights.map((f) => AIRCRAFT[f.ac.type].name))].join('、');
   const [why, setWhy] = useState<ExplainKey | null>(null);
-  const split = useMemo(() => marketSplit(a, b, result), [a, b, result]);
+  const split = useMemo(() => marketSplit(a, b, result, net), [a, b, result, net]);
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
@@ -203,7 +203,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         : <button className="fare-tip" onClick={() => setFare(best.mult)}>
             最賺票價：參考價的 {pct(best.mult)}（NT${count((m?.refFare ?? 0) * best.mult)}），載客率 {pct(best.loadFactor)} · 全網週利潤 +{money(best.profit - now.profit)}
           </button>)}
-      <MarketShare a={a} b={b} result={result} split={split} />
+      <MarketShare a={a} b={b} result={result} net={net} split={split} />
       {elsewhere && <div className="hint">{elsewhere}</div>}
       {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
       <h4>航線班表</h4>

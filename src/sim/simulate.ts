@@ -231,8 +231,26 @@ export interface TransferInfo {
   flows: TransferFlow[];
 }
 
+/** One direction of a market the player serves (nonstop or by connecting on its own flights), weekly. */
+export interface MarketResult {
+  /** Air travellers in this direction, all airlines. */
+  airTotal: number;
+  /** Travellers connecting on other airlines. */
+  connecting: number;
+  /** Per competitor service, in the order of competitionFor(o, d).services. */
+  rivals: { id: string; pax: number }[];
+  /** Travellers carried on the player's nonstops. */
+  nonstop: number;
+  /** Travellers carried on the player's connections, per transfer airport. */
+  via: Record<string, number>;
+  /** Travellers who chose the player (before seats ran out). */
+  wanted: number;
+}
+
 export interface NetworkResult {
   routes: Record<string, RouteResult>;
+  /** Markets the player serves, per direction (`${o}>${d}`). */
+  markets: Record<string, MarketResult>;
   aircraft: Record<string, AircraftResult>;
   pax: number; // weekly trips (a connecting trip counts once)
   connectingPax: number;
@@ -539,12 +557,16 @@ export function simulate(plan: Plan): NetworkResult {
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
+  const markets: Record<string, MarketResult> = {};
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
+    const mr: MarketResult = markets[k] = { airTotal: info.airTotal, connecting: info.connecting, rivals: info.rivals, nonstop: 0, via: {}, wanted: info.mine };
     for (const it of list) {
       const n = carried.get(it) ?? 0;
       const want = demand.get(it) ?? 0;
+      if (it.flights.length === 1) mr.nonstop += n * it.perWeek;
+      else mr.via[it.flights[0].to] = (mr.via[it.flights[0].to] ?? 0) + n * it.perWeek;
       tripsWeekly += n * it.perWeek;
       const fare = Math.round(info.refFare * it.fareMult) * it.fareShare;
       if (it.flights.length > 1) {
@@ -665,6 +687,7 @@ export function simulate(plan: Plan): NetworkResult {
   for (const t of Object.values(transfers)) t.flows.sort((x, y) => y.pax - x.pax);
   return {
     routes,
+    markets,
     aircraft,
     pax: tripsWeekly,
     connectingPax: connectingWeekly,

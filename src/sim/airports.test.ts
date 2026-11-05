@@ -88,7 +88,7 @@ describe('arrival day markers', () => {
   });
 });
 
-import { estimateVia, hubOpportunities, linkages, viaGroup, viewFromHub } from './airports';
+import { estimateVia, hubOpportunities, hubTransit, linkages, viaGroup, viewFromHub } from './airports';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
 describe('connecting markets', () => {
@@ -181,8 +181,8 @@ describe('transit potential from the hub', () => {
     expect(v.rows.length).toBeGreaterThan(50);
     expect(v.rows.some((r) => viaGroup(r) === 'flown' && r.d === 'BKK')).toBe(true);
     expect(v.rows.some((r) => viaGroup(r) === 'hubLeg' && r.d === 'LHR')).toBe(true);
-    for (let k = 1; k < v.rows.length; k++) expect(Math.max(v.rows[k - 1].est, v.rows[k - 1].viaPax)).toBeGreaterThanOrEqual(Math.max(v.rows[k].est, v.rows[k].viaPax));
-    expect(v.total).toBeGreaterThan(v.rows[0].est);
+    for (let k = 1; k < v.rows.length; k++) expect(v.rows[k - 1].potential).toBeGreaterThanOrEqual(v.rows[k].potential);
+    for (const r of v.rows) expect(r.potential).toBeGreaterThanOrEqual(r.viaPax);
     // Small airports are not given a whole province's population.
     expect(v.rows[0].est).toBeLessThan(5000);
   });
@@ -210,5 +210,27 @@ describe('transit potential from the hub', () => {
     expect(sim).toBeGreaterThan(0);
     expect(est / sim).toBeGreaterThan(0.5);
     expect(est / sim).toBeLessThan(2);
+  });
+  test('the hub view lists carried markets against what quick connections could carry, and the flight that closes the gap', () => {
+    const miss: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', 19), mk('c', 'NRT', 'TPE', 8), mk('d', 'TPE', 'HKG', 19)] };
+    const r = simulate(miss);
+    const t = hubTransit(miss, r, 'TPE');
+    const l = t.carried.find((x) => [x.o, x.d].sort().join() === 'HKG,NRT')!;
+    expect(l).toBeDefined();
+    expect(l.potential).toBeGreaterThan(l.viaPax);
+    expect(l.market).toBeGreaterThan(l.potential);
+    const fix = t.fixes.find((f) => f.markets.includes(l))!;
+    expect(fix.gain).toBeGreaterThan(0);
+    // Taking the suggested flight carries more through the hub.
+    const s = fix.suggest;
+    const fixed: Plan = { ...miss, fleet: [...miss.fleet, mk('e', s.from, s.to, s.local / 60)] };
+    const after = simulate(fixed).transfers.TPE.pax;
+    expect(after).toBeGreaterThan(r.transfers.TPE.pax);
+  });
+  test('a well-timed connection is shown as close to what it can carry', () => {
+    const p: Plan = { ...base, fleet: [mk('a', 'HKG', 'TPE', 8), mk('b', 'TPE', 'NRT', 11.5), mk('c', 'NRT', 'TPE', 8), mk('d', 'TPE', 'HKG', 13)] };
+    const l = hubTransit(p, simulate(p), 'TPE').carried.find((x) => [x.o, x.d].sort().join() === 'HKG,NRT')!;
+    expect(l.status).toBe('connected');
+    expect(l.viaPax / l.potential).toBeGreaterThan(0.6);
   });
 });
