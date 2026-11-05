@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { localMinutes, hhmm, type FlightResult, type Plan } from '../sim/simulate';
 import { count, money, pct } from './format';
+import { Head } from './sheets';
 
 export const lfTone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
 
@@ -24,7 +25,9 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
 }) {
   const [sort, setSort] = useState<Sort>('time');
   if (!flights.length) return null;
-  const reg = (id: string) => plan.fleet.find((x) => x.id === id)?.reg ?? '';
+  // Name the aircraft only when more than one flies the route.
+  const many = new Set(flights.map((f) => f.acId)).size > 1;
+  const reg = (id: string) => (many ? ` · ${plan.fleet.find((x) => x.id === id)?.reg ?? ''}` : '');
   const order = (list: FlightResult[]) => [...list].sort((x, y) => sort === 'lf'
     ? y.loadFactor - x.loadFactor || y.spill - x.spill
     : localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
@@ -33,17 +36,17 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
   const full = flights.filter((f) => f.spill > 0.5).length;
   const empty = flights.filter((f) => f.loadFactor < 0.6).length;
   return <section className="flight-loads" aria-label="每班載客率">
-    <div className="flight-loads-head">
-      <h4>每班載客率 <small>每次出發</small></h4>
-      <div className="seg two small" aria-label="排序">
-        <button className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>按時間</button>
-        <button className={sort === 'lf' ? 'on' : ''} onClick={() => setSort('lf')}>按載客率</button>
-      </div>
-    </div>
-    {flights.length > 1 && <div className="hint">
+    <Head info={<p>當地出發時間。損益是每次出發的票價收入減飛行成本，不含租金。客滿的時段可加班或換大飛機；空的時段可移到熱門時間或取消。點航班可調整。</p>}
+      right={<div className="seg two small" aria-label="排序">
+        <button className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>時間</button>
+        <button className={sort === 'lf' ? 'on' : ''} onClick={() => setSort('lf')}>載客率</button>
+      </div>}>
+      每班載客率
+    </Head>
+    {flights.length > 1 && (full || empty || spread >= 0.05) && <div className="hint">
       {full || empty
-        ? `${full ? `${full} 班客滿` : ''}${full && empty ? '、' : ''}${empty ? `${empty} 班不到六成` : ''}：把客滿的時段加班或換大飛機，空的時段移到熱門時間或取消。`
-        : spread < 0.05 ? '各班載客率差不多。' : `各班相差 ${pct(spread)}。`}
+        ? `${full ? `${full} 班客滿` : ''}${full && empty ? ' · ' : ''}${empty ? `${empty} 班不到六成` : ''}`
+        : `各班相差 ${pct(spread)}`}
     </div>}
     {[[a, b], [b, a]].map(([from, to]) => {
       const list = order(flights.filter((f) => f.from === from));
@@ -59,7 +62,7 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
                 <span className="flight-load-bar" aria-hidden="true">
                   <i className={lfTone(f.loadFactor)} style={{ width: `${Math.min(100, 100 * f.loadFactor)}%` }} />
                 </span>
-                <small>{loadLine(f)} · {reg(f.acId)}{f.perWeek < 7 ? ` · 每週 ${+f.perWeek.toFixed(1)} 班` : ''}</small>
+                <small>{loadLine(f)}{reg(f.acId)}{f.perWeek < 7 ? ` · 每週 ${+f.perWeek.toFixed(1)} 班` : ''}</small>
               </span>
               <span className="flight-load-right">
                 <b className={`num ${lfTone(f.loadFactor)}`}>{pct(f.loadFactor)}</b>
@@ -76,6 +79,5 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
         </ul>
       </div>;
     })}
-    <p className="schedule-footnote">當地出發時間 · 損益為每次出發的票價收入減飛行成本（不含租金）· 點航班可調整</p>
   </section>;
 }

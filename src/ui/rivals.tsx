@@ -6,6 +6,7 @@ import { type NetworkResult, type Plan, type RouteResult } from '../sim/simulate
 import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
 import { count, pct } from './format';
 import { useAirlineLink } from './airlines';
+import { Head } from './sheets';
 
 /** An airline's name; taps open its profile wherever the app provides one. */
 export function AirlineName({ airline }: { airline: Airline }) {
@@ -24,7 +25,7 @@ const rowName = (r: ShareRow) => (r.kind === 'own' ? '你的航空（直飛）' 
 const isTransit = (r: ShareRow) => r.kind === 'ownVia' || r.kind === 'rivalVia' || r.kind === 'connecting';
 
 /** One or two sentences on who carries the route's travellers. Never calls the player the biggest when it carries nobody. */
-export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: MarketSplit): string {
+export function marketSummary({ rows, ownTurnedAway }: MarketSplit): string {
   const own = rows.find((r) => r.kind === 'own');
   const rivals = rows.filter((r) => r.kind === 'rival');
   const via = rows.filter((r) => r.kind === 'ownVia');
@@ -32,7 +33,7 @@ export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: Mark
   // Competitors' connections: their share and the hub that carries the most.
   const rivalVia = rows.filter((r) => r.kind === 'rivalVia');
   const topVia = rivalVia[0];
-  const rivalViaText = topVia ? `對手經轉機載了 ${pct(rivalVia.reduce((s, r) => s + r.share, 0))}，最多經${topVia.via}（${topVia.airline?.name ?? topVia.id}）。` : '';
+  const rivalViaText = topVia ? `對手轉機載 ${pct(rivalVia.reduce((s, r) => s + r.share, 0))}，最多經${topVia.via}。` : '';
   if (!own) return (rivals.length ? `你沒有直飛，${rivals.length} 家航空直飛分食這些旅客。` : '目前沒有航空直飛，旅客只能轉機。') + viaText + rivalViaText;
   const parts: string[] = [];
   const top = rivals.reduce<ShareRow | undefined>((x, r) => (!x || r.pax > x.pax ? r : x), undefined);
@@ -40,10 +41,9 @@ export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: Mark
   else if (!top) parts.push(`你是唯一直飛的航空，載了 ${pct(own.share)} 的旅客。`);
   else if (own.pax >= top.pax) parts.push(`你是這條航線最大的航空，占 ${pct(own.share)}；第二是${rowName(top)}，占 ${pct(top.share)}。`);
   else parts.push(`${rowName(top)}領先，占 ${pct(top.share)}；你占 ${pct(own.share)}。`);
-  if (rivals.length && ownFreqShare > 0) parts.push(`你的班次占全部直飛的 ${pct(ownFreqShare)}。`);
   if (viaText) parts.push(viaText);
   if (rivalViaText) parts.push(rivalViaText);
-  if (ownTurnedAway >= 1) parts.push(`另有 ${pct(ownTurnedAway / total)}（${count(ownTurnedAway)} 人）想搭你但客滿。`);
+  if (ownTurnedAway >= 1) parts.push(`另有 ${count(ownTurnedAway)} 人想搭你但客滿。`);
   return parts.join('');
 }
 
@@ -76,7 +76,11 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
   const firstTransit = rows.findIndex(isTransit);
   return (
     <div className="market-share">
-      <h4>{title} <small>{a} ⇄ {b} · 每週 {count(total)} 人（雙向）</small></h4>
+      <Head info={<>
+        <p>{a} ⇄ {b} 每週共 {count(total)} 人（雙向）。{split.ownFreqShare > 0 && rows.some((r) => r.kind === 'rival') ? `你的班次占全部直飛的 ${pct(split.ownFreqShare)}。` : ''}</p>
+        <p>市占看班次、起飛時段、票價和服務；轉機等越久，分到越少。對手的班表和票價固定。</p>
+        {result && result.pax - result.localPax >= 1 && <p>另有每週 {count(result.pax - result.localPax)} 人只在這條航線轉機去別處，算在別的市場。客滿時本地和轉機旅客按比例分座位。</p>}
+      </>} right={<small className="muted">{count(total)} 人/週</small>}>{title}</Head>
       <p className="schedule-note">{summary}</p>
       <DirectVsTransit rows={rows} total={total} />
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
@@ -109,15 +113,11 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         {ownTurnedAway >= 1 && (
           <li className="lost-row">
             <i />
-            <span className="name"><b>想搭你但客滿</b><small>溢出的旅客，沒有改搭別家</small></span>
+            <span className="name"><b>想搭你但客滿</b></span>
             <span className="rival-share">{pct(ownTurnedAway / total)}<small>{count(ownTurnedAway)} 人</small></span>
           </li>
         )}
       </ul>
-      {result && result.pax - result.localPax >= 1 && (
-        <div className="hint">另有每週 {count(result.pax - result.localPax)} 名旅客只是在這條航線上轉機去別的城市，算在別的市場。客滿時，本地和轉機旅客按比例分到座位。</div>
-      )}
-      <div className="hint">市占看班次多寡、起飛時段、票價和服務品質；轉機等越久，分到越少。對手的班表和票價固定，不會因為你而改變。</div>
     </div>
   );
 }

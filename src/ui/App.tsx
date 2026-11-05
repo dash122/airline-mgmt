@@ -157,13 +157,13 @@ export default function App() {
     const isNew = !plan.fleet.some((ac) => ac.id === r.aircraftId);
     const added = r.plan.fleet.find((ac) => ac.id === r.aircraftId)!;
     const reg = added.reg;
-    const cadence = cycleOf(added) > 1 ? `每 ${cycleOf(added)} 天來回一班（長程）` : '每日來回一班';
-    setToast(isNew ? `租了新飛機 ${reg}，${cadence}。可在「班表」調整時間` : `由 ${reg} 加飛一班來回`);
+    const cadence = cycleOf(added) > 1 ? `每 ${cycleOf(added)} 天一班來回` : '每日一班來回';
+    setToast(isNew ? `租了 ${reg}，${cadence}` : `${reg} 加飛一班來回`);
     if (!stay) select({ kind: 'route', id: [a, b].sort().join('-') });
   };
   const removeOne = (key: string) => {
     const next = removeOneRoundTrip(plan, key, localMinutes);
-    if (!next) { setToast('這條航線沒有完整的來回航班，請在班表中調整'); return; }
+    if (!next) { setToast('沒有完整的來回航班，請到班表調整'); return; }
     update(next);
     setToast('已減一班來回');
   };
@@ -221,7 +221,7 @@ export default function App() {
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}
           onEditFlight={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
-          onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛這條航線，飛機的其他航班不受影響'); select(null); }}
+          onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛'); select(null); }}
           action={backToAirline}
           onClose={() => select(null)} />
       )}
@@ -243,7 +243,7 @@ export default function App() {
           onToggleHub={() => {
             const on = plan.hub === airport;
             update({ ...plan, hub: on ? undefined : airport });
-            setToast(on ? '已取消轉運站' : `${AIRPORT_BY_CODE[airport].name}設為轉運站：轉機最短時間縮短，每週多一筆費用`);
+            setToast(on ? '已取消轉運站' : `${AIRPORT_BY_CODE[airport].name}設為轉運站`);
           }}
           onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
           onPickAirport={(code) => select({ kind: 'airport', id: code })}
@@ -315,7 +315,7 @@ export default function App() {
             } else {
               const ac = newAircraft(plan, type);
               update({ ...plan, fleet: [...plan.fleet, ac] });
-              setToast(`租了 ${ac.reg}，到「班表」點它的空白處排航班`);
+              setToast(`租了 ${ac.reg}，到班表排航班`);
             }
             setOverlay(null);
           }} />
@@ -378,7 +378,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
     <div className="start">
       <div className="start-card">
         <div className="logo">航點<span>Waypoint</span></div>
-        <p>在真實的全球地圖上規劃你的航線網。旅客會比較票價、時間與班次，在你的航班、其他航空、高鐵新幹線之間選擇。租飛機、排每日班表，讓每架飛機多飛、每班多載。時間會自己流動，每天結算一次。目標：讓收入打平成本，越高越好。</p>
+        <p>開航線、租飛機、排班表，在真實地圖上和其他航空搶旅客。目標：收入大於成本。</p>
         <h2>選擇你的基地</h2>
         <div className="base-grid">
           {BASES.map((c) => (

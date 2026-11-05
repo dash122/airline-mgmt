@@ -9,6 +9,7 @@ import type { NetworkResult, Plan } from '../sim/simulate';
 import { CompactTimetable } from './CompactTimetable';
 import { AirlineName } from './rivals';
 import { count, pct } from './format';
+import { Head } from './sheets';
 
 export type AirportSection = 'routes' | 'rivals' | 'market' | 'transfer';
 
@@ -56,19 +57,19 @@ export function AirportCompetition({ result, code, onOpenRoute, onOpen }: {
   }), [dests, shown, result, code]);
   const ourFlights = Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).reduce((s, r) => s + r.flightsPerWeek / 2, 0);
   const rivalFlights = carriers.reduce((s, c) => s + c.flights, 0);
-  if (!dests.length) return <div className="hint center">沒有航空在這裡飛，也還沒有你的航班。你會是第一家。</div>;
+  if (!dests.length) return <div className="hint center">沒有對手，你會是第一家</div>;
   return (
     <>
       <div className="vs-head">
-        <div><b>{count(ourFlights)}</b><small>你的出發班次/週</small></div>
+        <div><b>{count(ourFlights)}</b><small>你 · 班/週</small></div>
         <span>vs</span>
-        <div><b>{count(rivalFlights)}</b><small>{carriers.length} 家對手的出發班次/週</small></div>
+        <div><b>{count(rivalFlights)}</b><small>{carriers.length} 家對手 · 班/週</small></div>
       </div>
       <div className="share-track" role="img" aria-label={`你 ${count(ourFlights)} 班，對手 ${count(rivalFlights)} 班`}>
         <div style={{ width: `${(100 * ourFlights) / Math.max(1, ourFlights + rivalFlights)}%`, background: OWN }} />
         {carriers.map((c) => <div key={c.airline.id} style={{ width: `${(100 * c.flights) / Math.max(1, ourFlights + rivalFlights)}%`, background: c.airline.color }} />)}
       </div>
-      <h4>每條航線：你和對手（每週，雙向）</h4>
+      <Head info={<p>每週、雙向。<span className="k" style={{ color: OWN }}>■</span> 你 <span className="k spill">■</span> 想搭你但客滿，其他顏色是各家對手。你飛的航線點了開航線；沒飛的點了看對手班表。對手的班表和票價固定。</p>}>每條航線</Head>
       <ul className="vs-list">
         {rows.map(({ to, flown, split }) => {
           const own = split.rows.find((x) => x.kind === 'own');
@@ -79,8 +80,8 @@ export function AirportCompetition({ result, code, onOpenRoute, onOpen }: {
             <li key={to} className={flown ? 'flown' : ''}>
               <div className="vs-top" role="button" aria-expanded={isOpen} onClick={() => (flown ? onOpenRoute(pairKey(code, to)) : setOpen(isOpen ? null : to))}>
                 <span className="name"><b>{AIRPORT_BY_CODE[to].name} {to}</b>
-                  <small>{flown ? `你 ${count(own?.freq ?? 0)} 班 · ` : ''}{rivals.length ? `對手 ${rivals.length} 家 ${count(rf)} 班` : '沒有對手直飛'} · {count(split.total)} 人</small></span>
-                <span className="rival-share">{flown ? pct(own?.share ?? 0) : '—'}<small>{flown ? '你的市占' : '未開航'}</small></span>
+                  <small>{flown ? `你 ${count(own?.freq ?? 0)} 班 · ` : ''}{rivals.length ? `對手 ${count(rf)} 班` : '沒有對手'} · {count(split.total)} 人</small></span>
+                <span className="rival-share">{flown ? pct(own?.share ?? 0) : '—'}<small>{flown ? '市占' : '未開航'}</small></span>
               </div>
               <div className="share-track thin">
                 {split.rows.map((x) => <div key={x.id} style={{ width: `${100 * x.share}%`, background: rowColor(x) }} />)}
@@ -98,8 +99,7 @@ export function AirportCompetition({ result, code, onOpenRoute, onOpen }: {
         })}
       </ul>
       {dests.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, dests.length - shown)} 條（共 {dests.length}）</button>}
-      <div className="hint"><span className="k" style={{ color: OWN }}>■</span> 你 <span className="k spill">■</span> 想搭你但客滿；其他顏色是各家對手。你飛的航線點了開航線；沒飛的點了看對手班表。對手的班表和票價固定，不會因為你而改變。</div>
-      <h4>在這裡飛的航空公司</h4>
+      <h4>航空公司</h4>
       <ul className="competitor-list">
         {carriers.map((c) => (
           <li key={c.airline.id} className="carrier">
@@ -121,12 +121,12 @@ export function AirportMarkets({ plan, result, code, onOpen, onOpenRoute }: {
   return (
     <>
       <PotentialHead pot={pot} />
-      <h4>市場：可拿的旅客 vs 你載的（每週，雙向）</h4>
+      <Head info={<p>每週、雙向。沒飛的市場用和模擬一樣的算法估：每天一班來回、平均時段、你的票價，未扣座位上限。</p>}>市場</Head>
+      <div className="legend-line"><span className="k" style={{ color: OWN }}>■</span> 你載的 <span className="k spill">■</span> 客滿 <span className="k est">■</span> 每天一班可拿 <span className="k rest">■</span> 其他</div>
       <ul className="pot-list">
         {pot.rows.slice(0, shown).map((m) => <PotentialRow key={m.to} m={m} max={Math.max(1, ...pot.rows.map(size))} onOpen={() => onOpen(m.to)} onOpenRoute={() => onOpenRoute(m.key)} />)}
       </ul>
       {pot.rows.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, pot.rows.length - shown)} 個（共 {pot.rows.length}）</button>}
-      <div className="hint"><span className="k" style={{ color: OWN }}>■</span> 你載的 <span className="k spill">■</span> 客滿沒搭到 <span className="k est">■</span> 每天一班約可拿 <span className="k rest">■</span> 其他航空、轉機。沒飛的市場用和模擬一樣的算法估計：每天一班來回、平均時段、你的票價，未扣座位上限。</div>
     </>
   );
 }
@@ -138,9 +138,9 @@ function PotentialHead({ pot }: { pot: AirportPotential }) {
   return (
     <div className="pot-head">
       <div className="pot-nums">
-        <div><b>{count(pot.total)}</b><small>人/週在這裡搭飛機往返</small></div>
-        <div><b className="acc">{count(pot.ours)}</b><small>搭你的直飛（{pct(share)}）</small></div>
-        {pot.transfer >= 1 && <div><b>{count(pot.transfer)}</b><small>在這裡轉你的航班</small></div>}
+        <div><b>{count(pot.total)}</b><small>人/週</small></div>
+        <div><b className="acc">{count(pot.ours)}</b><small>搭你直飛 {pct(share)}</small></div>
+        {pot.transfer >= 1 && <div><b>{count(pot.transfer)}</b><small>在這裡轉機</small></div>}
       </div>
       <div className="share-track"><div style={{ width: `${Math.min(100, share * 100)}%`, background: OWN }} /></div>
     </div>
@@ -154,7 +154,7 @@ function PotentialRow({ m, max, onOpen, onOpenRoute }: { m: MarketPotential; max
     <li className={m.flown ? 'flown' : ''}>
       <div className="vs-top" role={m.flown ? 'button' : undefined} onClick={m.flown ? onOpenRoute : undefined}>
         <span className="name"><b>{AIRPORT_BY_CODE[m.to].name} {m.to}</b>
-          <small>{count(m.distKm)} 公里 · {m.rivalFlights ? `對手 ${count(m.rivalFlights)} 班` : '沒有對手直飛'} · 市場 {count(m.total)} 人</small></span>
+          <small>{m.rivalFlights ? `對手 ${count(m.rivalFlights)} 班` : '沒有對手'} · {count(m.total)} 人</small></span>
         {m.flown
           ? <span className="rival-share">{count(m.ours)}<small>你載 {pct(m.total ? m.ours / m.total : 0)}</small></span>
           : m.seats > 0
@@ -168,8 +168,8 @@ function PotentialRow({ m, max, onOpen, onOpenRoute }: { m: MarketPotential; max
       </div>
       <small className="vs-who">
         {m.flown
-          ? (m.spill >= 1 ? `另有 ${count(m.spill)} 人想搭你但客滿` : '你在飛')
-          : m.seats > 0 ? `每天一班約可拿 ${count(m.estimate)} 人 · 每天一班可載 ${count(m.seats)}` : '跑道或航程不夠，沒有機型能飛'}
+          ? (m.spill >= 1 ? `${count(m.spill)} 人想搭但客滿` : '')
+          : m.seats > 0 ? `每天一班約 ${count(m.estimate)} 人` : '跑道或航程不夠'}
       </small>
     </li>
   );
