@@ -216,7 +216,7 @@ export default function App() {
       {toast && <div className="toast">{toast}</div>}
 
       {routeKey && routeExists && (
-        <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={result?.routes[routeKey]}
+        <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={result?.routes[routeKey]} net={result}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}

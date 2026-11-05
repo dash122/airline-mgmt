@@ -63,3 +63,28 @@ describe('route market share', () => {
     expect(r.localPax / r.pax).toBeGreaterThan(0.1);
   });
 });
+
+describe('direct and connecting travellers in one market', () => {
+  test('a market you only serve by connecting shows your connection next to the nonstop airlines, and adds up', () => {
+    const p = trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 1), 'TPE', 'NRT', 1);
+    const net = simulate(p);
+    const s = marketSplit('HKG', 'NRT', undefined, net);
+    const via = s.rows.find((r) => r.kind === 'ownVia');
+    expect(via?.via).toBe('TPE');
+    expect(via!.pax).toBeGreaterThan(0);
+    expect(s.rows.some((r) => r.kind === 'own')).toBe(false);
+    expect(s.rows.some((r) => r.kind === 'rival')).toBe(true);
+    expect(sum(s)).toBeCloseTo(s.total, 0);
+    // Nonstop airlines are listed before connections.
+    const kinds = s.rows.map((r) => r.kind);
+    expect(kinds.indexOf('ownVia')).toBeGreaterThan(kinds.lastIndexOf('rival'));
+  });
+  test('on a route you fly, the nonstop numbers match the route result', () => {
+    const p = trips(emptyPlan('TPE'), 'TPE', 'HKG', 2);
+    const net = simulate(p);
+    const s = marketSplit('TPE', 'HKG', net.routes['HKG-TPE'], net);
+    expect(s.rows.find((r) => r.kind === 'own')!.pax).toBeCloseTo(net.routes['HKG-TPE'].localPax, 0);
+    expect(s.total).toBeCloseTo(net.routes['HKG-TPE'].airTotal, 0);
+    expect(sum(s)).toBeCloseTo(s.total, 0);
+  });
+});

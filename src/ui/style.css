@@ -350,17 +350,10 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .group-head small.tz { font-weight: 400; }
 
 .links { list-style: none; margin: 0; padding: 0; }
-.link { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.link-top { display: flex; align-items: center; gap: 8px; }
-.link-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.link .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
-.link .split i { display: block; height: 100%; }
 .split .nonstop, .k.nonstop { background: var(--accent); color: var(--accent); }
 .split .via, .k.via { background: var(--good); color: var(--good); }
 .split .lost, .k.lost { background: var(--line); color: var(--muted); }
 .k { background: none !important; }
-.link small { color: var(--muted); font-size: 11px; }
-.link .why { color: var(--text); font-size: 12px; }
 /* Paired airport clocks share an aligned reading path in player and rival schedules. */
 .flight-times { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; }
 .flight-end { display: flex; flex-direction: column; gap: 4px; }
@@ -500,18 +493,6 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .hubteaser .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .hubteaser small { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .hubteaser .chev { font-size: 20px; color: var(--muted); }
-.vias { list-style: none; margin: 0; padding: 0; }
-.via { display: flex; flex-direction: column; gap: 6px; padding: 9px 0; border-bottom: 1px solid var(--line); }
-.via-top { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-.via-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.via-top small { color: var(--muted); font-size: 11px; }
-.via-top .num { font-weight: 700; white-space: nowrap; }
-.via-top .num small { font-weight: 400; margin-left: 1px; }
-.via-legs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.via-legs .leg { font-size: 11px; border-radius: 8px; padding: 3px 7px; border: 1px solid var(--line); white-space: nowrap; }
-.via-legs .leg.ok { color: var(--good); border-color: var(--good); }
-.via-legs .leg.miss { color: var(--sel); border-style: dashed; border-color: var(--sel); }
-.via-legs .chip { padding: 4px 10px; font-size: 12px; }
 .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 
 /* Tap-to-explain numbers */
@@ -675,6 +656,45 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .competition .dot { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 5px; vertical-align: 0; }
 .trip { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 12px; background: var(--line); }
 .empty-cta { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; font-size: 13px; color: var(--muted); text-align: center; }
+
+/* Transit markets (src/ui/transit.tsx) */
+.trs { list-style: none; margin: 0; padding: 0; }
+.tr, .fix { display: flex; flex-direction: column; gap: 5px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tr-top, .fix-top { display: flex; align-items: center; gap: 8px; }
+.tr-top .name, .fix-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tr small, .fix small { color: var(--muted); font-size: 11px; }
+.tr-num { display: flex; align-items: baseline; gap: 2px; font-weight: 700; font-size: 16px; white-space: nowrap; }
+.tr-num small { font-weight: 400; font-size: 11px; color: var(--muted); }
+.tr-num.idle { color: var(--muted); }
+.tr-num.good { color: var(--good); }
+.reach { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.reach i { display: block; height: 100%; }
+.reach .now, .k.now { background: var(--good); color: var(--good); }
+.reach .more, .k.more { background: color-mix(in srgb, var(--good) 30%, transparent); color: color-mix(in srgb, var(--good) 40%, transparent); }
+.k.now, .k.more { background: none; }
+.tr .tr-share, .fix .tr-share { color: var(--text); font-size: 12px; }
+.tr .tr-why { font-size: 12px; }
+.tr .tr-why.good { color: var(--good); }
+.tr .tr-why.warn { color: var(--warn); }
+.tr .tr-why.bad { color: var(--bad); }
+.tr .chips:empty, .fix .chips:empty { display: none; }
+.tr-sum { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 2px; }
+.tr-sum small { color: var(--muted); font-size: 12px; }
+.ideas .split .seats { background: none; border: 1px dashed var(--line); box-sizing: border-box; }
+.ideas .tr-num { font-size: 14px; }
+.tr-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.tr-card small { color: var(--muted); font-size: 11px; }
+.tr-card-nums { display: flex; justify-content: space-between; gap: 8px; }
+.tr-card-nums div { display: flex; flex-direction: column; }
+.tr-card-nums div:last-child { text-align: right; }
+.tr-card-nums b { font-size: 22px; color: var(--good); }
+.tr-card-nums b.more { color: color-mix(in srgb, var(--good) 55%, var(--text)); }
+.share-list li.group { display: block; padding: 8px 0 2px; border-bottom: 0; font-size: 11px; font-weight: 700; color: var(--muted); }
+.share-track .tr-seg, .share-list i.tr-seg { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.4) 0 3px, transparent 3px 6px) !important; }
+.dvt { display: flex; gap: 4px; font-size: 12px; margin-top: 6px; }
+.dvt > div { min-width: 0; border-top: 3px solid var(--text); padding-top: 3px; display: flex; gap: 4px; align-items: baseline; flex-wrap: wrap; }
+.dvt > div.t { border-top-style: dashed; }
+.dvt small { color: var(--muted); }
 /* Per-flight load factor */
 .flight-loads { margin-top: 10px; }
 .flight-loads-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

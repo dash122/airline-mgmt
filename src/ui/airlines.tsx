@@ -338,7 +338,7 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
           <h4>同航線：你和{net.airline.name}的市占</h4>
           <ul className="vs-list">
             {overlap.routes.map((r) => {
-              const split = marketSplit(r.a, r.b, result?.routes[r.key]);
+              const split = marketSplit(r.a, r.b, result?.routes[r.key], result);
               const own = split.rows.find((x) => x.kind === 'own');
               const them = split.rows.find((x) => x.airline?.id === net.airline.id);
               return (

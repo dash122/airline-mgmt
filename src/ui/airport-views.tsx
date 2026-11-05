@@ -52,7 +52,7 @@ export function AirportCompetition({ result, code, onOpenRoute, onOpen }: {
   }, [result, code]);
   const rows = useMemo(() => dests.slice(0, shown).map((to) => {
     const r = result?.routes[pairKey(code, to)];
-    return { to, flown: !!r, split: marketSplit(code, to, r) };
+    return { to, flown: !!r, split: marketSplit(code, to, r, result) };
   }), [dests, shown, result, code]);
   const ourFlights = Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).reduce((s, r) => s + r.flightsPerWeek / 2, 0);
   const rivalFlights = carriers.reduce((s, c) => s + c.flights, 0);
