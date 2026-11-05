@@ -19,8 +19,9 @@ const OWN_COLOR = 'var(--accent)';
 const OWN_VIA_COLOR = 'color-mix(in srgb, var(--accent) 55%, var(--panel, #fff))';
 const CONNECTING_COLOR = 'var(--muted)';
 const rowColor = (r: ShareRow) => (r.kind === 'own' ? OWN_COLOR : r.kind === 'ownVia' ? OWN_VIA_COLOR : r.kind === 'connecting' ? CONNECTING_COLOR : r.airline?.color ?? CONNECTING_COLOR);
-const rowName = (r: ShareRow) => (r.kind === 'own' ? '你的航空（直飛）' : r.kind === 'ownVia' ? `你的航空（經${r.via}轉機）` : r.kind === 'connecting' ? '其他航空轉機' : r.airline?.name ?? r.id);
-const isTransit = (r: ShareRow) => r.kind === 'ownVia' || r.kind === 'connecting';
+const rowName = (r: ShareRow) => (r.kind === 'own' ? '你的航空（直飛）' : r.kind === 'ownVia' ? `你的航空（經${r.via}轉機）`
+  : r.kind === 'connecting' ? '其他航空轉機' : r.kind === 'rivalVia' ? `${r.airline?.name ?? r.id}（經${r.via}轉機）` : r.airline?.name ?? r.id);
+const isTransit = (r: ShareRow) => r.kind === 'ownVia' || r.kind === 'rivalVia' || r.kind === 'connecting';
 
 /** One or two sentences on who carries the route's travellers. Never calls the player the biggest when it carries nobody. */
 export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: MarketSplit): string {
@@ -28,7 +29,11 @@ export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: Mark
   const rivals = rows.filter((r) => r.kind === 'rival');
   const via = rows.filter((r) => r.kind === 'ownVia');
   const viaText = via.length ? `你經${via.map((r) => r.via).join('、')}轉機載了 ${pct(via.reduce((s, r) => s + r.share, 0))}。` : '';
-  if (!own) return (rivals.length ? `你沒有直飛，${rivals.length} 家航空直飛分食這些旅客。` : '目前沒有航空直飛，旅客只能轉機。') + viaText;
+  // Competitors' connections: their share and the hub that carries the most.
+  const rivalVia = rows.filter((r) => r.kind === 'rivalVia');
+  const topVia = rivalVia[0];
+  const rivalViaText = topVia ? `對手經轉機載了 ${pct(rivalVia.reduce((s, r) => s + r.share, 0))}，最多經${topVia.via}（${topVia.airline?.name ?? topVia.id}）。` : '';
+  if (!own) return (rivals.length ? `你沒有直飛，${rivals.length} 家航空直飛分食這些旅客。` : '目前沒有航空直飛，旅客只能轉機。') + viaText + rivalViaText;
   const parts: string[] = [];
   const top = rivals.reduce<ShareRow | undefined>((x, r) => (!x || r.pax > x.pax ? r : x), undefined);
   if (own.pax < 1) parts.push('你的航班沒有載到這個市場的旅客。');
@@ -37,6 +42,7 @@ export function marketSummary({ total, rows, ownTurnedAway, ownFreqShare }: Mark
   else parts.push(`${rowName(top)}領先，占 ${pct(top.share)}；你占 ${pct(own.share)}。`);
   if (rivals.length && ownFreqShare > 0) parts.push(`你的班次占全部直飛的 ${pct(ownFreqShare)}。`);
   if (viaText) parts.push(viaText);
+  if (rivalViaText) parts.push(rivalViaText);
   if (ownTurnedAway >= 1) parts.push(`另有 ${pct(ownTurnedAway / total)}（${count(ownTurnedAway)} 人）想搭你但客滿。`);
   return parts.join('');
 }
@@ -86,7 +92,8 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
                 <span className="name">
                   {r.airline ? <b><AirlineName airline={r.airline} /></b> : <b>{rowName(r)}</b>}
                   <small>
-                    {r.kind === 'connecting' ? '在其他城市換機' : r.kind === 'ownVia' ? `${a} → ${r.via} → ${b}，在${r.via}換你的航班` : `每週 ${count(r.freq)} 班`}
+                    {r.kind === 'connecting' ? '在其他城市換機' : r.kind === 'ownVia' ? `${a} → ${r.via} → ${b}，在${r.via}換你的航班`
+                      : r.kind === 'rivalVia' ? `${a} → ${r.via} → ${b}，在${r.via}轉機 · 每週約 ${count(r.freq)} 班` : `每週 ${count(r.freq)} 班`}
                     {r.fare ? ` · NT$${count(r.fare)}` : ''}
                     {r.airports.length ? <> · 飛 {r.airports.map((k, j) => <span key={k} className="nowrap">{j ? '、' : ''}{k.replace('-', '–')}</span>)}</> : ''}
                   </small>

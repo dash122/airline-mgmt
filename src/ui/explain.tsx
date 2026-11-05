@@ -100,7 +100,8 @@ export function explainRoute(key: ExplainKey, r: RouteResult, split: MarketSplit
           { label: '你的班次 / 全部直飛', value: `${count(r.flightsPerWeek)} / ${count(r.flightsPerWeek + rivalFlights)} 班` },
           ...(rivalFare ? [{ label: '你的票價 / 對手平均', value: `NT$${count(r.fare)} / NT$${count(rivalFare)}` }] : []),
           ...top.map((x) => ({ label: x.airline?.name ?? x.id, value: `${pct(x.share)} · ${count(x.pax)} 人` })),
-          ...(split.rows.some((x) => x.kind === 'connecting') ? [{ label: '轉機（其他航空）', value: count(split.rows.find((x) => x.kind === 'connecting')!.pax) }] : []),
+          ...(split.rows.some((x) => x.kind === 'connecting' || x.kind === 'rivalVia')
+            ? [{ label: '轉機（其他航空）', value: count(split.rows.filter((x) => x.kind === 'connecting' || x.kind === 'rivalVia').reduce((s, x) => s + x.pax, 0)) }] : []),
           { label: '你', value: `${count(own?.pax ?? 0)} ÷ ${count(r.airTotal)} = ${pct(r.marketShare)}`, total: true },
         ],
         tip: rivals.length ? '想多拿市占：加班次、排在早上或傍晚的熱門時段，或降一點票價。對手不會因為你而改變。' : undefined,

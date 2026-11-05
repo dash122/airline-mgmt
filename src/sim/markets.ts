@@ -3,7 +3,7 @@
 // Deterministic: same data in, same markets out.
 import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { hasCompetitorRoute } from '../data/competitor-network';
-import { ANNUAL_TRAFFIC_M } from '../data/airport-traffic';
+import { ANNUAL_TRAFFIC_M, COUNTRY_INTERNATIONAL_SHARE, INTERNATIONAL_M, transferShare } from '../data/airport-traffic';
 import { AIR_TARGETS_M, DISTANCE_EXPONENT, GROUND, ISLAND_PROPENSITY, MASS_EXPONENT, TRAVEL_PROPENSITY } from '../data/calibration';
 import { distanceKm } from './geo';
 import { classRank, type AircraftClass } from '../data/aircraft';
@@ -71,19 +71,31 @@ const MAX_PAX_BY_CLASS: Record<AircraftClass, number> = { turboprop: 60, regiona
  */
 export function rivalPaxPerFlight(weeklyAir: number, distKm: number, maxPax = MAX_PAX_BY_CLASS.widebody): number {
   const gauge = 110 * Math.pow(Math.max(weeklyAir, 1) / 1000, 0.25);
-  const floor = distKm > 4500 ? 230 : 50;
+  const floor = distKm > 4500 ? 260 : 50;
   return Math.min(maxPax, Math.max(floor, gauge));
 }
 /**
- * Long-haul flights from a hub also carry travellers connecting there (most of Hong Kong-London's seats, for one),
- * which this origin-destination model doesn't count, so they fly this much more often per hub end.
+ * A hub's flights also carry travellers changing planes there (close to half of Hong Kong-London's seats), whom this
+ * origin-destination model doesn't count as the city's own trips. Transfers gather on long-haul flights, which feed
+ * a hub's short-haul network, so a long-haul flight's share of transfers is this many times the airports' shares.
  */
-export const LONG_HAUL_HUB_UPLIFT = 0.4;
+export const LONG_HAUL_TRANSFER_WEIGHT = 0.8;
+const SHORT_HAUL_TRANSFER_WEIGHT = 0.5;
+/** Most of one flight's seats that go to travellers changing planes at either end. */
+const MAX_TRANSFER_SEAT_SHARE = 0.7;
+/**
+ * How much more often competitors fly a route than its own travellers need, for the transfers at both ends: Hong
+ * Kong-London about 1.8 times, Dubai-London 2.6.
+ */
+export function transferUplift(a: string, b: string, distKm: number): number {
+  const w = distKm > LONG_HAUL_KM ? LONG_HAUL_TRANSFER_WEIGHT : SHORT_HAUL_TRANSFER_WEIGHT;
+  return 1 / (1 - Math.min(MAX_TRANSFER_SEAT_SHARE, (transferShare(a) + transferShare(b)) * w));
+}
 
-/** What shapes competitor service between two airports: the biggest aircraft both take, and hub connecting traffic. */
+/** What shapes competitor service between two airports: the biggest aircraft both take, and transfers at the ends. */
 const serviceBetween = (a: Airport, b: Airport, distKm: number) => ({
   maxPax: MAX_PAX_BY_CLASS[classRank(a.maxClass) < classRank(b.maxClass) ? a.maxClass : b.maxClass],
-  uplift: distKm > LONG_HAUL_KM ? 1 + LONG_HAUL_HUB_UPLIFT * [a, b].filter(x => x.size === 'hub').length : 1,
+  uplift: transferUplift(a.code, b.code, distKm),
 });
 
 /** Average one-way fare across all cabins and booking classes, NT$. */
@@ -191,18 +203,46 @@ const NO_DATA_TRAFFIC_M = 0.6;
 /** Annual passengers (millions) from which an airport draws its full share of long-haul travel; below it, in proportion. */
 const LONG_HAUL_HUB_M = 60;
 const LONG_HAUL_SIZE_EXPONENT = 1;
+/**
+ * Long-haul travel between big cities beyond what distance alone predicts: migration, business and holiday ties
+ * between global cities (Hong Kong and London, London and New York). Without it long-haul was 12% of Hong Kong's own
+ * international travellers and Hong Kong-London a third of its real size.
+ */
+const LONG_HAUL_TIES = 1.6;
+
+const isInternational = (m: Market) => AIRPORT_BY_CODE[m.a].country !== AIRPORT_BY_CODE[m.b].country;
+/**
+ * Airports with an international traffic figure fit their domestic and international markets separately (`code|d`,
+ * `code|i`); the others fit all their markets together (`code`). Shenzhen and Guangzhou carry more passengers than
+ * Hong Kong, but almost all of them domestic: fitted together, their international markets came out six times too big.
+ */
+const fitKey = (code: string, intl: boolean) => (internationalM(code) !== undefined ? `${code}|${intl ? 'i' : 'd'}` : code);
+/** International annual passengers at an airport, millions: its own figure, else its country's usual share. */
+export function internationalM(code: string): number | undefined {
+  const traffic = ANNUAL_TRAFFIC_M[code];
+  if (code in INTERNATIONAL_M) return traffic === undefined ? INTERNATIONAL_M[code] : Math.min(traffic, INTERNATIONAL_M[code]);
+  const share = COUNTRY_INTERNATIONAL_SHARE[AIRPORT_BY_CODE[code]?.country];
+  return traffic !== undefined && share !== undefined ? traffic * share : undefined;
+}
+/** Each fit key's target: the airport's own travellers (annual passengers less transfers), millions. */
+const fitTargets: [string, number][] = Object.entries(ANNUAL_TRAFFIC_M).filter(([code]) => AIRPORT_BY_CODE[code]).flatMap(([code, total]): [string, number][] => {
+  const own = 1 - transferShare(code);
+  const intl = internationalM(code);
+  return intl === undefined ? [[code, total * own]] : [[`${code}|i`, intl * own], [`${code}|d`, Math.max(0, total - intl) * own]];
+});
 
 function buildMarkets(): Map<string, Market> {
   // Outside the calibrated home region an airport's size comes from its real traffic, which already counts how much
   // its people and visitors fly, so the island uplift only applies to population-based sizes. Counting it twice made
   // holiday islands such as Mallorca look like London to travellers from Asia.
+  // Travellers changing planes are left out: Doha's 53 million passengers are mostly passing through, not Qatar's own.
   // An airport with no traffic figure is a small one (under about a million passengers a year), so it is sized like
   // one: by its people it drew as much as a 6-million-passenger airport, and tiny airports in Madagascar or Cambodia
   // topped Tokyo's transit markets.
   const sizes = AIRPORTS.map((a) => {
     const curated = ['JP', 'TW', 'HK', 'MO'].includes(a.country);
     const size = curated ? a.catchment * (isIsland(a) ? ISLAND_PROPENSITY : 1)
-      : ((ANNUAL_TRAFFIC_M[a.code] ?? Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6)) * 1e6) / 3;
+      : ((ANNUAL_TRAFFIC_M[a.code] ?? Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6)) * (1 - transferShare(a.code)) * 1e6) / 3;
     return size * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism;
   });
   const mass = sizes.map((x) => Math.pow(x, MASS_EXPONENT));
@@ -221,7 +261,9 @@ function buildMarkets(): Map<string, Market> {
   // small long-haul share next to Heathrow or Frankfurt, so long-haul draw grows faster than traffic below a hub.
   // A holiday airport's traffic is mostly short-haul visitors (Mallorca's from Germany and the UK), so it keeps the
   // same small share of long-haul draw as of long-haul slots.
-  const longShare = (a: Airport) => Math.min(1, (ANNUAL_TRAFFIC_M[a.code] ?? NO_DATA_TRAFFIC_M) / LONG_HAUL_HUB_M) ** LONG_HAUL_SIZE_EXPONENT
+  // Long-haul flights are international, so the draw follows international traffic where the airport has a figure:
+  // Guangzhou's 76 million passengers are mostly domestic, and it has a quarter of Hong Kong's long-haul reach.
+  const longShare = (a: Airport) => Math.min(1, (internationalM(a.code) ?? ANNUAL_TRAFFIC_M[a.code] ?? NO_DATA_TRAFFIC_M) / LONG_HAUL_HUB_M) ** LONG_HAUL_SIZE_EXPONENT
     * (isLeisureAirport(a) ? LEISURE_LONG_HAUL_SHARE : 1);
   const longMass = AIRPORTS.map((a, i) => {
     const total = metroReach.get(a.metro)!;
@@ -236,7 +278,7 @@ function buildMarkets(): Map<string, Market> {
       const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
       if (distKm < MIN_MARKET_KM) continue;
       const [mi, mj] = distKm > LONG_HAUL_KM ? [longMass[i], longMass[j]] : [mass[i], mass[j]];
-      const gravity = (mi * mj) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
+      const gravity = (distKm > LONG_HAUL_KM ? LONG_HAUL_TIES : 1) * (mi * mj) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
       raw.push({ i, j, distKm, gravity, group: groupOf(a, b), ground: groundOption(a, b, distKm) });
     }
   }
@@ -260,9 +302,38 @@ function buildMarkets(): Map<string, Market> {
 
   // Uncalibrated global markets inherit the regional reference gravity scale.
   for (const g of Object.keys(scale)) if (!(g in AIR_TARGETS_M)) scale[g] = scale['JP-TW'];
+  // A first, rough fit of every airport to its traffic, before choosing which markets have nonstop service. Raw
+  // gravity undersizes thinly peopled regions (Australia, South America, Southern Africa) and oversizes crowded ones,
+  // so without it few of Johannesburg's markets were big enough for a regular flight, and all of its traffic was then
+  // fitted onto those few (Johannesburg-Hong Kong as busy as Hong Kong-Bangkok). Every market counts here with a
+  // rough air share, served or not.
+  const pre = new Map<string, number>();
+  const keyOf = raw.map((r) => {
+    const intl = AIRPORTS[r.i].country !== AIRPORTS[r.j].country;
+    return [fitKey(AIRPORTS[r.i].code, intl), fitKey(AIRPORTS[r.j].code, intl)] as const;
+  });
+  const flyable = raw.map((r) => !(r.group in AIR_TARGETS_M) && hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
+    && !(r.ground && r.ground.comfort > 0 && r.ground.hours <= RAIL_ONLY_HOURS));
+  for (let iter = 0; iter < 12; iter++) {
+    const sums = new Map<string, number>();
+    raw.forEach((r, n) => {
+      if (!flyable[n]) return;
+      const [ka, kb] = keyOf[n];
+      const air = r.gravity * scale[r.group] * Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)) * PRE_FIT_AIR_SHARE * 104;
+      sums.set(ka, (sums.get(ka) ?? 0) + air);
+      sums.set(kb, (sums.get(kb) ?? 0) + air);
+    });
+    for (const [k, millions] of fitTargets) {
+      const now = sums.get(k);
+      if (!now) continue;
+      const f = (pre.get(k) ?? 1) * Math.sqrt((millions * 1e6) / now);
+      pre.set(k, Math.min((ANNUAL_TRAFFIC_M[k.split('|')[0]] ?? 0) >= PRE_FIT_BIG_M ? PRE_FIT_MAX : PRE_FIT_MAX_SMALL, Math.max(PRE_FIT_MIN, f)));
+    }
+  }
   const out = new Map<string, Market>();
-  for (const r of raw) {
-    const potential = r.gravity * scale[r.group];
+  raw.forEach((r, n) => {
+    const [ka, kb] = keyOf[n];
+    const potential = r.gravity * scale[r.group] * (r.group in AIR_TARGETS_M ? 1 : Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)));
     const fare = refFare(r.distKm);
     const b = hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
       ? baseline(potential, fare, r.distKm, r.ground, serviceBetween(AIRPORTS[r.i], AIRPORTS[r.j], r.distKm))
@@ -278,7 +349,7 @@ function buildMarkets(): Map<string, Market> {
       rivalFreq: b.freq,
       ground: r.ground,
     });
-  }
+  });
   // Simulated destination budgets keep potential demand separate from nonstop service.
   // Long-haul routes (over LONG_HAUL_KM) have their own budget. They carry fewer travellers than a hub's short-haul
   // routes, so in one shared budget the short-haul ones took every slot.
@@ -317,16 +388,22 @@ function buildMarkets(): Map<string, Market> {
     const fixed: Record<string, number> = {};
     for (const m of retained) for (const code of [m.a, m.b]) {
       const bucket = m.group in AIR_TARGETS_M ? fixed : totals;
-      bucket[code] = (bucket[code] ?? 0) + m.airDemand * 104;
+      const k = fitKey(code, isInternational(m));
+      bucket[k] = (bucket[k] ?? 0) + m.airDemand * 104;
     }
     const factors: Record<string, number> = {};
-    for (const [code, millions] of Object.entries(ANNUAL_TRAFFIC_M)) {
-      factors[code] = Math.max(0.1, (millions * 1e6 - (fixed[code] ?? 0)) / Math.max(1, totals[code] ?? 0));
-      fit[code] = (fit[code] ?? 1) * factors[code];
+    for (const [k, millions] of fitTargets) {
+      const want = Math.max(0.1, (millions * 1e6 - (fixed[k] ?? 0)) / Math.max(1, totals[k] ?? 0));
+      // Never more than MAX_FIT_UP above raw gravity overall: an airport whose other markets went to bigger airports
+      // would otherwise pile all its traffic onto the few routes it kept (Zagreb's 3 million all on Frankfurt).
+      const cap = (ANNUAL_TRAFFIC_M[k.split('|')[0]] ?? 0) >= PRE_FIT_BIG_M ? MAX_FIT_UP : MAX_FIT_UP_SMALL;
+      factors[k] = Math.min(want, cap / (fit[k] ?? 1));
+      fit[k] = (fit[k] ?? 1) * factors[k];
     }
     for (const m of retained) {
       if (m.group in AIR_TARGETS_M) continue;
-      m.potential *= Math.pow((factors[m.a] ?? 1) * (factors[m.b] ?? 1), 0.35);
+      const intl = isInternational(m);
+      m.potential *= Math.pow((factors[fitKey(m.a, intl)] ?? 1) * (factors[fitKey(m.b, intl)] ?? 1), 0.35);
       const b = baseline(m.potential, m.refFare, m.distKm, m.ground, serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
@@ -350,22 +427,44 @@ function buildMarkets(): Map<string, Market> {
   const shrink: Record<string, number> = {};
   for (const m of retained) {
     if (m.group in AIR_TARGETS_M) continue;
-    for (const c of [m.a, m.b]) shrink[c] = Math.min(1, Math.max(MIN_UNSERVED_FIT, fit[c] ?? 1));
+    const intl = isInternational(m);
+    for (const c of [m.a, m.b]) { const k = fitKey(c, intl); shrink[k] = Math.min(1, Math.max(MIN_UNSERVED_FIT, fit[k] ?? 1)); }
   }
   // An airport with no fitted market of its own (Osaka Itami flies no international routes) follows the other
   // airports of its city, so its unserved markets don't outgrow the served ones next door.
   const byMetro = new Map<string, number>();
-  for (const [c, f] of Object.entries(shrink)) {
-    const k = AIRPORT_BY_CODE[c].metro;
-    byMetro.set(k, Math.min(byMetro.get(k) ?? 1, f));
+  for (const [k, f] of Object.entries(shrink)) {
+    const [c, side] = k.split('|');
+    const mk = `${AIRPORT_BY_CODE[c].metro}|${side ?? ''}`;
+    byMetro.set(mk, Math.min(byMetro.get(mk) ?? 1, f));
   }
-  for (const a of AIRPORTS) if (!(a.code in shrink) && byMetro.has(a.metro)) shrink[a.code] = byMetro.get(a.metro)!;
+  const shrinkOf = (c: string, intl: boolean) => {
+    const k = fitKey(c, intl);
+    if (k in shrink) return shrink[k];
+    const side = k.split('|')[1];
+    return byMetro.get(`${AIRPORT_BY_CODE[c].metro}|${side ?? ''}`) ?? byMetro.get(`${AIRPORT_BY_CODE[c].metro}|`) ?? 1;
+  };
   for (const m of out.values()) {
     if (m.rivalFreq > 0 || m.group in AIR_TARGETS_M) continue;
-    m.potential *= Math.pow((shrink[m.a] ?? 1) * (shrink[m.b] ?? 1), 0.35);
+    const intl = isInternational(m);
+    // The first fit only ever scales unserved markets down too, as above.
+    const up = Math.sqrt((pre.get(fitKey(m.a, intl)) ?? 1) * (pre.get(fitKey(m.b, intl)) ?? 1));
+    m.potential *= Math.pow(shrinkOf(m.a, intl) * shrinkOf(m.b, intl), 0.35) / Math.max(1, up);
   }
   return out;
 }
+/** Rough share of a market's potential travellers who fly, for the first fit. */
+const PRE_FIT_AIR_SHARE = 0.5;
+/** Limits on the first fit of an airport's markets to its traffic. */
+const PRE_FIT_MIN = 0.02, PRE_FIT_MAX = 30;
+/**
+ * Below this many annual passengers (millions) an airport's markets are scaled up at most PRE_FIT_MAX_SMALL times: a
+ * small airport's traffic sits on a few routes to its country's hubs, which says little about its other markets
+ * (Sihanoukville to Seoul).
+ */
+const PRE_FIT_BIG_M = 10, PRE_FIT_MAX_SMALL = 5;
+/** Most an airport's markets are scaled up, in all, to match its traffic. */
+const MAX_FIT_UP = 4, MAX_FIT_UP_SMALL = 2;
 /** Lowest airport fit factor carried over to its unserved markets. */
 const MIN_UNSERVED_FIT = 0.01;
 
@@ -391,10 +490,15 @@ export function marketBetween(a: string, b: string): Market | undefined {
   return markets().get(pairKey(a, b));
 }
 
-/** Modelled annual air passengers at an airport today (both directions). */
-export function modelledAnnualPax(code: string): number {
+/** Modelled annual travellers starting or ending their trip at an airport today (both directions). */
+export function modelledLocalPax(code: string): number {
   markets();
   return annualPax.get(code) ?? 0;
+}
+
+/** Modelled annual terminal passengers at an airport today: its own travellers plus those changing planes there. */
+export function modelledAnnualPax(code: string): number {
+  return modelledLocalPax(code) / (1 - transferShare(code));
 }
 
 /** Markets touching an airport, indexed once when the demand model is built. */
