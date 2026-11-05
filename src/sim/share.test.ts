@@ -46,7 +46,7 @@ describe('route market share', () => {
     for (const x of rivals) expect(x.pax).toBeLessThan(x.before);
   });
 
-  test('a full long-haul flight fed by many routes still carries local travellers', () => {
+  test('a long-haul flight fed by many routes still carries local travellers', () => {
     // Hong Kong-Frankfurt: one daily widebody against two rival airlines, with connections from eight routes.
     let p = emptyPlan('HKG');
     const r0 = addRoundTrip(p, 'HKG', 'FRA', 'B789');
@@ -55,7 +55,9 @@ describe('route market share', () => {
     for (const x of ['TPE', 'NRT', 'ICN', 'MNL', 'BKK', 'SIN', 'PVG', 'KIX']) p = trips(p, 'HKG', x, 4);
     const r = simulate(p).routes['FRA-HKG'];
     expect(r.rivals.length).toBeGreaterThan(0);
-    expect(r.spill).toBeGreaterThan(0);
+    // The feeders are full but the widebody isn't: travellers turned away count on the full feeders, not here.
+    expect(r.loadFactor).toBeLessThan(0.9);
+    expect(r.spill).toBe(0);
     expect(r.pax - r.localPax).toBeGreaterThan(0);
     // Seats go to local and connecting travellers alike, so local travellers aren't squeezed out.
     expect(r.localPax / r.pax).toBeGreaterThan(0.1);

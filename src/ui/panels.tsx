@@ -13,6 +13,7 @@ import {
 } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { arrival, at, DayBar, dayStart, legSegments, routeColor, routeName, Sheet, tone, UtilBar } from './sheets';
+import { loadLine, LoadPill } from './FlightLoads';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = (min: number) => `${Math.floor(min / 60)} 小時${min % 60 ? ` ${min % 60} 分` : ''}`;
@@ -91,7 +92,7 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
         ))}
       </div>
       {view !== 'aircraft' && (
-        <ScheduleLists plan={plan} view={view} mode={mode} basis={basis} airport={airport}
+        <ScheduleLists plan={plan} result={result} view={view} mode={mode} basis={basis} airport={airport}
           onMode={setMode} onBasis={setBasis} onAirport={setAirport} onPickLeg={onPickLeg} />
       )}
       {plan.fleet.length === 0 && <div className="hint center">還沒有飛機。在地圖上拖曳開航，或到「機隊」租飛機。</div>}
@@ -128,8 +129,8 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
   );
 }
 
-function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAirport, onPickLeg }: {
-  plan: Plan; view: SchedView; mode: 'dep' | 'arr'; basis: ClockBasis; airport: string | null;
+function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBasis, onAirport, onPickLeg }: {
+  plan: Plan; result: NetworkResult | null; view: SchedView; mode: 'dep' | 'arr'; basis: ClockBasis; airport: string | null;
   onMode: (m: 'dep' | 'arr') => void; onBasis: (b: ClockBasis) => void; onAirport: (a: string | null) => void; onPickLeg: (acId: string, leg: number) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -138,6 +139,7 @@ function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAi
     const mark = dayMark(r.shift);
     const zone = basis === 'local' && r.zone !== 0 ? ` · 時差 ${r.zone > 0 ? '+' : ''}${r.zone} 小時` : '';
     const flying = `飛行 ${dur(r.durMin)}`;
+    const fr = result?.byFlight[`${r.ac.id}#${r.index}`];
     return (
       <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
         <span className="t">{hhmm(r.time)}{mode === 'arr' && mark && <sup className="daymark" title="出發在前一天">{mark}</sup>}</span>
@@ -148,8 +150,10 @@ function ScheduleLists({ plan, view, mode, basis, airport, onMode, onBasis, onAi
               ? <>抵達 {hhmm(r.other)}{mark && <sup className="daymark" title={r.shift > 0 ? '隔天抵達' : '前一天抵達'}>{mark}</sup>}</>
               : <>{hhmm(r.other)} 出發{r.shift > 0 ? '（前一天）' : r.shift < 0 ? '（後一天）' : ''}</>}
             {` · ${flying}${zone} · ${r.ac.reg} · ${AIRCRAFT[r.ac.type].name}`}
+            {fr && <><br />{loadLine(fr)}</>}
           </small>
         </span>
+        {fr && <LoadPill f={fr} />}
         <span className="chev">調整 ›</span>
       </li>
     );
@@ -296,8 +300,8 @@ const windowText = (code: string, lo: number, hi: number) =>
 
 // ---------- Edit one flight ----------
 
-export function FlightEditor({ plan, acId, leg, onChange, onMove, onClose }: {
-  plan: Plan; acId: string; leg: number; onChange: (plan: Plan, msg?: string) => void; onMove: (acId: string, unit: Unit) => void; onClose: () => void;
+export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClose }: {
+  plan: Plan; result?: NetworkResult | null; acId: string; leg: number; onChange: (plan: Plan, msg?: string) => void; onMove: (acId: string, unit: Unit) => void; onClose: () => void;
 }) {
   const ac = plan.fleet.find((x) => x.id === acId);
   if (!ac || !ac.legs[leg]) return null;
@@ -312,7 +316,9 @@ export function FlightEditor({ plan, acId, leg, onChange, onMove, onClose }: {
         {Array.from({ length: u.count }, (_, k) => u.start + k).map((i) => (
           <li key={i}>
             <span className="t">{at(ac.legs[i].from, ac.legs[i].dep)}</span>
-            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small>抵達 {at(ac.legs[i].to, arrival(ac, i))}（當地時間）</small></span>
+            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small>抵達 {at(ac.legs[i].to, arrival(ac, i))}（當地時間）</small>
+              {result?.byFlight[`${ac.id}#${i}`] && <small>{loadLine(result.byFlight[`${ac.id}#${i}`])}</small>}</span>
+            {result?.byFlight[`${ac.id}#${i}`] && <LoadPill f={result.byFlight[`${ac.id}#${i}`]} />}
           </li>
         ))}
       </ul>
