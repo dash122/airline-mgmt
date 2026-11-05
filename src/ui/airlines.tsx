@@ -10,7 +10,7 @@ import { hhmm, routePairs, type NetworkResult, type Plan } from '../sim/simulate
 import { nameAreaOf } from '../sim/competitors';
 import { CompactTimetable } from './CompactTimetable';
 import { count, pct, short } from './format';
-import { Sheet } from './sheets';
+import { Head, Sheet, shortType } from './sheets';
 
 /** Opens an airline's profile from anywhere an airline name is shown. */
 export const AirlineLink = createContext<((id: string) => void) | null>(null);
@@ -25,7 +25,6 @@ export function Tail({ net, size = 34 }: { net: AirlineNetwork; size?: number })
 }
 
 const hubCodes = (net: AirlineNetwork) => net.hubs.map((h) => h.code).join('・');
-const hubWord = (net: AirlineNetwork) => (net.pointToPoint ? '主要機場' : '樞紐');
 
 // ---------- Directory ----------
 
@@ -69,7 +68,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
           <button key={k} className={`chip${kind === k ? ' strong' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}>{k === 'any' ? '全部類型' : KIND_NAMES[k]}</button>
         ))}
       </div>
-      {filter === 'mine' && !query && !flown && mine.length > 0 && <div className="hint">你還沒開航，這些是在你的基地 {plan.base} 飛的航空。</div>}
+      {filter === 'mine' && !query && !flown && mine.length > 0 && <div className="hint">在你的基地 {plan.base} 飛的航空</div>}
       {groups.map((g) => (
         <section key={g.area ?? 'list'}>
           {g.area && <h4>{AREA_NAMES[g.area]} <small>{g.rows.length} 家</small></h4>}
@@ -80,12 +79,11 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
                   <Tail net={net} />
                   <span className="name">
                     <b>{net.airline.name}<em>{KIND_NAMES[net.airline.kind]}</em></b>
-                    <small>{countryName(net.airline.country)} · {hubWord(net)} {hubCodes(net)}</small>
-                    <small>{count(net.airports.length)} 個航點 · {count(net.routes.length)} 條航線 · {short(net.flights)} 班/週</small>
+                    <small>{countryName(net.airline.country)} · {hubCodes(net)} · {short(net.flights)} 班/週</small>
                   </span>
                   {routes.length > 0
-                    ? <span className="pill warn">{routes.length} 條同航線</span>
-                    : airports.length > 0 ? <span className="pill">{airports.length} 個同機場</span> : null}
+                    ? <span className="pill warn" title="和你飛同一條航線">{routes.length} 條同線</span>
+                    : airports.length > 0 ? <span className="pill" title="和你在同一個機場">{airports.length} 個同機場</span> : null}
                   <span className="chev">›</span>
                 </button>
               </li>
@@ -93,7 +91,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
           </ul>
         </section>
       ))}
-      {!list.length && <div className="hint center">{query ? '找不到符合的航空公司。' : '還沒有和你重疊的航空。'}</div>}
+      {!list.length && <div className="hint center">{query ? '找不到' : '還沒有和你重疊的航空'}</div>}
     </Sheet>
   );
 }
@@ -128,17 +126,17 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
   ];
   return (
     <Sheet title={a.name} onClose={onClose}
-      sub={`${countryName(a.country)} · ${KIND_NAMES[a.kind]}航空 · ${net.pointToPoint ? '最大機場' : '主樞紐'} ${name(main.code)} ${main.code} · 飛 ${count(net.countries.length)} 個國家`}
+      sub={`${countryName(a.country)} · ${KIND_NAMES[a.kind]} · 飛 ${count(net.countries.length)} 國`}
+      info={<p>{blurb(net)} {net.pointToPoint ? '最大機場' : '主樞紐'}：{name(main.code)} {main.code}。對手的班表和票價固定，不會因為你而改變。</p>}
       action={back && <button className="back" onClick={back.go} aria-label={`返回${back.label}`}>‹ {back.label}</button>}>
       <div className="al-head">
         <Tail net={net} size={44} />
         <div className="grow">
           <div className="al-facts">
             <span><b>{short(net.flights)}</b><small>班/週</small></span>
-            <span><b>{short(net.seats / 2)}</b><small>座位/週（單向）</small></span>
-            <span><b>{count(net.longestKm)}</b><small>最長航線 公里</small></span>
+            <span><b>{short(net.seats / 2)}</b><small>座位/週</small></span>
+            <span><b>{count(net.longestKm)}</b><small>最遠 公里</small></span>
           </div>
-          <small className="al-blurb">{blurb(net)}</small>
         </div>
       </div>
       <div className="ap-tiles" role="tablist">
@@ -201,7 +199,6 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
       </ul>
       {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, list.length - shown)} 條（共 {list.length}）</button>}
       {!list.length && <div className="hint center">沒有符合的航線。</div>}
-      <div className="hint">班次是每週單向。點一條航線，地圖會標出它，並列出兩個方向的時刻。對手的班表和票價固定，不會因為你而改變。</div>
     </>
   );
 }
@@ -217,7 +214,7 @@ function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, 
       <button className="al-route-top" onClick={onToggle} aria-expanded={open}>
         <span className="name">
           <b>{r.a} ⇄ {name(r.b)} {r.b}</b>
-          <small>{count(r.distKm)} 公里 · {AIRCRAFT[r.type].name} · NT${count(r.fare)}{r.distKm > LONG_HAUL_KM ? ' · 長程' : ''}</small>
+          <small>{count(r.distKm)} 公里 · {shortType(r.type)} · NT${count(r.fare)}{r.distKm > LONG_HAUL_KM ? ' · 長程' : ''}</small>
         </span>
         {flown && <span className="pill warn">你也飛</span>}
         <span className="rival-share">{count(r.freq)}<small>班/週</small></span>
@@ -270,12 +267,11 @@ function Hubs({ net, onPickAirport, onShowRoutes }: { net: AirlineNetwork; onPic
           );
         })}
       </ul>
-      {others > 0 && <div className="hint">另外飛 {count(others)} 個機場{net.pointToPoint ? '，大多點對點，不經過固定的樞紐' : '，從樞紐飛過去，或點對點（不經樞紐）'}。{net.pointToPoint ? '這幾個機場' : '樞紐'}共占 {pct(hubFlights / net.flights)} 的出發班次。 <button className="link-btn" onClick={onShowRoutes}>看全部航線 ›</button></div>}
+      {others > 0 && <div className="hint">另飛 {count(others)} 個機場 · {net.pointToPoint ? '這幾個' : '樞紐'}占 {pct(hubFlights / net.flights)} 班次 <button className="link-btn" onClick={onShowRoutes}>全部航線 ›</button></div>}
       <h4>飛到的國家</h4>
       <div className="chips">
         {countryCounts(net).map(([c, n]) => <span key={c} className="chip">{countryName(c)} <small>{n}</small></span>)}
       </div>
-      <div className="hint">樞紐是它出發班次占一成以上的機場（它的基地占半成以上就算），地圖上用它的顏色圈起來。沒有這樣的機場時，列出它最忙的三個機場。</div>
     </>
   );
 }
@@ -293,7 +289,7 @@ function Fleet({ net }: { net: AirlineNetwork }) {
   const maxA = Math.max(1, ...net.fleet.map((f) => f.aircraft));
   return (
     <>
-      <h4>機隊（估計）</h4>
+      <Head info={<p>架數由班表推算：每架每天飛行加過站約 15 小時。</p>}>機隊（估計）</Head>
       <ul className="fleet-lines">
         {net.fleet.map((f) => (
           <li key={f.type}>
@@ -303,7 +299,6 @@ function Fleet({ net }: { net: AirlineNetwork }) {
           </li>
         ))}
       </ul>
-      <div className="hint">架數由它的班表推算：每架每天飛行加過站約 15 小時。</div>
       <h4>出發時刻表 <small>當地時間</small></h4>
       {net.hubs.length > 1 && (
         <div className="chips">
@@ -314,7 +309,7 @@ function Fleet({ net }: { net: AirlineNetwork }) {
         {deps.slice(0, shown).map((d, i) => (
           <li key={`${d.to}${i}`}>
             <time>{hhmm(d.time)}</time>
-            <span className="name"><b>{name(d.to)} {d.to}</b><small>{AIRCRAFT[d.type].name}</small></span>
+            <span className="name"><b>{name(d.to)} {d.to}</b><small>{shortType(d.type)}</small></span>
             <span className="dep-days">{d.freq >= 7 ? '每天' : `每週 ${d.freq} 班`}</span>
           </li>
         ))}
@@ -335,7 +330,7 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
     <>
       {overlap.routes.length > 0 ? (
         <>
-          <h4>同航線：你和{net.airline.name}的市占</h4>
+          <Head info={<p>班次為每週雙向。市占看班次、時段、票價和服務。{net.airline.kind === 'low' ? '廉價航空票價低，但服務評價也低。' : net.airline.kind === 'full' ? '全服務航空票價高一些，服務評價較好。' : ''}</p>}>同航線市占</Head>
           <ul className="vs-list">
             {overlap.routes.map((r) => {
               const split = marketSplit(r.a, r.b, result?.routes[r.key], result);
@@ -344,7 +339,7 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
               return (
                 <li key={r.key} className="flown">
                   <div className="vs-top" role="button" onClick={() => onOpenRoute(r.key)}>
-                    <span className="name"><b>{r.a} ⇄ {r.b}</b><small>你 {count(own?.freq ?? 0)} 班 · 它 {count(them?.freq ?? 0)} 班（每週雙向）· {count(split.total)} 人</small></span>
+                    <span className="name"><b>{r.a} ⇄ {r.b}</b><small>你 {count(own?.freq ?? 0)} 班 · 它 {count(them?.freq ?? 0)} 班 · {count(split.total)} 人</small></span>
                     <span className="rival-share">{pct(own?.share ?? 0)} : {pct(them?.share ?? 0)}<small>你 : 它</small></span>
                   </div>
                   <div className="share-track thin">
@@ -356,7 +351,7 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
             })}
           </ul>
         </>
-      ) : <div className="hint center">你和{net.airline.name}還沒有在同一條航線上競爭。</div>}
+      ) : <div className="hint center">還沒有同航線競爭</div>}
       {overlap.airports.length > 0 && (
         <>
           <h4>你們都在的機場</h4>
@@ -365,18 +360,17 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
       )}
       {ideas.length > 0 && (
         <>
-          <h4>它從你的機場飛、你還沒飛的</h4>
+          <h4>它飛、你還沒飛</h4>
           <ul className="markets">
             {ideas.map((r) => (
               <li key={r.key}>
-                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<small>{count(r.distKm)} 公里 · 它每週 {r.freq} 班 · NT${count(r.fare)}</small></span>
+                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<small>它 {r.freq} 班/週 · NT${count(r.fare)}</small></span>
                 <button onClick={() => onOpen(r.a, r.b)}>開航</button>
               </li>
             ))}
           </ul>
         </>
       )}
-      <div className="hint">市占看班次、時段、票價和服務。{net.airline.kind === 'low' ? '廉價航空票價低，但服務評價也低。' : net.airline.kind === 'full' ? '全服務航空票價高一些，服務評價較好。' : ''}</div>
     </>
   );
 }
