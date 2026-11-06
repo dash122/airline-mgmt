@@ -22,7 +22,6 @@ export const loadLine = (f: FlightResult) =>
 export function LoadIcons({ f }: { f: FlightResult }) {
   return <span className="ins">
     <IN n="pax" v={`${count(f.pax)}/${f.seats}`} label="載客/座位" w="載客" />
-    {f.connectingPax >= 0.5 && <IN n="transfer" v={count(f.connectingPax)} label="轉機" w="轉機" />}
     {f.spill > 0.5 && <IN n="spill" v={count(f.spill)} label="溢出" w="溢出" tone="warn" />}
   </span>;
 }

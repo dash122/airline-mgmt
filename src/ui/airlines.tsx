@@ -135,8 +135,6 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
         <div className="grow">
           <div className="al-facts">
             <span><b>{short(net.flights)}</b><small>班/週</small></span>
-            <span><b>{short(net.seats / 2)}</b><small>座位/週</small></span>
-            <span><b>{count(net.longestKm)}</b><small>最遠 公里</small></span>
           </div>
         </div>
       </div>

@@ -221,7 +221,6 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
       {result && <DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} />}
       {full && <div className="hint warn"><Icon n="spill" /> 客滿：加班、換大飛機或漲價</div>}
-      {result && result.spill > 1 && !full && <div className="hint warn"><Icon n="spill" /> 部分航班客滿，看下方每班載客率</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint"><Icon n="seat" /> 空位多：減一班或降價</div>}
       <div className="fare">
         <div className="grow">

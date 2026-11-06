@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { modelledAnnualPax } from '../sim/markets';
-import { airportTraffic, hubOf, hubOpportunities, hubTransit, hourly, spokes, stations, viaGroup, viewFromHub, type Spoke } from '../sim/airports';
+import { airportTraffic, hubOf, hubOpportunities, hubTransit, spokes, stations, viaGroup, viewFromHub, type Spoke } from '../sim/airports';
 import { FromHubView, HubTransitView } from './transit';
 import {
   HUB_COST_PER_WEEK, HUB_MCT_CUT, minConnect,
@@ -56,32 +56,12 @@ function Radial({ code, list, onPick }: { code: string; list: Spoke[]; onPick: (
             <line x1={cx} y1={cy} x2={x} y2={y} className="line" strokeWidth={s.loadFactor === null ? 2 : w} />
             <circle cx={x} cy={y} r="4.5" className="node" />
             <text x={x} y={y + (y > cy ? 15 : -8)} textAnchor="middle">{s.other}</text>
-            {s.flightsPerDay > 1 && <text x={x} y={y + (y > cy ? 25 : -18)} textAnchor="middle" className="sm">{s.flightsPerDay}班/日</text>}
           </g>
         );
       })}
       <circle cx={cx} cy={cy} r="8" className="center" />
       <text x={cx} y={cy + 20} textAnchor="middle" className="center-t">{code}</text>
     </svg>
-  );
-}
-
-function DayStrip({ plan, code }: { plan: Plan; code: string }) {
-  const { dep, arr } = hourly(plan, code);
-  const peak = Math.max(1, ...dep, ...arr);
-  return (
-    <div className="daystrip" aria-label="一天中的起降">
-      <div className="cols">
-        {dep.map((d, h) => (
-          <div key={h} className="col">
-            <div className="up"><i style={{ height: `${(d / peak) * 100}%` }} /></div>
-            <div className="down"><i style={{ height: `${(arr[h] / peak) * 100}%` }} /></div>
-          </div>
-        ))}
-      </div>
-      <div className="hours">{[0, 6, 12, 18].map((h) => <span key={h} style={{ left: `${(h / 24) * 100}%` }}>{h}</span>)}</div>
-      <div className="legend"><span className="d">■ 出發</span><span className="a">■ 抵達</span></div>
-    </div>
   );
 }
 
@@ -132,14 +112,13 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   ];
   return (
     <Sheet title={`${a.name} ${a.code}`} onClose={onClose} action={action}
-      sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}<IN n="pax" v={`${count(a.catchment / 1e4)}萬`} label="腹地人口" w="腹地" u="人" /></span>}
+      sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
       info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
 
       {tab === 'routes' && (
         <>
           {list.length === 0 ? <div className="hint center">還沒有航班</div> : <Radial code={code} list={list} onPick={onOpenRoute} />}
-          {list.length > 0 && <DayStrip plan={plan} code={code} />}
           <ul className="markets">
             {list.map((s) => (
               <li key={s.key} onClick={() => onOpenRoute(s.key)} className="tapli">

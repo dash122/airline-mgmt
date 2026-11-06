@@ -427,8 +427,6 @@ function TopBar({ result, balance, history, theme, onTheme, onReset }: { result:
         </span>
       </div>
       <Kpi icon="pax" label="週旅客" value={result ? count(result.pax) : '—'} />
-      <Kpi icon="seat" label="載客率" value={result ? pct(result.loadFactor) : '—'} />
-      <Kpi icon="util" label="利用率" value={result ? pct(result.avgUtilisation) : '—'} />
       <div className="kpi"><span className="label"><Icon n="money" /> 累計</span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span>
         <Spark values={trend} width={56} height={12} label="累計損益走勢" /></div>
       <div className="top-actions">

@@ -225,13 +225,11 @@ export function HubTransitView({ hub, net, transit, ideas, transfer, onOpenPair,
           <div><small>接好可到</small><b className="more">{count(Math.max(reach, transferPax))}</b></div>
         </div>
         <ReachBar now={transferPax} potential={Math.max(reach, transferPax)} />
-        <div className="ins">
-          <IN n="clock" v={count(transfer.long)} label="等 4–8 小時的旅客" w="等 4–8h" />
-          <IN n="bed" v={count(transfer.stopover)} label="停留過夜的旅客" w="停留" />
-          <IN n="fast" v={`${transfer.mct}m`} label="最短轉機時間" w="最短轉機" />
-        </div>
       </div>
-      <Legend hub={hub} extra={<p>點地圖上其他機場，看它的「經{hub}轉機」，就知道那裡的旅客經{hub}能去哪裡。</p>} />
+      <Legend hub={hub} extra={<>
+        <p>現在轉機旅客中，等 4–8 小時 {count(transfer.long)} 人，停留過夜 {count(transfer.stopover)} 人。最短轉機時間 {transfer.mct} 分鐘。</p>
+        <p>點地圖上其他機場，看它的「經{hub}轉機」，就知道那裡的旅客經{hub}能去哪裡。</p>
+      </>} />
       {transit.carried.length > 0
         ? <>
           <h4>轉機市場 <small>{transit.carried.length}</small></h4>

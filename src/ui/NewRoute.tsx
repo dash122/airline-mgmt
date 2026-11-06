@@ -160,6 +160,7 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
   const best = choices.reduce<RouteChoice | null>((b, c) => (!b || previews.get(c.id)!.networkDelta > previews.get(b.id)!.networkDelta ? c : b), null);
   const [pickId, setPickId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [fine, setFine] = useState(false);
   const chosen = choices.find((c) => c.id === pickId) ?? best;
   const [depSet, setDep] = useState<number | null>(null);
   const depFrom = chosen ? departsFrom(plan, chosen, from, to) : from;
@@ -256,7 +257,8 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
               return <button key={local} className={`chip${Math.abs(dep - t) < 1 ? ' strong' : ''}`} disabled={!ok} onClick={() => setDep(t)}>{label} {at(depFrom, t)}</button>;
             })}
           </div>
-          <TimeStepper code={depFrom} dep={dep} lo={w.lo} hi={w.hi} onChange={setDep} />
+          {fine ? <TimeStepper code={depFrom} dep={dep} lo={w.lo} hi={w.hi} onChange={setDep} />
+            : <button className="ghost" onClick={() => setFine(true)}>微調時間</button>}
           {trip && (
             <div className="trip">
               <FlightTimes from={trip.out.from} to={trip.out.to} dep={trip.out.dep} arr={trip.out.dep + trip.bm} />
