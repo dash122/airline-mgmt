@@ -803,3 +803,56 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .util-label { display: flex; align-items: center; gap: 6px; }
 .ring .track { stroke: var(--line); }
 .stat .ring .track { stroke: color-mix(in srgb, var(--panel) 70%, var(--line)); }
+
+/* ---------- Icons, icon-numbers and badges (fewer words) ---------- */
+.ico { display: inline-block; vertical-align: -0.16em; flex: none; }
+.in { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.in .ico { opacity: 0.75; }
+.in.strong { font-weight: 700; }
+.in.good { color: var(--good); } .in.warn { color: var(--warn); } .in.bad { color: var(--bad); } .in.accent { color: var(--accent); }
+.ins { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.ins.lg { font-size: 13px; }
+.badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 2px 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.badge.good { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.badge.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.badge.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.badge.accent { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.badge.muted { background: var(--line); color: var(--muted); }
+.kpi .label .ico { width: 13px; height: 13px; }
+.stat .label .ico { width: 12px; height: 12px; margin-right: 2px; }
+.code-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.code-chips span { font-size: 10px; font-weight: 700; background: var(--line); border-radius: 5px; padding: 1px 5px; color: var(--muted); }
+.tr-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tr-meta .badge small { font-weight: 500; opacity: .8; margin-left: 3px; font-size: 10px; }
+.tr-num .ico { width: 13px; height: 13px; margin-right: 2px; opacity: .7; align-self: center; }
+.tr-top .name b .badge { margin-left: 4px; vertical-align: 1px; }
+.fix { display: flex; flex-direction: column; gap: 5px; }
+.fix-top { justify-content: space-between; }
+.ideas .name { flex-direction: row !important; align-items: center; gap: 6px; }
+.ideas .ins .k { margin-right: 2px; font-size: 9px; }
+.chips .chip .ico, .primary .ico, .ideas button .ico { vertical-align: -0.15em; }
+.sheet h4 .badge { margin-left: 4px; vertical-align: 1px; }
+.tr-card-nums b .ico { width: 18px; height: 18px; vertical-align: -0.12em; }
+.sheet-head .sub .ins { font-size: 12px; }
+.ap-tiles .label .ico { width: 12px; height: 12px; }
+.ap-tiles small .in .ico { width: 11px; height: 11px; }
+.carrier-bar { display: block; height: 4px; border-radius: 2px; background: var(--line); margin-top: 4px; overflow: hidden; }
+.carrier-bar i { display: block; height: 100%; border-radius: 2px; }
+.competitor-list .carrier { align-items: center; gap: 8px; }
+.competitor-list .name { flex: 1; min-width: 0; }
+.st-title .ico { margin-left: 4px; color: var(--accent); }
+.hubbox b .ico { color: var(--accent); }
+.markets .lf-line { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.markets .lf-line .meter { flex: 1; max-width: 140px; }
+.markets .lf-line b { font-size: 11px; }
+.lf-line b.good { color: var(--good); } .lf-line b.warn { color: var(--warn); } .lf-line b.bad { color: var(--bad); }
+
+.pot-nums b .ico, .vs-head b .ico { width: 15px; height: 15px; opacity: .7; }
+.demand-bar .via { background: color-mix(in srgb, var(--accent) 55%, var(--panel)); }
+.demand-bar .legend i.via { background: color-mix(in srgb, var(--accent) 55%, var(--panel)); }
+.demand-bar .legend .ico { width: 12px; height: 12px; opacity: .75; margin-right: 1px; }
+.demand-bar .spill-btn { font: inherit; color: var(--warn); background: none; padding: 0; font-weight: 700; }
+.fare-tip b.good { color: var(--good); margin-left: 6px; }
+.fare .price .ico { color: var(--muted); }
+.report .ins, .markets .ins { margin-top: 2px; }
+.hint .ico { vertical-align: -0.15em; }

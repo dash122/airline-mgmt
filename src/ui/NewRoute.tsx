@@ -13,12 +13,13 @@ import { count, money, pct, short } from './format';
 import { FlightTimes } from './FlightTimes';
 import { at, Sheet, shortType, Stat, tone } from './sheets';
 import { TimeStepper } from './panels';
+import { Badge, hm, IN, Icon, Ring } from './viz';
 
 export type PickField = 'from' | 'to';
 export interface NewRouteState { from: string; to: string | null; pick: PickField | null }
 
 const name = (c: string) => AIRPORT_BY_CODE[c].name;
-const hours = (min: number) => `${Math.floor(min / 60)} 小時${min % 60 ? ` ${min % 60} 分` : ''}`;
+const hours = hm;
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${money(n)}`;
 
 /** Opening a route in two steps: pick the two airports (list, search or map), then see what it would earn and confirm. */
@@ -45,11 +46,11 @@ function Ends({ from, to, pick, onPick, onSwap }: { from: string; to: string | n
   return (
     <div className="od">
       <button className={`od-end${pick === 'from' ? ' on' : ''}`} onClick={() => onPick('from')}>
-        <small>出發</small><span className="od-main"><b>{from}</b><span>{name(from)}</span></span>
+        <small><Icon n="up" label="出發" /></small><span className="od-main"><b>{from}</b><span>{name(from)}</span></span>
       </button>
       <button className="od-swap" onClick={onSwap} disabled={!onSwap} aria-label="對調出發與目的地">⇄</button>
       <button className={`od-end${pick !== 'from' ? ' on' : ''}${to ? '' : ' empty'}`} onClick={() => onPick('to')}>
-        <small>目的地</small><span className="od-main"><b>{to ?? '選擇'}</b><span>{to ? name(to) : '清單或地圖'}</span></span>
+        <small><Icon n="down" label="目的地" /></small><span className="od-main"><b>{to ?? '？'}</b><span>{to ? name(to) : ''}</span></span>
       </button>
     </div>
   );
@@ -96,7 +97,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
       )}
       {field === 'to' && (
         <>
-          {rows.length === 0 && <div className="hint center">{q.trim() ? '找不到' : '沒有可飛的目的地'}</div>}
+          {rows.length === 0 && <div className="hint center">—</div>}
           <ul className="dests">
             {rows.map((d) => <DestRow key={d.code} from={from} d={d} onPick={() => onChoose(d.code)} />)}
           </ul>
@@ -110,7 +111,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
               <li key={c}>
                 <button onClick={() => onChoose(c)}>
                   <span className="name"><b>{name(c)} <em>{c}</em></b>
-                    <small>{countryName(AIRPORT_BY_CODE[c])}{c === plan.base ? ' · 基地' : ''}{c === plan.hub ? ' · 轉運站' : ''}</small></span>
+                    <small>{countryName(AIRPORT_BY_CODE[c])}{c === plan.base && <> <Icon n="base" label="基地" /></>}{c === plan.hub && <> <Icon n="hub" label="轉運站" /></>}</small></span>
                   <span className="chev">›</span>
                 </button>
               </li>
@@ -129,12 +130,12 @@ function DestRow({ from, d, onPick }: { from: string; d: Destination; onPick: ()
     <li className={d.problem ? 'off' : ''}>
       <button onClick={onPick} disabled={!!d.problem}>
         <span className="name">
-          <b>{a.name} <em>{d.code}</em>{d.served && <span className="chip tiny">已開航</span>}</b>
-          <small>{countryName(a)}{d.type ? ` · ${hours(flightMinutes(from, d.code, d.type))}` : ` · ${count(d.distKm)} 公里`}{d.problem ? '' : d.rivalFlights ? ` · 對手 ${count(d.rivalFlights)} 班` : ' · 沒人直飛'}</small>
+          <b>{a.name} <em>{d.code}</em>{d.served && <> <Badge n="check" tone="good" label="已開航" /></>}</b>
+          <span className="ins"><span>{countryName(a)}</span>{d.type ? <IN n="clock" v={hours(flightMinutes(from, d.code, d.type))} label="飛行時間" /> : <IN n="long" v={`${count(d.distKm)}km`} label="距離" />}{!d.problem && (d.rivalFlights ? <IN n="rival" v={count(d.rivalFlights)} label="對手班次/週" /> : <Badge n="hub" tone="good" label="沒人直飛">獨飛</Badge>)}</span>
         </span>
         {d.problem
           ? <span className="est muted">{d.problem}</span>
-          : <span className={`est ${seats && d.est >= seats * 0.8 ? 'good' : d.est >= seats * 0.5 ? 'warn' : 'bad'}`}><b>{short(d.est)}</b><small>人/週</small></span>}
+          : <span className={`est ${seats && d.est >= seats * 0.8 ? 'good' : d.est >= seats * 0.5 ? 'warn' : 'bad'}`} title="每日一班直飛，每週約載"><b>{short(d.est)}</b><small><Icon n="pax" />/週</small></span>}
       </button>
     </li>
   );
@@ -204,19 +205,20 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
     return (
       <button key={c.id} className={`opt row-opt${chosen?.id === c.id ? ' pick' : ''}`} onClick={() => { setPickId(c.id); setDep(null); }}>
         <span className="grow">
-          <b>{ac ? `${ac.reg} · ${shortType(c.type)}` : `租 ${shortType(c.type)}`}{best?.id === c.id && <span className="chip tiny best">建議</span>}</b>
-          <small>{ac
-            ? `空檔 · 利用率 ${pct(c.utilBefore ?? 0)} → ${pct(c.utilAfter ?? 0)}`
-            : `${s.seats} 座 · ${money(s.ownershipPerWeek)}/週`} · 載客率 {pct(p.loadFactor)}</small>
+          <b>{ac ? `${ac.reg} · ${shortType(c.type)}` : <><Icon n="lease" label="租" /> {shortType(c.type)}</>}{best?.id === c.id && <> <Badge n="hub" tone="good" label="建議" /></>}</b>
+          <span className="ins">{ac
+            ? <IN n="util" v={`${pct(c.utilBefore ?? 0)}→${pct(c.utilAfter ?? 0)}`} label="利用率" />
+            : <><IN n="seat" v={s.seats} label="座位" /><IN n="lease" v={`${money(s.ownershipPerWeek)}/週`} label="租金" /></>}
+            <span className={`in ${tone(p.loadFactor)}`} title="載客率"><Ring value={p.loadFactor} tone={tone(p.loadFactor)} size={12} stroke={3} />{pct(p.loadFactor)}</span></span>
         </span>
-        <span className={`delta ${p.networkDelta >= 0 ? 'good' : 'bad'}`}>{signed(p.networkDelta)}<small>每週</small></span>
+        <span className={`delta ${p.networkDelta >= 0 ? 'good' : 'bad'}`} title="每週">{signed(p.networkDelta)}<small>/週</small></span>
       </button>
     );
   };
 
   return (
     <Sheet size="full" title={flown ? '這條航線再加一班' : '開新航線'} onClose={onClose}
-      sub={`${name(from)} ⇄ ${name(to)} · ${count(m?.distKm ?? 0)} 公里${chosen ? ` · 單程 ${hours(blockMinutes(from, to, chosen.type))}` : ''}`}
+      sub={<span className="ins"><IN n="long" v={`${count(m?.distKm ?? 0)}km`} label="距離" />{chosen && <IN n="clock" v={hours(blockMinutes(from, to, chosen.type))} label="單程" />}</span>}
       info={<>
         <p>全網週損益＝開航後整個航空公司每週多賺多少，已含{preview?.lease ? '新飛機租金、' : ''}轉機旅客與對其他航線的影響。</p>
         <p>早上 7–10 點與傍晚 4–8 點的航班最好賣。{chosen?.kind === 'fleet' ? '現有飛機只能排在它的空檔裡。' : ''}開航後可在航線頁調整票價、加減班次。</p>
@@ -228,12 +230,13 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
 
       {preview && (
         <div className="stats">
-          <Stat label="旅客/週" value={count(preview.pax)} />
-          <Stat label="載客率" value={pct(preview.loadFactor)} tone={tone(preview.loadFactor)} />
-          <Stat label="週損益" value={signed(preview.networkDelta)} tone={preview.networkDelta >= 0 ? 'good' : 'bad'} />
+          <Stat label="旅客/週" icon="pax" value={count(preview.pax)} />
+          <Stat label="載客率" icon="seat" value={pct(preview.loadFactor)} tone={tone(preview.loadFactor)}
+            viz={<Ring value={preview.loadFactor} tone={tone(preview.loadFactor)} size={22} stroke={4} />} />
+          <Stat label="損益/週" icon="money" value={signed(preview.networkDelta)} tone={preview.networkDelta >= 0 ? 'good' : 'bad'} />
         </div>
       )}
-      {preview && preview.loadFactor >= 0.97 && <div className="hint warn">幾乎客滿：換大飛機或之後加班</div>}
+      {preview && preview.loadFactor >= 0.97 && <div className="hint warn"><Icon n="spill" /> 客滿 → 大飛機 · ＋班</div>}
 
       <h4>飛機</h4>
       {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
@@ -241,16 +244,16 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
         {fleetChoices.map(optRow)}
         {visibleLease.map(optRow)}
       </div>
-      {leaseChoices.length > visibleLease.length && <button className="ghost" onClick={() => setShowAll(true)}>全部 {leaseChoices.length} 種機型</button>}
+      {leaseChoices.length > visibleLease.length && <button className="ghost" onClick={() => setShowAll(true)}>+{leaseChoices.length - visibleLease.length} <Icon n="plane" /></button>}
 
       {chosen && (
         <>
-          <h4>{depFrom} 出發（當地時間）</h4>
+          <h4><Icon n="up" /> {depFrom}</h4>
           <div className="chips">
             {TIME_PRESETS.map(([local, label]) => {
               const t = utcFromLocal(depFrom, local);
               const ok = t >= w.lo && t <= w.hi;
-              return <button key={local} className={`chip${Math.abs(dep - t) < 1 ? ' strong' : ''}`} disabled={!ok} onClick={() => setDep(t)}>{label} {at(depFrom, t)}</button>;
+              return <button key={local} className={`chip${Math.abs(dep - t) < 1 ? ' strong' : ''}`} disabled={!ok} onClick={() => setDep(t)} title={label}>{at(depFrom, t)}</button>;
             })}
           </div>
           <TimeStepper code={depFrom} dep={dep} lo={w.lo} hi={w.hi} onChange={setDep} />
@@ -260,22 +263,23 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
               <FlightTimes from={trip.back.from} to={trip.back.to} dep={trip.back.dep} arr={trip.back.dep + trip.bm} />
             </div>
           )}
-          {trip && trip.cycle > 1 && <div className="hint">來回超過一天：每 {trip.cycle} 天飛一趟</div>}
+          {trip && trip.cycle > 1 && <div className="hint"><Icon n="calendar" /> 每 {trip.cycle} 天</div>}
         </>
       )}
-      <h4>對手</h4>
-      <div className="market-line">
+      <h4><Icon n="rival" /> 對手</h4>
+      <div className="market-line ins lg">
+        <IN n="pax" v={short((m?.airDemand ?? 0) * 2)} label="旅客/週" />
         {rivals.length > 0
-          ? <><span><b>{short((m?.airDemand ?? 0) * 2)}</b> 人/週</span><span><b>{rivals.length} 家</b> · {count(rivals.reduce((s, r) => s + r.freq, 0))} 班/週</span></>
-          : <span>沒人直飛，你會是唯一一家</span>}
+          ? <><IN n="rival" v={rivals.length} label="家" /><IN n="plane" v={count(rivals.reduce((s, r) => s + r.freq, 0))} label="班/週" /></>
+          : <Badge n="hub" tone="good" label="沒人直飛，你會是唯一一家">獨飛</Badge>}
       </div>
       {rivals.length > 0 && (
         <div className="competition">
           {rivals.slice(0, 5).map((r) => <span key={r.name}><i className="dot" style={{ background: r.color }} />{r.name} {r.freq} 班</span>)}
-          {rivals.length > 5 && <span>另 {rivals.length - 5} 家</span>}
+          {rivals.length > 5 && <span>+{rivals.length - 5}</span>}
         </div>
       )}
-      {m?.ground && <div className="hint">{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</div>}
+      {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</div>}
     </Sheet>
   );
 }
