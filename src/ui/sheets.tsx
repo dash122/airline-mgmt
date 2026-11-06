@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
@@ -15,6 +15,8 @@ import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
 import { FlightLoads, LoadPill } from './FlightLoads';
+import { ProfitBar, Ring, Stack } from './viz';
+import type { FarePoint } from '../sim/fares';
 
 /** "A320neo" rather than "Airbus A320neo". */
 export const shortType = (t: AircraftModel) => AIRCRAFT[t].name.replace(/^(Airbus|Boeing|Embraer|ATR|De Havilland|Bombardier) /, '');
@@ -88,17 +90,19 @@ export function Head({ children, info, right }: { children: ReactNode; info?: Re
   );
 }
 
-export function Stat({ label, value, tone, onTap, active }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onTap?: () => void; active?: boolean }) {
+/** A number tile. `viz` puts a small picture (a ring, a bar) beside the number. */
+export function Stat({ label, value, tone, onTap, active, viz }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onTap?: () => void; active?: boolean; viz?: ReactNode }) {
+  const v = viz ? <span className="value-row"><span className="value">{value}</span>{viz}</span> : <span className="value">{value}</span>;
   if (onTap) return (
     <button className={`stat tappable ${tone ?? ''}${active ? ' on' : ''}`} onClick={onTap} aria-expanded={!!active} aria-label={`${label} ${value}，點選看原因`}>
       <span className="label">{label} <i className="why-dot">?</i></span>
-      <span className="value">{value}</span>
+      {v}
     </button>
   );
   return (
     <div className={`stat ${tone ?? ''}`}>
       <span className="label">{label}</span>
-      <span className="value">{value}</span>
+      {v}
     </div>
   );
 }
@@ -203,11 +207,15 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>
       {result && (
         <div className="stats">
-          <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'} />
-          <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'} />
-          <Stat label="市占" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'} />
+          <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'}
+            viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
+          <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'}
+            viz={<span className="arrow">{result.revenue >= result.flyingCost ? '▲' : '▼'}</span>} />
+          <Stat label="市占" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'}
+            viz={<Ring value={result.marketShare} size={24} stroke={4} />} />
           <Stat label="週需求" value={count(result.demand)} />
-          <Stat label="轉機旅客" value={count(result.pax - result.localPax)} />
+          <Stat label="轉機旅客" value={count(result.pax - result.localPax)}
+            viz={result.pax > 0 ? <Ring value={(result.pax - result.localPax) / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
           <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} onTap={tap('spill')} active={why === 'spill'} />
         </div>
       )}
@@ -226,9 +234,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <button onClick={() => setFare(fareMult + FARE_STEP)} disabled={fareMult >= FARE_MAX} aria-label="漲價 5%">+5%</button>
         </div>
       </div>
-      {best && now && (best === now
-        ? <div className="hint">✓ 已是最賺的票價</div>
-        : <button className="fare-tip" onClick={() => setFare(best.mult)}>
+      {curve.length > 2 && now && best && <FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} />}
+      {best && now && best !== now && (<button className="fare-tip" onClick={() => setFare(best.mult)}>
             改用最賺票價 NT${count((m?.refFare ?? 0) * best.mult)}（{pct(best.mult)}）· 每週多賺 {money(best.profit - now.profit)}
           </button>)}
       {result && <FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} />}
@@ -239,6 +246,50 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
     </Sheet>
+  );
+}
+
+/**
+ * Weekly profit at every fare step, as a hill: the dot is today's fare, the flag the most profitable one.
+ * Tap or drag along it to set the fare.
+ */
+function FareCurve({ curve, now, best, refFare, onPick }: { curve: FarePoint[]; now: FarePoint; best: FarePoint; refFare: number; onPick: (mult: number) => void }) {
+  const W = 320, H = 72, PAD = 6;
+  const lo = Math.min(...curve.map((p) => p.profit));
+  const hi = Math.max(...curve.map((p) => p.profit));
+  const span = hi - lo || 1;
+  const x = (i: number) => PAD + ((W - 2 * PAD) * i) / (curve.length - 1);
+  const y = (v: number) => PAD + 4 + (H - 2 * PAD - 8) * (1 - (v - lo) / span);
+  const pts = curve.map((p, i) => `${x(i).toFixed(1)},${y(p.profit).toFixed(1)}`);
+  const iNow = curve.indexOf(now);
+  const iBest = curve.indexOf(best);
+  const pick = (e: RPointerEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const fx = ((e.clientX - box.left) / box.width) * W;
+    const i = Math.round(((fx - PAD) / (W - 2 * PAD)) * (curve.length - 1));
+    const p = curve[Math.max(0, Math.min(curve.length - 1, i))];
+    if (p !== now) onPick(p.mult);
+  };
+  return (
+    <div className="fare-curve">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="slider" aria-label="票價與每週損益"
+        aria-valuemin={curve[0].mult * 100} aria-valuemax={curve[curve.length - 1].mult * 100} aria-valuenow={now.mult * 100}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); pick(e); }}
+        onPointerMove={(e) => { if (e.buttons) pick(e); }}>
+        {lo < 0 && hi > 0 && <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="zero" />}
+        <polygon points={`${x(0)},${H} ${pts.join(' ')} ${x(curve.length - 1)},${H}`} className="area" />
+        <polyline points={pts.join(' ')} className="line" />
+        <line x1={x(iBest)} x2={x(iBest)} y1={y(best.profit)} y2={H} className="best-line" />
+        <circle cx={x(iBest)} cy={y(best.profit)} r={4} className="best" />
+        <line x1={x(iNow)} x2={x(iNow)} y1={0} y2={H} className="now-line" />
+        <circle cx={x(iNow)} cy={y(now.profit)} r={5.5} className="now" />
+      </svg>
+      <div className="fare-axis">
+        <span>NT${count(refFare * curve[0].mult)}</span>
+        <span className="best-label" style={{ left: `${Math.min(80, Math.max(20, (100 * x(iBest)) / W))}%` }}>★ NT${count(refFare * best.mult)}</span>
+        <span>NT${count(refFare * curve[curve.length - 1].mult)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -283,7 +334,10 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
     <Sheet title={`${ac.reg} · ${shortType(ac.type)}`} sub={`${spec.seats} 座 · 租金 ${money(spec.ownershipPerWeek)}/週`} onClose={onClose}
       info={<p>{spec.name}：每飛行小時 {money(spec.costPerBlockHour)}。上方色條是一天的排班（{AIRPORT_BY_CODE[plan.base].name}時間），點色塊可調整。</p>}>
       <div className="util-row">
-        <div className="label">利用率 {pct(info.utilisation)} · 每日飛 {(info.blockMin / 60).toFixed(1)} 小時{info.cycleDays > 1 ? ` · 每 ${info.cycleDays} 天一輪` : ''}</div>
+        <div className="label util-label">
+          <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={20} stroke={3.5} />
+          利用率 {pct(info.utilisation)} · {(info.blockMin / 60).toFixed(1)} 小時/日{info.cycleDays > 1 ? ` · 每 ${info.cycleDays} 天一輪` : ''}
+        </div>
         <DayBar ac={ac} base={plan.base} onLeg={onEditFlight} />
       </div>
       {!info.closed && (
@@ -333,6 +387,8 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
   const rows = Object.values(result.routes).sort((x, y) => (y.revenue - y.flyingCost) - (x.revenue - x.flyingCost));
   const recent = history.slice(-14);
   const peak = Math.max(1, ...recent.map((d) => Math.abs(d.revenue - d.cost)));
+  const maxProfit = Math.max(1, ...rows.map((r) => Math.abs(r.revenue - r.flyingCost)));
+  const anyLoss = rows.some((r) => r.revenue < r.flyingCost);
   return (
     <Sheet size="full" title="報表" sub={`累計 ${money(balance)} · 每週 ${count(result.flights)} 班 · 轉機 ${count(result.connectingPax)} 人`} onClose={onClose}
       info={<p>每週數字是用目前的班表推估。航線損益＝票價收入減飛行與旅客成本，不含飛機租金。</p>}>
@@ -353,26 +409,64 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
           </div>
         </>
       )}
-      <h4>每週預估</h4>
+      <h4>每週收支</h4>
+      <MoneyFlow result={result} />
       <div className="stats">
-        <Stat label="收入" value={money(result.revenue)} />
-        <Stat label="飛行成本" value={money(result.flyingCost)} />
-        <Stat label="租金" value={money(result.ownershipCost)} />
-        <Stat label="損益" value={money(result.revenue - result.cost)} tone={result.revenue >= result.cost ? 'good' : 'bad'} />
-        <Stat label="利用率" value={pct(result.avgUtilisation)} />
-        <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} />
+        <Stat label="利用率" value={pct(result.avgUtilisation)} viz={<Ring value={result.avgUtilisation} tone={result.avgUtilisation >= 0.45 ? 'good' : result.avgUtilisation >= 0.3 ? 'warn' : 'bad'} size={24} stroke={4} />} />
+        <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
+        <Stat label="轉機" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
       </div>
       <h4>航線</h4>
       <ul className="report">
-        {rows.map((r) => (
-          <li key={r.key} onClick={() => onPick(r.key)}>
-            <span className="name">{routeName(r.a, r.b)}<small>{r.flightsPerWeek} 班 · {count(r.pax)} 人</small></span>
-            <span className={`num ${tone(r.loadFactor)}`}>{pct(r.loadFactor)}</span>
-            <span className={`num ${r.revenue >= r.flyingCost ? 'good' : 'bad'}`}>{money(r.revenue - r.flyingCost)}</span>
-          </li>
-        ))}
+        {rows.map((r) => {
+          const p = r.revenue - r.flyingCost;
+          return (
+            <li key={r.key} onClick={() => onPick(r.key)}>
+              <Ring value={r.loadFactor} tone={tone(r.loadFactor)} size={30} stroke={4} label={`載客率 ${pct(r.loadFactor)}`}><small>{Math.round(r.loadFactor * 100)}</small></Ring>
+              <span className="name">{routeName(r.a, r.b)}<small>{r.flightsPerWeek} 班 · {count(r.pax)} 人</small></span>
+              <span className="profit-col">
+                <span className={`num ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>
+                <ProfitBar value={p} max={maxProfit} split={anyLoss} />
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </Sheet>
+  );
+}
+
+/** Where each week's ticket money goes: flying costs, aircraft lease, and what is left. */
+function MoneyFlow({ result }: { result: NetworkResult }) {
+  const profit = result.revenue - result.cost;
+  const parts = [
+    { key: 'fly', value: result.flyingCost, color: 'var(--cost-fly)', label: '飛行成本' },
+    { key: 'lease', value: result.ownershipCost, color: 'var(--cost-lease)', label: '租金' },
+    { key: 'profit', value: Math.max(0, profit), color: 'var(--good)', label: '賺' },
+  ];
+  // A loss: costs are larger than revenue, so the bar is costs and a red notch shows the gap.
+  const scale = Math.max(result.revenue, result.cost, 1);
+  return (
+    <div className="money-flow">
+      <div className="mf-row">
+        <span className="mf-label">收入</span>
+        <div className="mf-track"><div className="mf-rev" style={{ width: `${(100 * result.revenue) / scale}%` }} /></div>
+        <b className="mf-num">{money(result.revenue)}</b>
+      </div>
+      <div className="mf-row">
+        <span className="mf-label">去向</span>
+        <div className="mf-track">
+          <div style={{ width: `${(100 * (result.cost + Math.max(0, profit))) / scale}%` }}>
+            <Stack parts={parts} label={parts.map((p) => `${p.label} ${money(p.value)}`).join('，')} />
+          </div>
+        </div>
+        <b className={`mf-num ${profit >= 0 ? 'good' : 'bad'}`}>{profit >= 0 ? '+' : ''}{money(profit)}</b>
+      </div>
+      <div className="legend">
+        {parts.map((p) => p.value > 0 && <span key={p.key}><i style={{ background: p.color }} />{p.label} {money(p.value)}</span>)}
+        {profit < 0 && <span className="bad-text">虧 {money(-profit)}</span>}
+      </div>
+    </div>
   );
 }
 

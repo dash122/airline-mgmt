@@ -14,6 +14,7 @@ import {
 import { count, money, pct } from './format';
 import { arrival, at, DayBar, dayStart, legSegments, routeColor, routeName, Sheet, shortType, tone, UtilBar } from './sheets';
 import { loadLine, LoadPill } from './FlightLoads';
+import { Meter, Ring } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = (min: number) => `${Math.floor(min / 60)} 小時${min % 60 ? ` ${min % 60} 分` : ''}`;
@@ -44,7 +45,11 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
             <li key={r.key}>
               <button className="name" onClick={() => onOpen(r.key)}>
                 <span className="swatch" style={{ background: routeColor(r.key) }} />
-                <span className="grow">{routeName(r.a, r.b)}<small>{r.types.join('、')}{r.res && <> · <b className={tone(r.res.loadFactor)}>{pct(r.res.loadFactor)}</b> 滿</>}</small></span>
+                <span className="grow">{routeName(r.a, r.b)}
+                  {r.res
+                    ? <span className="lf-line"><Meter value={r.res.loadFactor} tone={tone(r.res.loadFactor)} label={`載客率 ${pct(r.res.loadFactor)}`} /><b className={tone(r.res.loadFactor)}>{pct(r.res.loadFactor)}</b></span>
+                    : <small>{r.types.join('、')}</small>}
+                </span>
               </button>
               {r.res && <span className={`pill ${p < 0 ? 'bad' : tone(r.res.loadFactor) === 'bad' ? 'warn' : 'good'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>}
               <span className="step">
@@ -216,7 +221,10 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           return (
             <li key={ac.id} onClick={() => onPick(ac.id)}>
               <div className="fleet-top">
-                <span className="name">{ac.reg} · {shortType(ac.type)}<small>每日飛 {(info.blockMin / 60).toFixed(1)} 小時 · 利用率 {pct(info.utilisation)}{warn && <b className="warn-text"> · {warn}</b>}</small></span>
+                <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={34} stroke={4} label={`利用率 ${pct(info.utilisation)}`}>
+                  <small>{Math.round(info.utilisation * 100)}</small>
+                </Ring>
+                <span className="name">{ac.reg} · {shortType(ac.type)}<small>{(info.blockMin / 60).toFixed(1)} 小時/日{warn && <b className="warn-text"> · {warn}</b>}</small></span>
                 {r && <span className={`pill ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>}
               </div>
               <DayBar ac={ac} base={plan.base} compact />

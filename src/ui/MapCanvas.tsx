@@ -38,7 +38,7 @@ const PALETTE = {
 };
 
 const SIZE_PRIORITY = { hub: 2, major: 3, large: 4, medium: 5, small: 6 } as const;
-const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
+export const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;
