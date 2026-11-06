@@ -15,7 +15,7 @@ import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
 import { FlightLoads, LoadPill } from './FlightLoads';
-import { ProfitBar, Ring, Stack } from './viz';
+import { Badge, IN, Icon, ProfitBar, Ring, Stack, type IconName } from './viz';
 import type { FarePoint } from '../sim/fares';
 
 /** "A320neo" rather than "Airbus A320neo". */
@@ -44,7 +44,7 @@ export function routeColor(key: string) {
 export type SheetSize = 'half' | 'full';
 
 export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer }: {
-  title: string; sub?: string; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode;
+  title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode;
 }) {
   const [s, setS] = useState<SheetSize>(size);
   const [showInfo, setShowInfo] = useState(false);
@@ -91,17 +91,17 @@ export function Head({ children, info, right }: { children: ReactNode; info?: Re
 }
 
 /** A number tile. `viz` puts a small picture (a ring, a bar) beside the number. */
-export function Stat({ label, value, tone, onTap, active, viz }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onTap?: () => void; active?: boolean; viz?: ReactNode }) {
+export function Stat({ label, value, tone, onTap, active, viz, icon }: { label: string; value: string; tone?: 'good' | 'bad' | 'warn'; onTap?: () => void; active?: boolean; viz?: ReactNode; icon?: IconName }) {
   const v = viz ? <span className="value-row"><span className="value">{value}</span>{viz}</span> : <span className="value">{value}</span>;
   if (onTap) return (
     <button className={`stat tappable ${tone ?? ''}${active ? ' on' : ''}`} onClick={onTap} aria-expanded={!!active} aria-label={`${label} ${value}，點選看原因`}>
-      <span className="label">{label} <i className="why-dot">?</i></span>
+      <span className="label">{icon && <Icon n={icon} />}{label} <i className="why-dot">?</i></span>
       {v}
     </button>
   );
   return (
     <div className={`stat ${tone ?? ''}`}>
-      <span className="label">{label}</span>
+      <span className="label">{icon && <Icon n={icon} />}{label}</span>
       {v}
     </div>
   );
@@ -182,7 +182,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     const comp = [competitionFor(a, b), competitionFor(b, a)];
     if (comp.some((c) => c.services.length && !c.otherAirports)) return null;
     const pairs = [...new Set(comp.flatMap((c) => c.services.map((s) => pairKey(s.from, s.to))))].map((k) => k.replace('-', '–'));
-    return pairs.length ? `對手不飛這兩個機場，改飛 ${pairs.join('、')}。` : '你是唯一直飛。';
+    return pairs.length
+      ? <Badge n="rival" tone="muted" label={`對手不飛這兩個機場，改飛 ${pairs.join('、')}`}>→ {pairs.join(' ')}</Badge>
+      : <Badge n="hub" tone="good" label="你是唯一直飛">獨飛</Badge>;
   }, [a, b]);
   const types = [...new Set(flights.map((f) => shortType(f.ac.type)))].join('、');
   const [why, setWhy] = useState<ExplainKey | null>(null);
@@ -190,15 +192,15 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
-    <Sheet title={routeName(a, b)} sub={`${a}–${b} · ${count(m?.distKm ?? 0)} 公里${types ? ` · ${types}` : ''}`} onClose={onClose} action={action}
+    <Sheet title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={`${count(m?.distKm ?? 0)}km`} label="距離" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
       info={<>
         <p>點有 ? 的數字看原因。損益是每週航段損益，不含飛機租金。</p>
         {result && result.pax - result.localPax > 1 && <p>轉機旅客付直飛票價的 85%，再按兩段的票價設定分攤，所以這裡改票價也會影響他們。</p>}
       </>}>
       <div className="big-step">
         <div>
-          <div className="label">每日來回</div>
-          <div className="n">{Number.isInteger(daily) ? daily : daily.toFixed(1)} 班</div>
+          <div className="label">⇄ 每日</div>
+          <div className="n">×{Number.isInteger(daily) ? daily : daily.toFixed(1)}</div>
         </div>
         <div className="pm">
           <button onClick={onRemoveOne} disabled={daily < 1} aria-label="減一班來回">−</button>
@@ -207,27 +209,22 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>
       {result && (
         <div className="stats">
-          <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'}
+          <Stat label="載客率" icon="seat" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'}
             viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
-          <Stat label="週航段損益" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'}
+          <Stat label="損益/週" icon="money" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'}
             viz={<span className="arrow">{result.revenue >= result.flyingCost ? '▲' : '▼'}</span>} />
-          <Stat label="市占" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'}
+          <Stat label="市占" icon="share" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'}
             viz={<Ring value={result.marketShare} size={24} stroke={4} />} />
-          <Stat label="週需求" value={count(result.demand)} />
-          <Stat label="轉機旅客" value={count(result.pax - result.localPax)}
-            viz={result.pax > 0 ? <Ring value={(result.pax - result.localPax) / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
-          <Stat label="溢出" value={count(result.spill)} tone={result.spill > 1 ? 'warn' : undefined} onTap={tap('spill')} active={why === 'spill'} />
         </div>
       )}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
-      {result && <DemandBar seats={result.seats} pax={result.pax} spill={result.spill} />}
-      {full && <div className="hint warn">客滿：加班、換大飛機或漲價，別降價。</div>}
-      {result && result.spill > 1 && !full && <div className="hint warn">部分航班客滿：看下方每班載客率。</div>}
-      {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint">載客率偏低：減一班或降價。</div>}
+      {result && <DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} />}
+      {full && <div className="hint warn"><Icon n="spill" /> 客滿 → ＋班 · 大飛機 · 漲價</div>}
+      {result && result.spill > 1 && !full && <div className="hint warn"><Icon n="spill" /> 部分客滿 ↓</div>}
+      {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint"><Icon n="seat" /> 空位多 → −班 · 降價</div>}
       <div className="fare">
         <div className="grow">
-          <div className="label">單程票價</div>
-          <div className="price">NT${count((m?.refFare ?? 0) * fareMult)} <small>{pct(fareMult)}</small></div>
+          <div className="price"><Icon n="fare" label="單程票價" /> NT${count((m?.refFare ?? 0) * fareMult)} <small>{pct(fareMult)}</small></div>
         </div>
         <div className="pm small">
           <button onClick={() => setFare(fareMult - FARE_STEP)} disabled={fareMult <= FARE_MIN} aria-label="降價 5%">−5%</button>
@@ -235,13 +232,12 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </div>
       </div>
       {curve.length > 2 && now && best && <FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} />}
-      {best && now && best !== now && (<button className="fare-tip" onClick={() => setFare(best.mult)}>
-            改用最賺票價 NT${count((m?.refFare ?? 0) * best.mult)}（{pct(best.mult)}）· 每週多賺 {money(best.profit - now.profit)}
+      {best && now && best !== now && (<button className="fare-tip" onClick={() => setFare(best.mult)} aria-label={`改用最賺票價 NT$${count((m?.refFare ?? 0) * best.mult)}，每週多賺 ${money(best.profit - now.profit)}`}>
+            ★ NT${count((m?.refFare ?? 0) * best.mult)} <b className="good">+{money(best.profit - now.profit)}/週</b>
           </button>)}
       {result && <FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} />}
       <MarketShare a={a} b={b} result={result} net={net} split={split} />
-      {elsewhere && <div className="hint">{elsewhere}</div>}
-      {m?.ground && <div className="competition"><span>{m.ground.name} {m.ground.hours} 小時 · NT${count(m.ground.fare)}</span></div>}
+      {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</span>}</div>}
       <Head>航線班表</Head>
       <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       <Confirm label="停飛" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
@@ -293,21 +289,26 @@ function FareCurve({ curve, now, best, refFare, onPick }: { curve: FarePoint[]; 
   );
 }
 
-/** Seats against the travellers who want them: the part past the seats is spill. */
-function DemandBar({ seats, pax, spill }: { seats: number; pax: number; spill: number }) {
+/** Seats against the travellers who want them: local and connecting travellers, then the part past the seats (spill). */
+function DemandBar({ seats, pax, local, spill, onSpill }: { seats: number; pax: number; local: number; spill: number; onSpill?: () => void }) {
   const want = pax + spill;
   const scale = Math.max(seats, want, 1);
+  const via = Math.max(0, pax - local);
   return (
-    <div className="demand-bar" aria-label={`每週座位 ${count(seats)}，想搭 ${count(want)}，載客 ${count(pax)}，溢出 ${count(spill)}`}>
+    <div className="demand-bar" aria-label={`每週座位 ${count(seats)}，想搭 ${count(want)}，載客 ${count(pax)}（轉機 ${count(via)}），溢出 ${count(spill)}`}>
       <div className="track">
         <div className="seats" style={{ width: `${(100 * seats) / scale}%` }} />
         <div className="pax" style={{ width: `${(100 * pax) / scale}%` }} />
+        {via >= 1 && <div className="via" style={{ left: `${(100 * local) / scale}%`, width: `${(100 * via) / scale}%` }} />}
         {spill > 1 && <div className="spill" style={{ left: `${(100 * pax) / scale}%`, width: `${(100 * spill) / scale}%` }} />}
       </div>
       <div className="legend">
-        <span><i className="pax" />載客 {count(pax)}</span>
-        <span><i className="seats" />座位 {count(seats)}</span>
-        {spill > 1 && <span><i className="spill" />溢出 {count(spill)}</span>}
+        <span title="本地旅客/週"><i className="pax" /><Icon n="pax" /> {count(local)}</span>
+        {via >= 1 && <span title="轉機旅客/週"><i className="via" /><Icon n="transfer" /> {count(via)}</span>}
+        <span title="座位/週"><i className="seats" /><Icon n="seat" /> {count(seats)}</span>
+        {spill > 1 && (onSpill
+          ? <button className="spill-btn" onClick={onSpill} title="溢出：想搭但客滿"><i className="spill" /><Icon n="spill" /> {count(spill)}</button>
+          : <span title="溢出"><i className="spill" /><Icon n="spill" /> {count(spill)}</span>)}
       </div>
     </div>
   );
@@ -331,31 +332,32 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
   const canReturn = start && here !== start && !routeProblem(here, start, ac.type);
   const profit = result ? result.revenue - result.flyingCost - result.ownershipCost : 0;
   return (
-    <Sheet title={`${ac.reg} · ${shortType(ac.type)}`} sub={`${spec.seats} 座 · 租金 ${money(spec.ownershipPerWeek)}/週`} onClose={onClose}
+    <Sheet title={`${ac.reg} · ${shortType(ac.type)}`} sub={<span className="ins"><IN n="seat" v={spec.seats} label="座位" /><IN n="lease" v={`${money(spec.ownershipPerWeek)}/週`} label="租金" /></span>} onClose={onClose}
       info={<p>{spec.name}：每飛行小時 {money(spec.costPerBlockHour)}。上方色條是一天的排班（{AIRPORT_BY_CODE[plan.base].name}時間），點色塊可調整。</p>}>
       <div className="util-row">
         <div className="label util-label">
           <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={20} stroke={3.5} />
-          利用率 {pct(info.utilisation)} · {(info.blockMin / 60).toFixed(1)} 小時/日{info.cycleDays > 1 ? ` · 每 ${info.cycleDays} 天一輪` : ''}
+          <b>{pct(info.utilisation)}</b> <IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行時數" />{info.cycleDays > 1 && <IN n="calendar" v={`${info.cycleDays}天`} label="幾天一輪" />}
         </div>
         <DayBar ac={ac} base={plan.base} onLeg={onEditFlight} />
       </div>
       {!info.closed && (
         <div className="warn-box">
-          <span>停在 {here}，沒回到 {start}：明天排不了。</span>
+          <span><Icon n="warn" /> {here} ✕→ {start}</span>
           {canReturn && <button onClick={addReturn}>加回程至 {start}</button>}
         </div>
       )}
-      {!info.fits && <div className="warn-box"><span>排班超過 {info.cycleDays * 24} 小時，請取消一班。</span></div>}
+      {!info.fits && <div className="warn-box"><span><Icon n="warn" /> &gt; {info.cycleDays * 24}h · −1 班</span></div>}
       {result && (
         <div className="stats">
-          <Stat label="週載客" value={count(result.pax)} />
-          <Stat label="載客率" value={pct(result.seats ? result.pax / result.seats : 0)} tone={tone(result.seats ? result.pax / result.seats : 0)} />
-          <Stat label="週損益" value={money(profit)} tone={profit >= 0 ? 'good' : 'bad'} />
+          <Stat label="旅客/週" icon="pax" value={count(result.pax)} />
+          <Stat label="載客率" icon="seat" value={pct(result.seats ? result.pax / result.seats : 0)} tone={tone(result.seats ? result.pax / result.seats : 0)}
+            viz={<Ring value={result.seats ? result.pax / result.seats : 0} tone={tone(result.seats ? result.pax / result.seats : 0)} size={22} stroke={4} />} />
+          <Stat label="損益/週" icon="money" value={money(profit)} tone={profit >= 0 ? 'good' : 'bad'} />
         </div>
       )}
       <Head info="時間為當地時間。週損益含租金。">每日航班</Head>
-      {ac.legs.length === 0 && <div className="hint center">這架飛機還沒有航班。</div>}
+      {ac.legs.length === 0 && <div className="hint center">—</div>}
       <ul className="timetable">
         {units(ac).map((u) => {
           const l = ac.legs[u.start];
@@ -365,7 +367,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
               <span className="t">{at(l.from, l.dep)}</span>
               <span className="name">
                 {u.count === 2 ? `${l.from} ⇄ ${l.to}` : `${l.from} → ${l.to}`}
-                <small>{AIRPORT_BY_CODE[l.to].name} · {u.count === 2 ? '回到' : '抵達'} {u.count === 2 ? arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last)) : arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}</small>
+                <small>{AIRPORT_BY_CODE[l.to].name} · <span title={u.count === 2 ? '回到' : '抵達'}>{u.count === 2 ? '↩' : <Icon n="down" />} {u.count === 2 ? arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last)) : arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}</span></small>
               </span>
               {result && <span className="loads" aria-label="載客率">{Array.from({ length: u.count }, (_, k) => result.flights[u.start + k]).filter(Boolean).map((f) => <LoadPill key={f.key} f={f} />)}</span>}
               <span className="chev">›</span>
@@ -373,7 +375,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
           );
         })}
       </ul>
-      <button className="primary" onClick={() => onAddHere(ac.legs.length)}>＋ 從{here}加一班來回</button>
+      <button className="primary" onClick={() => onAddHere(ac.legs.length)}>＋ {here} ⇄</button>
       <Confirm label="退租" confirm={`退租 ${ac.reg}，取消 ${ac.legs.length} 個航班？`} onYes={onRemove} />
     </Sheet>
   );
@@ -390,11 +392,11 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
   const maxProfit = Math.max(1, ...rows.map((r) => Math.abs(r.revenue - r.flyingCost)));
   const anyLoss = rows.some((r) => r.revenue < r.flyingCost);
   return (
-    <Sheet size="full" title="報表" sub={`累計 ${money(balance)} · 每週 ${count(result.flights)} 班 · 轉機 ${count(result.connectingPax)} 人`} onClose={onClose}
+    <Sheet size="full" title="報表" sub={<span className="ins"><IN n="money" v={money(balance)} label="累計損益" tone={balance >= 0 ? 'good' : 'bad'} /><IN n="plane" v={`${count(result.flights)}/週`} label="每週班次" /><IN n="transfer" v={count(result.connectingPax)} label="轉機旅客/週" /></span>} onClose={onClose}
       info={<p>每週數字是用目前的班表推估。航線損益＝票價收入減飛行與旅客成本，不含飛機租金。</p>}>
       {recent.length > 0 && (
         <>
-          <h4>每日損益（近 {recent.length} 天）</h4>
+          <h4>每日損益</h4>
           <div className="days">
             {recent.map((d) => {
               const p = d.revenue - d.cost;
@@ -412,9 +414,9 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
       <h4>每週收支</h4>
       <MoneyFlow result={result} />
       <div className="stats">
-        <Stat label="利用率" value={pct(result.avgUtilisation)} viz={<Ring value={result.avgUtilisation} tone={result.avgUtilisation >= 0.45 ? 'good' : result.avgUtilisation >= 0.3 ? 'warn' : 'bad'} size={24} stroke={4} />} />
-        <Stat label="載客率" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
-        <Stat label="轉機" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
+        <Stat label="利用率" icon="util" value={pct(result.avgUtilisation)} viz={<Ring value={result.avgUtilisation} tone={result.avgUtilisation >= 0.45 ? 'good' : result.avgUtilisation >= 0.3 ? 'warn' : 'bad'} size={24} stroke={4} />} />
+        <Stat label="載客率" icon="seat" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
+        <Stat label="轉機" icon="transfer" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
       </div>
       <h4>航線</h4>
       <ul className="report">
@@ -423,7 +425,7 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
           return (
             <li key={r.key} onClick={() => onPick(r.key)}>
               <Ring value={r.loadFactor} tone={tone(r.loadFactor)} size={30} stroke={4} label={`載客率 ${pct(r.loadFactor)}`}><small>{Math.round(r.loadFactor * 100)}</small></Ring>
-              <span className="name">{routeName(r.a, r.b)}<small>{r.flightsPerWeek} 班 · {count(r.pax)} 人</small></span>
+              <span className="name">{routeName(r.a, r.b)}<span className="ins"><IN n="plane" v={r.flightsPerWeek} label="班/週" /><IN n="pax" v={count(r.pax)} label="旅客/週" /></span></span>
               <span className="profit-col">
                 <span className={`num ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>
                 <ProfitBar value={p} max={maxProfit} split={anyLoss} />

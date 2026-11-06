@@ -24,8 +24,8 @@ describe('compact comparison timetable', () => {
     const services = rivalsFrom('TPE', 'HKG');
     expect(services.length).toBeGreaterThan(0);
     const html = renderToStaticMarkup(<CompactTimetable from="TPE" to="HKG" services={services} plan={plan} onEdit={() => {}} />);
-    expect(html).toContain('只看自家');
-    expect(html).toContain('自選航空');
+    expect(html).toContain('自家');
+    expect(html).toContain('自選');
     expect(html).toContain('TEST-1');
     expect(html).toContain('調整這班航班');
     expect(html.indexOf('你的航空，TPE 00:01')).toBeLessThan(html.indexOf(services[0].airline.name + '，TPE'));

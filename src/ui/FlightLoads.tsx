@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { localMinutes, hhmm, type FlightResult, type Plan } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { Head } from './sheets';
+import { Badge, IN } from './viz';
 
 export const lfTone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
 
@@ -17,6 +18,15 @@ export function LoadPill({ f }: { f: FlightResult }) {
 export const loadLine = (f: FlightResult) =>
   `載客 ${count(f.pax)}/${f.seats}${f.connectingPax >= 0.5 ? ` · 轉機 ${count(f.connectingPax)}` : ''}${f.spill > 0.5 ? ` · 溢出 ${count(f.spill)}` : ''}`;
 
+/** A flight's load as icons: travellers/seats, connecting, spill. */
+export function LoadIcons({ f }: { f: FlightResult }) {
+  return <span className="ins">
+    <IN n="pax" v={`${count(f.pax)}/${f.seats}`} label="載客/座位" />
+    {f.connectingPax >= 0.5 && <IN n="transfer" v={count(f.connectingPax)} label="轉機" />}
+    {f.spill > 0.5 && <IN n="spill" v={count(f.spill)} label="溢出" tone="warn" />}
+  </span>;
+}
+
 type Sort = 'time' | 'lf';
 
 /** Load factor of every departure on a route, split by direction. Tap a flight to adjust it. */
@@ -31,8 +41,6 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
   const order = (list: FlightResult[]) => [...list].sort((x, y) => sort === 'lf'
     ? y.loadFactor - x.loadFactor || y.spill - x.spill
     : localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
-  const lfs = flights.map((f) => f.loadFactor);
-  const spread = Math.max(...lfs) - Math.min(...lfs);
   const full = flights.filter((f) => f.spill > 0.5).length;
   const empty = flights.filter((f) => f.loadFactor < 0.6).length;
   return <section className="flight-loads" aria-label="每班載客率">
@@ -43,10 +51,9 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
       </div>}>
       每班載客率
     </Head>
-    {flights.length > 1 && (full || empty || spread >= 0.05) && <div className="hint">
-      {full || empty
-        ? `${full ? `${full} 班客滿` : ''}${full && empty ? ' · ' : ''}${empty ? `${empty} 班不到六成` : ''}`
-        : `各班相差 ${pct(spread)}`}
+    {flights.length > 1 && (full || empty) && <div className="ins">
+      {full > 0 && <Badge n="spill" tone="warn" label={`${full} 班客滿`}>{full}</Badge>}
+      {empty > 0 && <Badge n="seat" tone="bad" label={`${empty} 班不到六成`}>&lt;60% · {empty}</Badge>}
     </div>}
     {[[a, b], [b, a]].map(([from, to]) => {
       const list = order(flights.filter((f) => f.from === from));
@@ -62,7 +69,7 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
                 <span className="flight-load-bar" aria-hidden="true">
                   <i className={lfTone(f.loadFactor)} style={{ width: `${Math.min(100, 100 * f.loadFactor)}%` }} />
                 </span>
-                <small>{loadLine(f)}{reg(f.acId)}{f.perWeek < 7 ? ` · 每週 ${+f.perWeek.toFixed(1)} 班` : ''}</small>
+                <small><LoadIcons f={f} />{reg(f.acId)}{f.perWeek < 7 ? ` · ${+f.perWeek.toFixed(1)}/週` : ''}</small>
               </span>
               <span className="flight-load-right">
                 <b className={`num ${lfTone(f.loadFactor)}`}>{pct(f.loadFactor)}</b>
