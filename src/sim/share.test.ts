@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { addRoundTrip, emptyPlan, simulate, type Plan } from './simulate';
+import { addRoundTrip, competitionFor, emptyPlan, simulate, todaySplit, type Plan } from './simulate';
 import { marketSplit } from './share';
 
 const trips = (p: Plan, a: string, b: string, n: number) => {
@@ -86,5 +86,39 @@ describe('direct and connecting travellers in one market', () => {
     expect(s.rows.find((r) => r.kind === 'own')!.pax).toBeCloseTo(net.routes['HKG-TPE'].localPax, 0);
     expect(s.total).toBeCloseTo(net.routes['HKG-TPE'].airTotal, 0);
     expect(sum(s)).toBeCloseTo(s.total, 0);
+  });
+});
+
+describe('competitor connections', () => {
+  test('long-haul markets with no nonstop are shared between competitors connecting at their hubs', () => {
+    const c = competitionFor('LHR', 'SYD');
+    expect(c.services).toHaveLength(0);
+    expect(c.connections.length).toBeGreaterThanOrEqual(3);
+    // Each one is an airline changing planes at its own hub, close to the straight line.
+    for (const x of c.connections) expect(x.airline.bases).toContain(x.via);
+    const hubs = c.connections.map((x) => x.via);
+    expect(hubs).toEqual(expect.arrayContaining(['SIN', 'HKG']));
+    const split = marketSplit('LHR', 'SYD');
+    const via = split.rows.filter((r) => r.kind === 'rivalVia');
+    expect(via.length).toBeGreaterThanOrEqual(3);
+    expect(via.reduce((s, r) => s + r.share, 0)).toBeGreaterThan(0.5);
+  });
+
+  test('connections compete with nonstops too, but nonstops carry most of a big market', () => {
+    const split = marketSplit('HKG', 'LHR');
+    const share = (k: string) => split.rows.filter((r) => r.kind === k).reduce((s, r) => s + r.share, 0);
+    expect(share('rivalVia')).toBeGreaterThan(0.03);
+    expect(share('rival')).toBeGreaterThan(0.7);
+    expect(split.rows.find((r) => r.kind === 'rivalVia' && r.via === 'DXB')).toBeDefined();
+    expect(split.rows.reduce((s, r) => s + r.share, 0)).toBeCloseTo(1, 5);
+  });
+
+  test("today's travellers in a market add up across nonstops and connections", () => {
+    for (const [o, d] of [['TPE', 'LHR'], ['LHR', 'MNL'], ['HUN', 'ITM']]) {
+      const t = todaySplit(o, d);
+      const sum = t.rivals.reduce((s, x) => s + x, 0) + t.connecting;
+      expect(sum, `${o}-${d}`).toBeCloseTo(t.total, 3);
+      expect(t.via.reduce((s, x) => s + x, 0), `${o}-${d}`).toBeLessThanOrEqual(t.connecting + 1e-6);
+    }
   });
 });

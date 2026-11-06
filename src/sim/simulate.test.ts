@@ -260,3 +260,13 @@ describe('per-flight results', () => {
     for (const f of Object.values(res.byFlight)) if (f.spill > 0.5) expect(f.loadFactor).toBeGreaterThan(0.99);
   });
 });
+
+test('a long-haul flight every other day carries everyone who wants it while seats are free', () => {
+  const r = addRoundTrip(emptyPlan('HKG'), 'HKG', 'LHR', 'B789');
+  if ('error' in r) throw new Error(r.error);
+  const net = simulate(r.plan);
+  const route = net.routes['HKG-LHR'];
+  expect(route.flightsPerWeek).toBeLessThan(14);
+  expect(route.loadFactor).toBeLessThan(0.9);
+  for (const k of ['HKG>LHR', 'LHR>HKG']) expect(net.markets[k].nonstop).toBeCloseTo(net.markets[k].wanted, 0);
+});
