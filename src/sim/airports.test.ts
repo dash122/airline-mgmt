@@ -234,3 +234,21 @@ describe('transit potential from the hub', () => {
     expect(l.viaPax / l.potential).toBeGreaterThan(0.6);
   });
 });
+
+import { estimateNonstop } from './airports';
+import { connectionHourCost } from './simulate';
+describe('connections compete for the whole market', () => {
+  const p = emptyPlan('HKG');
+  const ratio = (o: string, h: string, d: string) => estimateVia(p, o, h, d) / estimateNonstop(p, o, d);
+  test('a well-timed daily connection wins a real share of travellers who fly nonstop today, but less than a nonstop', () => {
+    for (const [o, h, d] of [['TPE', 'HKG', 'BKK'], ['TPE', 'HKG', 'LHR'], ['HKG', 'TPE', 'NRT']]) {
+      expect(ratio(o, h, d), `${o}-${h}-${d}`).toBeGreaterThan(0.25);
+      expect(ratio(o, h, d), `${o}-${h}-${d}`).toBeLessThan(0.7);
+    }
+  });
+  test('an extra hour matters less on long, expensive trips', () => {
+    expect(connectionHourCost(9800)).toBeLessThan(connectionHourCost(2500));
+    expect(connectionHourCost(2500)).toBeLessThan(connectionHourCost(800));
+    expect(connectionHourCost(800)).toBe(connectionHourCost(400));
+  });
+});

@@ -80,7 +80,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
       <Head info={<>
         <p>{summary}</p>
         <p>{a} ⇄ {b} 每週共 {count(total)} 人（雙向）。{split.ownFreqShare > 0 && rows.some((r) => r.kind === 'rival') ? `你的班次占全部直飛的 ${pct(split.ownFreqShare)}。` : ''}</p>
-        <p>市占看班次、起飛時段、票價和服務；轉機等越久，分到越少。對手的班表和票價固定。</p>
+        <p>市占看班次、起飛時段、票價和服務；轉機票價較低，也會搶直飛旅客，但等越久分到越少。對手的班表和票價固定。</p>
         {result && result.pax - result.localPax >= 1 && <p>另有每週 {count(result.pax - result.localPax)} 人只在這條航線轉機去別處，算在別的市場。客滿時本地和轉機旅客按比例分座位。</p>}
       </>} right={<small className="muted"><IN n="pax" v={`${count(total)}/週`} label="旅客/週" /></small>}>{title}</Head>
       <DirectVsTransit rows={rows} total={total} />

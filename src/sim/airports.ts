@@ -4,7 +4,7 @@ import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, marketsAt, pairKey } from './markets';
 import {
-  blockMinutes, competitionFor, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
+  blockMinutes, competitionFor, CONNECT_FARE_SHARE, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
   topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
 import { airChoice } from './choice';
@@ -257,7 +257,7 @@ export function estimateViaOneWay(plan: Plan, o: string, hub: string, d: string,
   const blockH = typicalFlightHours(l1) + typicalFlightHours(l2);
   const w = daily * connectionWeight(blockH, minConnect(hub, o, d, plan.hub) + 30, hub, m.distKm);
   const mult = (fareMultOf(plan, pairKey(o, hub)) * l1 + fareMultOf(plan, pairKey(hub, d)) * l2) / (l1 + l2);
-  return takeOneWay(plan, o, d, w, mult);
+  return takeOneWay(plan, o, d, w, mult * CONNECT_FARE_SHARE);
 }
 
 /** Shortest workable layover at `hub` from a flight arriving from `o` to one leaving for `d`. */
