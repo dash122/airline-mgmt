@@ -56,7 +56,7 @@ function Radial({ code, list, onPick }: { code: string; list: Spoke[]; onPick: (
             <line x1={cx} y1={cy} x2={x} y2={y} className="line" strokeWidth={s.loadFactor === null ? 2 : w} />
             <circle cx={x} cy={y} r="4.5" className="node" />
             <text x={x} y={y + (y > cy ? 15 : -8)} textAnchor="middle">{s.other}</text>
-            {s.flightsPerDay > 1 && <text x={x} y={y + (y > cy ? 25 : -18)} textAnchor="middle" className="sm">×{s.flightsPerDay}</text>}
+            {s.flightsPerDay > 1 && <text x={x} y={y + (y > cy ? 25 : -18)} textAnchor="middle" className="sm">{s.flightsPerDay}班/日</text>}
           </g>
         );
       })}
@@ -80,7 +80,7 @@ function DayStrip({ plan, code }: { plan: Plan; code: string }) {
         ))}
       </div>
       <div className="hours">{[0, 6, 12, 18].map((h) => <span key={h} style={{ left: `${(h / 24) * 100}%` }}>{h}</span>)}</div>
-      <div className="legend"><span className="d" title="出發"><Icon n="up" label="出發" /></span><span className="a" title="抵達"><Icon n="down" label="抵達" /></span></div>
+      <div className="legend"><span className="d">■ 出發</span><span className="a">■ 抵達</span></div>
     </div>
   );
 }
@@ -123,16 +123,16 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const traffic = useMemo(() => airportTraffic(result, code), [result, code]);
   const ourPax = list.reduce((s, x) => s + x.pax, 0);
   const tiles: Tile[] = [
-    { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" /> : undefined },
-    { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" /> : undefined },
-    { key: 'market', icon: 'market', label: '市場', value: traffic.ours >= 1 ? pct(traffic.ours / Math.max(1, traffic.total)) : '0%', sub: <IN n="pax" v={short(traffic.total)} label="機場旅客/週" /> },
+    { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" u="人/週" /> : undefined },
+    { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" u="班/週" /> : undefined },
+    { key: 'market', icon: 'market', label: '市場', value: traffic.ours >= 1 ? pct(traffic.ours / Math.max(1, traffic.total)) : '0%', sub: <IN n="pax" v={short(traffic.total)} label="機場旅客/週" u="人/週" /> },
     isPersp
-      ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '/週' }
-      : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} /> },
+      ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週' }
+      : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
   ];
   return (
     <Sheet title={`${a.name} ${a.code}`} onClose={onClose} action={action}
-      sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}<IN n="pax" v={`${count(a.catchment / 1e4)}萬`} label="腹地人口" /></span>}
+      sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}<IN n="pax" v={`${count(a.catchment / 1e4)}萬`} label="腹地人口" w="腹地" u="人" /></span>}
       info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
 
@@ -143,7 +143,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
           <ul className="markets">
             {list.map((s) => (
               <li key={s.key} onClick={() => onOpenRoute(s.key)} className="tapli">
-                <span className="name">{AIRPORT_BY_CODE[s.other].name} <small>{s.other}{s.flightsPerDay > 1 ? ` ×${s.flightsPerDay}` : ''}</small>
+                <span className="name">{AIRPORT_BY_CODE[s.other].name} <small>{s.other} · 每日 {s.flightsPerDay} 班</small>
                   {s.loadFactor !== null && <span className="lf-line"><Meter value={s.loadFactor} tone={tone(s.loadFactor)} label={`載客率 ${pct(s.loadFactor)}`} /><b className={tone(s.loadFactor)}>{pct(s.loadFactor)}</b></span>}</span>
                 {s.profit !== null && <span className={`pill ${s.profit >= 0 ? 'good' : 'bad'}`}>{s.profit >= 0 ? '+' : ''}{money(s.profit)}</span>}
               </li>
@@ -151,10 +151,10 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
           </ul>
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>
-              <span className="grow"><b><Icon n="transfer" /> {persp}</b>
+              <span className="grow"><b><Icon n="transfer" /> 經{persp}轉機</b>
                 <span className="ins">{view.legFlown
-                  ? <><IN n="pax" v={count(view.now)} label="每週轉機旅客" /><IN n="market" v={view.rows.filter((r) => viaGroup(r) === 'flown').length} label="接上的地方" /></>
-                  : <><IN n="lock" v={`${code}⇄${persp}`} label="還沒飛" /><IN n="market" v={`+${view.unlockCount}`} label="開航後可接上的地方" /></>}</span></span>
+                  ? <><IN n="pax" v={count(view.now)} label="每週轉機旅客" u="人/週" /><IN n="market" v={view.rows.filter((r) => viaGroup(r) === 'flown').length} label="接上的地方" /></>
+                  : <><IN n="lock" v={`${code}⇄${persp}`} label="還沒飛" w="未飛" /><IN n="market" v={`+${view.unlockCount}`} label="開航後可接上的地方" w="可接" u="地" /></>}</span></span>
               <span className="chev">›</span>
             </button>
           )}
@@ -164,9 +164,9 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
             <div className="hubbox">
               <div className="grow">
                 <b><Icon n="hub" /> 轉運站{isHub && <> <Badge n="check" tone="good" label="已啟用" /></>}</b>
-                <span className="ins"><IN n="fast" v={`−${HUB_MCT_CUT}m`} label="轉機時間縮短" /><IN n="money" v={`${money(HUB_COST_PER_WEEK)}/週`} label="每週費用（只能設一個）" /></span>
+                <span className="ins"><IN n="fast" v={`−${HUB_MCT_CUT}m`} label="轉機時間縮短" w="轉機" /><IN n="money" v={`${money(HUB_COST_PER_WEEK)}/週`} label="每週費用（只能設一個）" w="費用" /></span>
               </div>
-              <button className={isHub ? 'secondary' : 'primary small'} onClick={onToggleHub}>{isHub ? '取消' : '設定'}</button>
+              <button className={isHub ? 'secondary' : 'primary small'} onClick={onToggleHub}>{isHub ? '取消' : '設為轉運站'}</button>
             </div>
           )}
         </>
@@ -220,12 +220,12 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
           return (
             <li key={r.code} onClick={() => onPick(r.code)}>
               <div className="st-top">
-                <span className="name"><span className="st-title">{AIRPORT_BY_CODE[r.code].name} {r.code}{r.code === plan.base && <Icon n="base" label="基地" />}{r.isHub && <Icon n="hub" label="轉運站" />}</span>
-                  <span className="ins"><IN n="route" v={r.routes} label="航線" /><IN n="pax" v={count(r.pax)} label="旅客/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" />}</span></span>
+                <span className="name"><span className="st-title">{AIRPORT_BY_CODE[r.code].name} {r.code}{r.code === plan.base && <span className="chip">基地</span>}{r.isHub && <span className="chip">轉運站</span>}</span>
+                  <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" />}</span></span>
                 {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`}>{r.profit >= 0 ? '+' : ''}{money(r.profit)}</span>}
               </div>
               <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : use >= 0.7 ? 'warn' : 'good'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>
-              {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}
+              {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" w="時間帶" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}
             </li>
           );
         })}

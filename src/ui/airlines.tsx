@@ -80,11 +80,11 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
                   <Tail net={net} />
                   <span className="name">
                     <b>{net.airline.name}<em>{KIND_NAMES[net.airline.kind]}</em></b>
-                    <span className="ins"><span>{countryName(net.airline.country)}</span><IN n="hub" v={hubCodes(net)} label="樞紐" /><IN n="plane" v={short(net.flights)} label="班/週" /></span>
+                    <span className="ins"><span>{countryName(net.airline.country)}</span><IN n="hub" v={hubCodes(net)} label="樞紐" w="樞紐" /><IN n="plane" v={short(net.flights)} label="班/週" u="班/週" /></span>
                   </span>
                   {routes.length > 0
-                    ? <Badge n="route" tone="warn" label="和你飛同一條航線">{routes.length}</Badge>
-                    : airports.length > 0 ? <Badge n="base" tone="muted" label="和你在同一個機場">{airports.length}</Badge> : null}
+                    ? <Badge n="route" tone="warn">{routes.length} 條同線</Badge>
+                    : airports.length > 0 ? <Badge n="base" tone="muted">{airports.length} 個同機場</Badge> : null}
                   <span className="chev">›</span>
                 </button>
               </li>
@@ -92,7 +92,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
           </ul>
         </section>
       ))}
-      {!list.length && <div className="hint center">—</div>}
+      {!list.length && <div className="hint center">{query ? '找不到' : '還沒有和你重疊的航空'}</div>}
     </Sheet>
   );
 }
@@ -118,25 +118,25 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
   const aircraft = net.fleet.reduce((s, f) => s + f.aircraft, 0);
   const main = net.hubs[0];
   const tiles: { key: Section; icon: IconName; label: string; value: string; sub?: React.ReactNode }[] = [
-    { key: 'routes', icon: 'route', label: '航線', value: count(net.routes.length), sub: <IN n="base" v={count(net.airports.length)} label="航點" /> },
+    { key: 'routes', icon: 'route', label: '航線', value: count(net.routes.length), sub: <IN n="base" v={count(net.airports.length)} label="航點" u="個航點" /> },
     net.pointToPoint
-      ? { key: 'hubs', icon: 'hub', label: '機場', value: main.code, sub: <span title="點對點，沒有樞紐">⇄ ⇄</span> }
-      : { key: 'hubs', icon: 'hub', label: '樞紐', value: net.hubs.length > 1 ? `${net.hubs.length}` : main.code, sub: net.hubs.length > 1 ? hubCodes(net) : <IN n="share" v={pct(main.share)} label="占班次" /> },
-    { key: 'fleet', icon: 'plane', label: '機隊', value: `~${count(aircraft)}`, sub: <span title="機型">{net.fleet.length} 型</span> },
-    { key: 'vs', icon: 'rival', label: '和你', value: overlap.routes.length ? `${overlap.routes.length}` : '—', sub: overlap.routes.length ? <IN n="route" v="同線" label="同航線競爭" /> : overlap.airports.length ? <IN n="base" v={overlap.airports.length} label="同機場" /> : undefined },
+      ? { key: 'hubs', icon: 'hub', label: '主要機場', value: main.code, sub: '點對點' }
+      : { key: 'hubs', icon: 'hub', label: '樞紐', value: net.hubs.length > 1 ? `${net.hubs.length}` : main.code, sub: net.hubs.length > 1 ? hubCodes(net) : <IN n="share" v={pct(main.share)} label="占班次" w="占" u="班次" /> },
+    { key: 'fleet', icon: 'plane', label: '機隊', value: `約 ${count(aircraft)} 架`, sub: `${net.fleet.length} 種機型` },
+    { key: 'vs', icon: 'rival', label: '和你', value: overlap.routes.length ? `${overlap.routes.length}` : '—', sub: overlap.routes.length ? <IN n="route" v="同線" label="同航線競爭" /> : overlap.airports.length ? <IN n="base" v={overlap.airports.length} label="同機場" u="個同機場" /> : undefined },
   ];
   return (
     <Sheet title={a.name} onClose={onClose}
-      sub={<span className="ins"><span>{countryName(a.country)} · {KIND_NAMES[a.kind]}</span><IN n="market" v={count(net.countries.length)} label="飛的國家" /></span>}
+      sub={<span className="ins"><span>{countryName(a.country)} · {KIND_NAMES[a.kind]}</span><IN n="market" v={count(net.countries.length)} label="飛的國家" w="飛" u="國" /></span>}
       info={<p>{blurb(net)} {net.pointToPoint ? '最大機場' : '主樞紐'}：{name(main.code)} {main.code}。對手的班表和票價固定，不會因為你而改變。</p>}
       action={back && <button className="back" onClick={back.go} aria-label={`返回${back.label}`}>‹ {back.label}</button>}>
       <div className="al-head">
         <Tail net={net} size={44} />
         <div className="grow">
           <div className="al-facts">
-            <span title="班/週"><b>{short(net.flights)}</b><small><Icon n="plane" />/週</small></span>
-            <span title="座位/週"><b>{short(net.seats / 2)}</b><small><Icon n="seat" />/週</small></span>
-            <span title="最遠（公里）"><b>{count(net.longestKm)}</b><small><Icon n="long" />km</small></span>
+            <span><b>{short(net.flights)}</b><small>班/週</small></span>
+            <span><b>{short(net.seats / 2)}</b><small>座位/週</small></span>
+            <span><b>{count(net.longestKm)}</b><small>最遠 公里</small></span>
           </div>
         </div>
       </div>
@@ -186,7 +186,7 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
       <div className="chips scroll">
         <button className={`chip${filter === 'all' ? ' strong' : ''}`} onClick={() => pick('all')}>全部 {net.routes.length}</button>
         {net.hubs.map((h) => (
-          <button key={h.code} className={`chip${filter === `hub:${h.code}` ? ' strong' : ''}`} onClick={() => pick(`hub:${h.code}`)}><Icon n="up" /> {h.code} {h.destinations}</button>
+          <button key={h.code} className={`chip${filter === `hub:${h.code}` ? ' strong' : ''}`} onClick={() => pick(`hub:${h.code}`)}>{h.code} 出發 {h.destinations}</button>
         ))}
         {long.length > 0 && <button className={`chip${filter === 'long' ? ' strong' : ''}`} onClick={() => pick('long')}>長程 {long.length}</button>}
         {mine.length > 0 && <button className={`chip${filter === 'mine' ? ' strong' : ''}`} onClick={() => pick('mine')}><Icon n="route" /> 你也飛 {mine.length}</button>}
@@ -198,8 +198,8 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
             onToggle={() => onFocus(focus === r.key ? null : r.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} />
         ))}
       </ul>
-      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>+{Math.min(PAGE * 2, list.length - shown)} <small>/ {list.length}</small></button>}
-      {!list.length && <div className="hint center">—</div>}
+      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, list.length - shown)} 條</button>}
+      {!list.length && <div className="hint center">沒有符合的航線</div>}
     </>
   );
 }
@@ -215,10 +215,10 @@ function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, 
       <button className="al-route-top" onClick={onToggle} aria-expanded={open}>
         <span className="name">
           <b>{r.a} ⇄ {name(r.b)} {r.b}</b>
-          <span className="ins"><IN n="long" v={`${count(r.distKm)}km`} label={r.distKm > LONG_HAUL_KM ? '長程' : '距離'} tone={r.distKm > LONG_HAUL_KM ? 'accent' : undefined} /><IN n="plane" v={shortType(r.type)} label="機型" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" /></span>
+          <span className="ins"><IN n="long" v={`${count(r.distKm)}km`} label={r.distKm > LONG_HAUL_KM ? '長程' : '距離'} u={r.distKm > LONG_HAUL_KM ? ' 長程' : undefined} tone={r.distKm > LONG_HAUL_KM ? 'accent' : undefined} /><IN n="plane" v={shortType(r.type)} label="機型" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /></span>
         </span>
         {flown && <Badge n="route" tone="warn" label="你也飛" />}
-        <span className="rival-share" title="班/週">{count(r.freq)}<small>/週</small></span>
+        <span className="rival-share">{count(r.freq)}<small>班/週</small></span>
       </button>
       {open && (
         <div className="al-route-more">
@@ -229,9 +229,9 @@ function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, 
           <CompactTimetable from={s.from} to={s.to} services={[s]} plan={flown ? plan : undefined} />
           <div className="chips">
             {flown
-              ? <button className="chip strong" onClick={() => onOpenRoute(r.key)}><Icon n="route" /> {r.a} ⇄ {r.b} ›</button>
-              : <button className="chip strong" onClick={() => onOpen(r.a, r.b)} aria-label={`你也開航 ${r.a} ⇄ ${r.b}`}><Icon n="plus" /> {r.a} ⇄ {r.b}</button>}
-            <button className="chip" onClick={() => onPickAirport(r.b)}><Icon n="base" /> {name(r.b)} ›</button>
+              ? <button className="chip strong" onClick={() => onOpenRoute(r.key)}>看你的 {r.a} ⇄ {r.b}</button>
+              : <button className="chip strong" onClick={() => onOpen(r.a, r.b)}>你也開航 {r.a} ⇄ {r.b}</button>}
+            <button className="chip" onClick={() => onPickAirport(r.b)}>看{name(r.b)}機場</button>
           </div>
         </div>
       )}
@@ -253,12 +253,12 @@ function Hubs({ net, onPickAirport, onShowRoutes }: { net: AirlineNetwork; onPic
             <li key={h.code}>
               <div className="hub-top">
                 <span className="name"><b>{h.main && !net.pointToPoint && <Icon n="hub" label="主樞紐" />} {name(h.code)} {h.code}</b><small>{countryName(AIRPORT_BY_CODE[h.code].country)}</small></span>
-                <button className="chip" onClick={() => onPickAirport(h.code)} aria-label="看機場"><Icon n="base" /> ›</button>
+                <button className="chip" onClick={() => onPickAirport(h.code)}>看機場</button>
               </div>
               <div className="hub-nums">
-                <span title="出發/週"><b>{count(h.departures)}</b><small><Icon n="up" />/週</small></span>
-                <span title="航點"><b>{h.destinations}</b><small><Icon n="base" /></small></span>
-                <span title="占它的班次"><b>{pct(h.share)}</b><small><Icon n="share" /></small></span>
+                <span><b>{count(h.departures)}</b><small>出發/週</small></span>
+                <span><b>{h.destinations}</b><small>航點</small></span>
+                <span><b>{pct(h.share)}</b><small>占它的班次</small></span>
               </div>
               <div className="hub-hours" role="img" aria-label={`${h.code} 一天中的出發班次`}>
                 {byHour.map((n, i) => <i key={i} style={{ height: `${(100 * n) / peak}%`, background: net.airline.color }} />)}
@@ -294,13 +294,13 @@ function Fleet({ net }: { net: AirlineNetwork }) {
       <ul className="fleet-lines">
         {net.fleet.map((f) => (
           <li key={f.type}>
-            <span className="name"><b>{AIRCRAFT[f.type].name}</b><span className="ins"><span>{CLASS_NAMES[AIRCRAFT[f.type].cls]}</span><IN n="seat" v={AIRCRAFT[f.type].seats} label="座位" /><IN n="route" v={f.routes} label="航線" /><IN n="plane" v={`${count(f.flights)}/週`} label="班/週" /></span>
+            <span className="name"><b>{AIRCRAFT[f.type].name}</b><span className="ins"><span>{CLASS_NAMES[AIRCRAFT[f.type].cls]}</span><IN n="seat" v={AIRCRAFT[f.type].seats} label="座位" u="座" /><IN n="route" v={f.routes} label="航線" u="條航線" /><IN n="plane" v={count(f.flights)} label="班/週" u="班/週" /></span>
               <span className="fleet-bar"><i style={{ width: `${(100 * f.aircraft) / maxA}%`, background: net.airline.color }} /></span></span>
-            <span className="rival-share" title="架（估計）">~{count(f.aircraft)}</span>
+            <span className="rival-share">約 {count(f.aircraft)}<small>架</small></span>
           </li>
         ))}
       </ul>
-      <h4><Icon n="up" /> 出發</h4>
+      <h4>出發時刻表 <small>當地時間</small></h4>
       {net.hubs.length > 1 && (
         <div className="chips">
           {net.hubs.map((h) => <button key={h.code} className={`chip${hub === h.code ? ' strong' : ''}`} onClick={() => { setHub(h.code); setShown(20); }}>{h.code}</button>)}
@@ -311,11 +311,11 @@ function Fleet({ net }: { net: AirlineNetwork }) {
           <li key={`${d.to}${i}`}>
             <time>{hhmm(d.time)}</time>
             <span className="name"><b>{name(d.to)} {d.to}</b><small>{shortType(d.type)}</small></span>
-            <span className="dep-days" title="每週班次">{d.freq >= 7 ? '每天' : `${d.freq}/週`}</span>
+            <span className="dep-days">{d.freq >= 7 ? '每天' : `每週 ${d.freq} 班`}</span>
           </li>
         ))}
       </ul>
-      {deps.length > shown && <button className="secondary" onClick={() => setShown(shown + 40)}>+{Math.min(40, deps.length - shown)} <small>/ {deps.length}</small></button>}
+      {deps.length > shown && <button className="secondary" onClick={() => setShown(shown + 40)}>再顯示 {Math.min(40, deps.length - shown)} 班</button>}
     </>
   );
 }
@@ -340,8 +340,8 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
               return (
                 <li key={r.key} className="flown">
                   <div className="vs-top" role="button" onClick={() => onOpenRoute(r.key)}>
-                    <span className="name"><b>{r.a} ⇄ {r.b}</b><span className="ins"><IN n="plane" v={`${count(own?.freq ?? 0)} : ${count(them?.freq ?? 0)}`} label="班次 你 : 它" /><IN n="pax" v={count(split.total)} label="旅客/週" /></span></span>
-                    <span className="rival-share" title="市占 你 : 它">{pct(own?.share ?? 0)} : {pct(them?.share ?? 0)}</span>
+                    <span className="name"><b>{r.a} ⇄ {r.b}</b><span className="ins"><IN n="plane" v={`${count(own?.freq ?? 0)} : ${count(them?.freq ?? 0)}`} label="班次 你 : 它" w="班次" /><IN n="pax" v={count(split.total)} label="旅客/週" u="人/週" /></span></span>
+                    <span className="rival-share">{pct(own?.share ?? 0)} : {pct(them?.share ?? 0)}<small>市占 你 : 它</small></span>
                   </div>
                   <div className="share-track thin">
                     <div style={{ width: `${100 * (own?.share ?? 0)}%`, background: 'var(--accent)' }} />
@@ -352,21 +352,21 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
             })}
           </ul>
         </>
-      ) : <div className="hint center"><Icon n="route" /> 0</div>}
+      ) : <div className="hint center">還沒有同航線競爭</div>}
       {overlap.airports.length > 0 && (
         <>
-          <h4><Icon n="base" /> 同機場</h4>
+          <h4>你們都在的機場</h4>
           <div className="chips">{overlap.airports.map((c) => <button key={c} className="chip" onClick={() => onPickAirport(c)}>{name(c)} {c}</button>)}</div>
         </>
       )}
       {ideas.length > 0 && (
         <>
-          <h4><Icon n="plus" /> 它飛、你沒飛</h4>
+          <h4>它飛、你還沒飛</h4>
           <ul className="markets">
             {ideas.map((r) => (
               <li key={r.key}>
-                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<span className="ins"><IN n="plane" v={`${r.freq}/週`} label="它的班次" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" /></span></span>
-                <button onClick={() => onOpen(r.a, r.b)} aria-label="開航"><Icon n="plus" /></button>
+                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<span className="ins"><IN n="plane" v={`${r.freq}/週`} label="它的班次" w="它" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /></span></span>
+                <button onClick={() => onOpen(r.a, r.b)}>開航</button>
               </li>
             ))}
           </ul>

@@ -126,18 +126,21 @@ export function Icon({ n, label, size }: { n: IconName; label?: string; size?: n
   );
 }
 
-/** A number with its unit as an icon: 👤 1,234. `label` names the whole thing for screen readers and hover. */
-export function IN({ n, v, label, tone, strong }: { n: IconName; v: ReactNode; label: string; tone?: Tone; strong?: boolean }) {
+/**
+ * A number with a small icon and a short word: "👤 1,234 人/週", "利用率 50%→65%". The icon helps the eye find the
+ * kind of number; the word `w` (before) and unit `u` (after) say what it is. `label` is the full name for hover.
+ */
+export function IN({ n, v, label, tone, strong, w, u }: { n: IconName; v: ReactNode; label: string; tone?: Tone; strong?: boolean; w?: string; u?: string }) {
   return (
-    <span className={`in${tone ? ` ${tone}` : ''}${strong ? ' strong' : ''}`} title={label} aria-label={typeof v === 'string' || typeof v === 'number' ? `${label} ${v}` : label}>
-      <Icon n={n} /><span aria-hidden={typeof v === 'string' || typeof v === 'number' ? true : undefined}>{v}</span>
+    <span className={`in${tone ? ` ${tone}` : ''}${strong ? ' strong' : ''}`} title={label}>
+      <Icon n={n} />{w && <span className="in-w">{w}</span>}<span className="in-v">{v}</span>{u && <span className="in-u">{u}</span>}
     </span>
   );
 }
 
 /** A small coloured badge: an icon and a few characters, for a state ("full", "17h wait", "no link"). */
 export function Badge({ n, children, tone = 'muted', label }: { n?: IconName; children?: ReactNode; tone?: Tone; label?: string }) {
-  return <span className={`badge ${tone}`} title={label} aria-label={label}>{n && <Icon n={n} />}{children}</span>;
+  return <span className={`badge ${tone}`} title={label}>{n && <Icon n={n} />}{children ?? label}</span>;
 }
 
 /** Hours and minutes in the compact form games use: 3h35, 45m. */
