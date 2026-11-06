@@ -4,7 +4,7 @@ import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { airChoice, airUtility, type AirOffer, departureQuality, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, stayHomeUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
 import { rivalsAt, rivalsFrom, type Airline, type RivalService } from './competitors';
-import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey, type Market } from './markets';
+import { marketBetween, marketsAt, MIN_MARKET_KM, pairKey, refFare, type Market } from './markets';
 import { distanceKm } from './geo';
 import { flightMinutes, typicalFlightHours } from './flighttime';
 
@@ -361,14 +361,29 @@ export function connectFareShare(layoverMin: number): number {
   return Math.max(MIN_CONNECT_FARE_SHARE, CONNECT_FARE_SHARE - LAYOVER_DISCOUNT_PER_HOUR * extraH);
 }
 
+/** Up to this fare (about 1,350 km) an extra hour on a connection costs its full value of time. */
+export const CONNECT_TIME_FULL_FARE = 5000;
+/** How fast that falls on pricier trips: 0.75 of it at NT$8,000 (Taipei-Bangkok), 0.65 at NT$27,000 (Taipei-London). */
+const CONNECT_TIME_EXP = 0.25;
+
 /**
- * Relative attractiveness of a one-stop trip compared with a nonstop at the same time of day (1 = as good).
- * `blockH` is the hours in the air on both flights together.
+ * Log weight a connection loses per extra hour versus flying nonstop. On short trips an hour is a big part of the
+ * journey; on long, expensive trips travellers mind it less next to what they pay, so connections through a hub win
+ * a real slice of long-haul markets (Taipei-London via Hong Kong or Dubai), as they do in reality.
+ */
+export function connectionHourCost(directKm: number): number {
+  return THETA * VALUE_OF_TIME * Math.min(1, (CONNECT_TIME_FULL_FARE / refFare(directKm)) ** CONNECT_TIME_EXP);
+}
+
+/**
+ * Relative attractiveness of a one-stop trip compared with a nonstop at the same time of day and fare (1 = as
+ * good). `blockH` is the hours in the air on both flights together. Connections also sell cheaper
+ * (connectFareShare), which wins back part of this in the market.
  */
 export function connectionWeight(blockH: number, waitMin: number, via: string, directKm: number, through = false): number {
   const felt = blockH + (through ? waitMin / 60 : layoverCostHours(waitMin, via));
   const direct = typicalFlightHours(directKm);
-  return Math.exp(-THETA * VALUE_OF_TIME * (felt - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
+  return Math.exp(-connectionHourCost(directKm) * (felt - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
 }
 /**
  * A one-stop trip may be at most this much longer than the direct distance (3x under 800 km). Detours below this
@@ -500,7 +515,7 @@ export function rivalConnections(o: string, d: string): RivalConnection[] {
       const w = connectionWeight(typicalFlightHours(first.distKm) + typicalFlightHours(second.distKm), RIVAL_CONNECT_WAIT_MIN, h, m.distKm);
       const quality = s1.airline.quality + Math.log(w) / THETA;
       const effFreq = Math.min(s1.effFreq, s2.effFreq) * RIVAL_CONNECT_SHARE;
-      const fare = Math.round(m.refFare * s1.airline.fareMult);
+      const fare = Math.round(m.refFare * s1.airline.fareMult * CONNECT_FARE_SHARE);
       out.push({ airline: s1.airline, via: h, freq: Math.min(s1.freq, s2.freq), effFreq, fare, quality, pull: effFreq * Math.exp(THETA * quality) });
     }
   }
@@ -608,8 +623,9 @@ export function simulate(plan: Plan): NetworkResult {
     const m = marketBetween(o, d);
     if (!m) continue;
     // An itinerary that runs less often than daily attracts proportionally fewer travellers.
-    // Each itinerary's weight, after travellers' reaction to its price versus that itinerary's usual price.
-    const priced = new Map(list.map((it) => [it, it.weight * (it.perWeek / 7) * Math.exp(-it.fareShare * fareResponse(it.fareMult * m.refFare, m.refFare))]));
+    // Each itinerary's weight, after travellers' reaction to its price against the nonstop reference fare: connections
+    // sell cheaper, so they also draw travellers who would otherwise fly nonstop.
+    const priced = new Map(list.map((it) => [it, it.weight * (it.perWeek / 7) * Math.exp(-fareResponse(it.fareShare * it.fareMult * m.refFare, m.refFare))]));
     const wSum = list.reduce((s, it) => s + it.weight * (it.perWeek / 7), 0);
     const pSum = [...priced.values()].reduce((s, w) => s + w, 0);
     // One fare that has the same pull as the player's mix of itineraries and prices.

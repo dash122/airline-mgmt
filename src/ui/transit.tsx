@@ -143,6 +143,7 @@ function Legend({ hub, extra }: { hub: string; extra?: ReactNode }) {
         <p>「接好」是 4 小時內能轉機。<Icon n="share" /> 是你在這兩地所有航空旅客中的占比，<Icon n="market" /> 是這兩地每週的航空旅客。</p>
         <p><Icon n="check" /> 接得好 · <Icon n="clock" /> 要等很久 · <Icon n="bed" /> 要停留過夜 · <Icon n="cross" /> 班次接不上 · <Icon n="lock" /> 還沒飛那一段 · <Icon n="spill" /> 客滿 · <Icon n="detour" /> 繞路。點徽章看原因。</p>
         <p>轉機票價約直飛的 {pct(CONNECT_FARE_SHARE)}；等 4 小時以上的旅客少很多，8 小時以上算停留（票價約 {pct(STOPOVER_FARE_SHARE)}，{name(hub)}的停留吸引力約抵 {stopoverAppealHours(hub).toFixed(1)} 小時）。</p>
+        <p>轉機比直飛便宜，所以也搶得到直飛的旅客；航程越長，多花的時間越不要緊。</p>
         {extra}
       </div>}
     </>
