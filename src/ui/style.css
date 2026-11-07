@@ -1187,7 +1187,7 @@ button.primary, .primary.wide { border-radius: 13px; background: var(--accent); 
 .airport-actions .secondary { padding: 10px 14px; white-space: nowrap; }
 .airport-section-label { display: flex; align-items: baseline; justify-content: space-between; margin-top: 7px; font-size: 14px; font-weight: 800; }
 .airport-section-label span { color: var(--muted); font-size: 10px; font-weight: 400; }
-.airport-sheet .ap-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); }
+.airport-sheet .ap-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); }
 .airport-sheet .ap-tiles button { display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 3px; min-height: 42px; padding: 5px 3px; border: 0; border-radius: 9px; background: transparent; }
 .airport-sheet .ap-tiles button.on { background: var(--panel); box-shadow: 0 2px 8px rgba(20, 55, 47, .1); }
 .airport-sheet .ap-tiles .label { color: var(--muted); font-size: 12px; font-weight: 700; }
@@ -1490,3 +1490,20 @@ button:disabled { box-shadow: none; }
 @media (min-width: 820px) {
   .sheet.route-sheet.compact { bottom: 100px; }
 }
+
+.airport-day-schedule { display: grid; gap: 12px; }
+.airport-day-schedule .head small { margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.airport-day-flights { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.airport-day-flights li { display: grid; grid-template-columns: 106px minmax(110px, 1fr) minmax(56px, auto); gap: 8px; align-items: center; min-height: 46px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.airport-day-flights time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.airport-day-times { display: flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.airport-day-times > span { color: var(--muted); }
+.airport-day-carrier { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.airport-day-carrier > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.airport-day-carrier small { display: block; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; }
+.airport-day-carrier i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.airport-day-carrier i.own { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.airport-day-destination { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.airport-day-destination b { font-size: 12px; }
+.airport-day-destination small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 420px) { .airport-sheet .ap-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } .airport-sheet .ap-tiles button { flex-direction: column; gap: 0; } .airport-sheet .ap-tiles .label { font-size: 10px; } }

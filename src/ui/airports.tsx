@@ -10,7 +10,7 @@ import {
 } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { Sheet, tone } from './sheets';
-import { AirportCompetition, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
+import { AirportCompetition, AirportDaySchedule, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
 import { rivalsAt } from '../sim/competitors';
 import { Badge, IN, Icon, Meter } from './viz';
 
@@ -114,6 +114,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
     { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" u="人/週" /> : undefined },
     { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" u="班/週" /> : undefined },
     { key: 'market', icon: 'market', label: '市場', value: traffic ? pct(traffic.ours / Math.max(1, traffic.total)) : '?', sub: <IN n="pax" v={traffic ? short(traffic.total) : '?'} label="機場旅客/週" u="人/週" /> },
+    { key: 'schedule', icon: 'calendar', label: '全日班表', value: `${used}`, sub: '班/週' },
     isPersp
       ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週' }
       : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
@@ -181,6 +182,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
         </>
       )}
 
+      {tab === 'schedule' && <AirportDaySchedule plan={plan} code={code} />}
       {tab === 'rivals' && <AirportCompetition plan={plan} result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
 
       {tab === 'market' && <AirportMarkets plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}

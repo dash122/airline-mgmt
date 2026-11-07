@@ -1,7 +1,7 @@
 ﻿// The airport sheet's competition and market potential sections, and the summary tiles that lead to each section.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AIRPORT_BY_CODE } from '../data/airports';
-import { airlinesAt, rivalsAt, rivalsBetween } from '../sim/competitors';
+import { AIRPORT_BY_CODE, AIRPORTS } from '../data/airports';
+import { airlinesAt, rivalsAt, rivalsBetween, type RivalService } from '../sim/competitors';
 import { countryName } from '../sim/networks';
 import type { NetworkResult } from '../sim/simulate';
 import { marketSplit, type ShareRow } from '../sim/share';
@@ -14,7 +14,7 @@ import { count, pct } from './format';
 import { Head } from './sheets';
 import { Badge, IN, Icon, type IconName } from './viz';
 
-export type AirportSection = 'routes' | 'rivals' | 'market' | 'transfer';
+export type AirportSection = 'routes' | 'rivals' | 'market' | 'transfer' | 'schedule';
 
 export interface Tile {
   key: AirportSection;
@@ -36,6 +36,40 @@ export function AirportTiles({ tiles, on, onPick }: { tiles: Tile[]; on: Airport
       ))}
     </div>
   );
+}
+
+/** Full daily board for every service touching this airport. */
+export function AirportDaySchedule({ plan, code }: { plan: Plan; code: string }) {
+  const [direction, setDirection] = useState<'departures' | 'arrivals'>('departures');
+  const flights = useMemo(() => {
+    const rows: { id: string; dep: number; arr: number; other: string; carrier: string; country?: string; color?: string; own: boolean }[] = [];
+    for (const f of allFlights(plan)) {
+      if (direction === 'departures' ? f.from === code : f.to === code) rows.push({ id: `${f.ac.id}-${f.index}`, dep: f.depUtc, arr: f.arrUtc, other: direction === 'departures' ? f.to : f.from, carrier: '你的航空', country: countryName(AIRPORT_BY_CODE[plan.base].country), own: true });
+    }
+    const rivalServices = direction === 'departures'
+      ? rivalsAt(code).flatMap((route) => route.services)
+      : AIRPORTS.flatMap((airport) => airport.code === code ? [] : rivalsBetween(airport.code, code).filter((service) => service.to === code));
+    for (const service of rivalServices) for (let i = 0; i < service.times.length; i++) {
+      const dep = utcFromLocal(service.from, service.times[i]);
+      const arr = dep + blockMinutes(service.from, service.to, service.type);
+      rows.push({ id: `${service.airline.id}-${service.from}-${service.to}-${i}`, dep, arr, other: direction === 'departures' ? service.to : service.from, carrier: service.airline.name, country: countryName(service.airline.country), color: service.airline.color, own: false });
+    }
+    return rows.sort((a, b) => localMinutes(code, direction === 'departures' ? a.dep : a.arr) - localMinutes(code, direction === 'departures' ? b.dep : b.arr) || a.id.localeCompare(b.id));
+  }, [plan, code, direction]);
+  return <section className="airport-day-schedule">
+    <div className="seg two" role="group" aria-label="班表方向">
+      <button className={direction === 'departures' ? 'on' : ''} aria-pressed={direction === 'departures'} onClick={() => setDirection('departures')}>出發</button>
+      <button className={direction === 'arrivals' ? 'on' : ''} aria-pressed={direction === 'arrivals'} onClick={() => setDirection('arrivals')}>抵達</button>
+    </div>
+    <Head>{direction === 'departures' ? `${code} 全日出發` : `${code} 全日抵達`} <small>本地時間 · {flights.length} 班/日</small></Head>
+    {!flights.length ? <div className="hint center">今天沒有定期航班</div> : <ul className="airport-day-flights">
+      {flights.map((f) => <li key={f.id}>
+        <span className="airport-day-times"><time>{hhmm(localMinutes(direction === 'departures' ? code : f.other, f.dep))}</time><span>→</span><time>{hhmm(localMinutes(direction === 'departures' ? f.other : code, f.arr))}</time></span>
+        <span className="airport-day-carrier"><i className={f.own ? 'own' : ''} style={{ background: f.own ? 'var(--accent)' : f.color }} /><span>{f.carrier}<small>{f.country}</small></span></span>
+        <span className="airport-day-destination"><b>{f.other}</b><small>{AIRPORT_BY_CODE[f.other].name}</small></span>
+      </li>)}
+    </ul>}
+  </section>;
 }
 
 const OWN = 'var(--accent)';
