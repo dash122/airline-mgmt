@@ -8,9 +8,10 @@ import {
   unitOf, type Placement, type Unit,
 } from '../sim/schedule';
 import {
-  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, topMarketsFrom, utcFromLocal,
+  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, simulate, topMarketsFrom, utcFromLocal,
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
+import { marketBetween } from '../sim/markets';
 import { count, money, pct } from './format';
 import { arrival, at, dayStart, legSegments, routeColor, routeName, Sheet, shortType, tone, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
@@ -43,18 +44,20 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
       <ul className="routes">
         {rows.map((r) => {
           const p = r.res ? r.res.revenue - r.res.flyingCost : 0;
+          const market = marketBetween(r.a, r.b);
           return (
             <li key={r.key}>
               <button className="name" onClick={() => onOpen(r.key)}>
                 <span className="swatch" style={{ background: routeColor(r.key) }} />
-                <span className="grow">{routeName(r.a, r.b)}
+                <span className="grow"><strong>{routeName(r.a, r.b)}</strong>
+                  <small className="route-meta">{r.types.join(' · ') || '尚未安排機型'}{market?.distKm ? ` · ${Math.round(market.distKm).toLocaleString()} 公里` : ''}</small>
                   {r.res
-                    ? <span className="lf-line"><Meter value={r.res.loadFactor} tone={tone(r.res.loadFactor)} label={`載客率 ${pct(r.res.loadFactor)}`} /><b className={tone(r.res.loadFactor)}>{pct(r.res.loadFactor)}</b></span>
-                    : <small>{r.types.join('、')}</small>}
+                    ? <span className="lf-line"><Meter value={r.res.loadFactor} tone={tone(r.res.loadFactor)} label={`載客率 ${pct(r.res.loadFactor)}`} /><b className={tone(r.res.loadFactor)}>{pct(r.res.loadFactor)}</b><small>{Math.round(r.res.pax).toLocaleString()} / {Math.round(r.res.seats).toLocaleString()} 人/週</small></span>
+                    : <small>模擬計算中</small>}
                 </span>
               </button>
               {r.res && <span className={`pill ${p < 0 ? 'bad' : tone(r.res.loadFactor) === 'bad' ? 'warn' : 'good'}`} title="每週航段損益，不含租金">{p >= 0 ? '+' : ''}{money(p)}<small>／週</small></span>}
-              <span className="step">
+              <span className="step" aria-label="每日來回班次">
                 <button onClick={() => onRemoveOne(r.key)} aria-label="減一班來回">−</button>
                 <output>{r.flightsPerDay / 2}</output>
                 <button onClick={() => onAdd(r.key)} aria-label="加一班來回">＋</button>
@@ -315,6 +318,13 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
   const [draftDep, setDraftDep] = useState<number | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const ac = plan.fleet.find((x) => x.id === acId);
+  const previewPlan = useMemo(() => {
+    if (!ac || !ac.legs[leg] || draftDep === null) return plan;
+    const unit = unitOf(ac, leg);
+    const delta = draftDep - ac.legs[unit.start].dep;
+    return delta ? withAc(plan, shiftUnit(ac, unit, delta)) : plan;
+  }, [plan, ac, leg, draftDep]);
+  const previewResult = useMemo(() => previewPlan === plan ? result : simulate(previewPlan), [previewPlan, plan, result]);
   if (!ac || !ac.legs[leg]) return null;
   const u = unitOf(ac, leg);
   const first = ac.legs[u.start];
@@ -330,8 +340,8 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
           <li key={i}>
             <span className="t">{at(ac.legs[i].from, ac.legs[i].dep + delta)}</span>
             <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i) + delta)} label="抵達" w="抵達" /></small>
-              {result?.byFlight[`${ac.id}#${i}`] && <small><LoadIcons f={result.byFlight[`${ac.id}#${i}`]} /></small>}</span>
-            {result?.byFlight[`${ac.id}#${i}`] && <LoadPill f={result.byFlight[`${ac.id}#${i}`]} />}
+              {previewResult?.byFlight[`${ac.id}#${i}`] && <small><LoadIcons f={previewResult.byFlight[`${ac.id}#${i}`]} /></small>}</span>
+            {previewResult?.byFlight[`${ac.id}#${i}`] && <LoadPill f={previewResult.byFlight[`${ac.id}#${i}`]} />}
           </li>
         ))}
       </ul>

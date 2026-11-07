@@ -1,4 +1,4 @@
-@font-face {
+﻿@font-face {
   font-family: 'Waypoint Sans';
   src: url('../assets/fonts/Manrope-Variable.ttf') format('truetype');
   font-style: normal;
@@ -6,7 +6,7 @@
   font-display: swap;
 }
 @font-face {
-  font-family: 'Waypoint Chinese';
+  font-family: 'Noto Sans TC';
   src: url('../assets/fonts/NotoSansTC-Variable.ttf') format('truetype');
   font-style: normal;
   font-weight: 100 900;
@@ -29,7 +29,7 @@
   --cost-lease: #b9c3ca;
   --shadow: 0 6px 24px rgba(20, 33, 43, 0.16);
   --radius: 16px;
-  font-family: 'Waypoint Sans', 'Waypoint Chinese', sans-serif;
+  font-family: 'Waypoint Sans', 'Noto Sans TC', sans-serif;
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
 }
@@ -114,6 +114,29 @@ button:disabled { opacity: 0.4; cursor: default; }
 .sheet.full { top: calc(env(safe-area-inset-top) + 124px); max-height: none; }
 .sheet.compact { max-height: 25%; }
 .sheet .compact-body { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.sheet.route-sheet.compact { max-height: 31%; }
+.route-sheet-compact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 18px 16px; }
+.route-preview-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px 12px; min-width: 0; }
+.route-preview-load { grid-row: span 2; display: flex; align-items: center; gap: 7px; padding-right: 12px; border-right: 1px solid var(--line); }
+.route-preview-load > span, .route-preview-profit > span { color: var(--muted); font-size: 10px; }
+.route-preview-load strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.route-preview-load strong.good, .route-preview-profit .good { color: var(--good); }
+.route-preview-load strong.warn { color: var(--warn); }
+.route-preview-load strong.bad, .route-preview-profit .bad { color: var(--bad); }
+.route-preview-meta, .route-preview-profit { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.route-preview-meta b { font-size: 12px; }
+.route-preview-meta span { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.route-preview-profit { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; }
+.route-preview-profit b { font-size: 11px; }
+.route-sheet-compact > button { min-height: 42px; padding: 0 13px; border-radius: 10px; color: var(--accent); font-size: 12px; font-weight: 750; white-space: nowrap; }
+@media (min-width: 820px) {
+  .sheet.route-sheet.compact { max-height: 22%; }
+  .route-sheet-compact { padding: 12px 18px 16px; }
+}
+@media (max-width: 440px) {
+  .route-sheet-compact { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .route-sheet-compact > button { width: 100%; }
+}
 .sheet.over { z-index: 21; bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
 .sheet.over.half { max-height: 70%; }
 .scrim { position: absolute; inset: 0; background: rgba(10, 18, 26, 0.35); z-index: 20; }
@@ -290,6 +313,24 @@ small.bad { color: var(--bad) !important; }
 .step { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex-shrink: 0; }
 .step button { width: 34px; height: 34px; font-size: 18px; font-weight: 700; color: var(--accent); }
 .step output { min-width: 26px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; border-inline: 1px solid var(--line); line-height: 34px; }
+.routes { display: flex; flex-direction: column; gap: 8px; }
+.routes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 95%, var(--accent)); }
+.routes .name { grid-column: 1; grid-row: 1; align-items: stretch; gap: 11px; padding: 2px 0; }
+.routes .name .grow { gap: 3px; }
+.routes .name strong { font-size: 14px; line-height: 1.35; }
+.routes .name .route-meta { color: var(--muted); font-size: 10px; }
+.routes .lf-line { display: grid; grid-template-columns: minmax(48px, 112px) auto 1fr; align-items: center; gap: 7px; width: 100%; max-width: 260px; margin-top: 5px; }
+.routes .lf-line > small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.routes li > .pill { grid-column: 2; grid-row: 1; align-self: start; }
+.routes li > .step { grid-column: 1 / -1; justify-self: end; }
+.routes .step { border-radius: 9px; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.routes .step button { min-width: 40px; height: 36px; }
+.routes .step output { min-width: 72px; line-height: 36px; font-size: 12px; }
+@media (min-width: 620px) {
+  .routes li { grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
+  .routes li > .step { grid-column: 3; grid-row: 1; }
+  .routes li > .pill { align-self: center; }
+}
 
 /* Schedule chart */
 .gantt { display: flex; flex-direction: column; gap: 8px; }
@@ -506,6 +547,18 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .market-share h4 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
 .share-track { display: flex; gap: 1px; height: 14px; border-radius: 7px; overflow: hidden; background: var(--line); margin: 6px 0 4px; }
 .share-track > div { height: 100%; min-width: 0; }
+.airport-competition-share { overflow: visible; }
+.airport-competition-share .airport-competition-segment { position: relative; cursor: help; }
+.airport-competition-share .airport-competition-segment:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; z-index: 2; }
+.airport-competition-tooltip { position: absolute; z-index: 5; left: 50%; bottom: calc(100% + 13px); display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(260px, 78vw); padding: 10px 13px; border: 1px solid color-mix(in srgb, var(--line) 75%, var(--text)); border-radius: 12px; background: var(--panel); color: var(--text); box-shadow: 0 8px 24px rgba(18, 42, 39, .18); opacity: 0; visibility: hidden; transform: translate(-50%, 4px); transition: opacity .14s ease, transform .14s ease, visibility .14s; pointer-events: none; white-space: normal; }
+.airport-competition-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; width: 9px; height: 9px; background: var(--panel); border-right: 1px solid color-mix(in srgb, var(--line) 75%, var(--text)); border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, var(--text)); transform: translate(-50%, -5px) rotate(45deg); }
+.airport-competition-tooltip > i { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
+.airport-competition-tooltip > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.airport-competition-tooltip b { overflow: hidden; font-size: 12px; text-overflow: ellipsis; }
+.airport-competition-tooltip small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.airport-competition-tooltip > strong { margin-left: 5px; font-size: 16px; white-space: nowrap; }
+.airport-competition-tooltip > strong small { margin-left: 3px; font-size: 10px; font-weight: 500; }
+.airport-competition-share .airport-competition-segment:hover .airport-competition-tooltip, .airport-competition-share .airport-competition-segment:focus-visible .airport-competition-tooltip { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 .share-track .lost { background: repeating-linear-gradient(45deg, var(--warn) 0 4px, transparent 4px 7px); }
 .share-list { list-style: none; margin: 0; padding: 0; }
 .share-list li { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); }
@@ -883,6 +936,8 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .carrier-bar i { display: block; height: 100%; border-radius: 2px; }
 .competitor-list .carrier { align-items: center; gap: 8px; }
 .competitor-list .name { flex: 1; min-width: 0; }
+.airport-carrier-hub { padding-inline: 9px !important; border-radius: 10px; background: color-mix(in srgb, var(--accent) 8%, var(--panel)); box-shadow: inset 3px 0 var(--accent); }
+.airport-carrier-meta { color: var(--muted); font-size: 11px; }
 .st-title .ico { margin-left: 4px; color: var(--accent); }
 .hubbox b .ico { color: var(--accent); }
 .markets .lf-line { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
@@ -1042,7 +1097,7 @@ button.primary, .primary.wide { min-height: 46px; }
 /* Typography: composed editorial headings, clear operational data. */
 :root { font-synthesis: none; text-rendering: optimizeLegibility; }
 .start-intro h1 {
-  font-family: 'Waypoint Sans', 'Waypoint Chinese', sans-serif;
+  font-family: 'Waypoint Sans', 'Noto Sans TC', sans-serif;
   font-weight: 500;
   letter-spacing: .02em;
   line-height: 1.4;
@@ -1124,6 +1179,7 @@ button.primary, .primary.wide { border-radius: 13px; background: var(--accent); 
 .airport-hero-stats div { display: flex; flex-direction: column; gap: 3px; }
 .airport-hero-stats strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .airport-hero-stats span { color: #b9d6c7; font-size: 10px; }
+.airport-reach-note { position: relative; padding: 0 0 15px; color: #d6e9dc; font-size: 11px; line-height: 1.5; }
 .airport-actions { display: flex; gap: 8px; }
 .airport-actions .primary { display: flex; align-items: center; gap: 9px; flex: 1; text-align: left; padding: 12px 15px; }
 .airport-actions .primary > span:first-child { font-size: 20px; line-height: 1; }
@@ -1145,12 +1201,80 @@ button.primary, .primary.wide { border-radius: 13px; background: var(--accent); 
 .airport-empty button { padding: 0; color: var(--accent); font-size: 12px; font-weight: 800; }
 .airport-sheet .markets li { padding: 14px 2px; }
 @media (max-width: 819px) {
-  .airport-sheet.full { top: max(110px, 15vh); border-radius: 22px 22px 0 0; }
+  .airport-sheet.full { top: max(110px, 15vh); bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; }
   .airport-sheet .sheet-body { padding: 12px 16px 24px; }
   .airport-hero { padding-top: 17px; }
   .airport-code { font-size: 36px; }
   .airport-hero-stats { margin-top: 16px; }
 }
+.airport-sheet .sheet-body { padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 18px); }
+.airport-route-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+.airport-route-filters { max-height: 96px; overflow-y: auto; padding: 2px 2px 6px; }
+.airport-route-filters .chip { padding: 6px 10px; font-size: 12px; }
+.airport-sheet .vs-list { display: grid; gap: 10px; }
+.airport-sheet .vs-list > li { padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.airport-sheet .vs-list > li:active { transform: scale(.995); }
+.airport-sheet .vs-list > li.flown { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); }
+.airport-row-summary { display: grid; gap: 6px; margin-top: 10px; }
+.airport-row-summary-track { display: flex; overflow: hidden; height: 5px; border-radius: 4px; background: var(--line); }
+.airport-row-summary-track .direct { background: var(--accent); }
+.airport-row-summary-track .connecting { background: repeating-linear-gradient(135deg, var(--muted) 0 2px, color-mix(in srgb, var(--muted) 25%, var(--panel)) 2px 5px); }
+.airport-row-summary > div:last-child { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; }
+.airport-row-summary small { margin-left: auto; font-size: 10px; }
+.airport-sheet .vs-top { align-items: flex-start; gap: 14px; }
+.airport-sheet .vs-top .name { gap: 5px; }
+.airport-sheet .vs-top .name b { font-size: 15px; line-height: 1.35; }
+.airport-sheet .vs-top .name b::before { width: 7px; height: 7px; margin-right: 7px; }
+.airport-sheet .vs-top .ins { gap: 8px 12px; }
+.airport-sheet .vs-top .rival-share { min-width: 54px; padding: 5px 8px; border-radius: 10px; background: var(--bg); }
+.airport-sheet .vs-list .share-track { height: 7px; margin-top: 11px; border-radius: 5px; }
+.airport-share-groups { display: grid; gap: 8px; margin-top: 10px; }
+.airport-share-group { padding: 8px 10px; border-radius: 10px; background: var(--bg); }
+.airport-share-group-title { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: 11px; }
+.airport-share-group-title b { color: var(--text); font-size: 12px; }
+.airport-share-group .share-track { display: flex; overflow: hidden; height: 6px; margin: 5px 0 7px; border-radius: 5px; background: var(--line); }
+.airport-share-group .share-track i, .airport-transit-chart i { display: block; height: 100%; min-width: 2px; border-right: 1px solid var(--panel); }
+.airport-share-group.connecting .share-track i, .airport-share-group.connecting .airport-share-legend li > i, .airport-transit-chart i { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.75) 0 2px, transparent 2px 5px); }
+.airport-share-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 4px 10px; margin: 0; padding: 0; list-style: none; }
+.airport-share-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 10px; }
+.airport-share-legend li > i, .airport-connection-title > span > i { width: 8px; height: 8px; flex: none; border-radius: 3px; }
+.airport-share-legend li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.airport-share-legend li > b { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.airport-share-lost { color: var(--muted); font-size: 10px; }
+.airport-transit-share { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+.airport-transit-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.airport-transit-heading span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.airport-transit-chart { display: flex; overflow: hidden; height: 8px; border-radius: 5px; background: var(--line); }
+.airport-transit-share .airport-share-legend { margin-top: 8px; }
+.airport-connection-schedules, .airport-direct-schedules { display: grid; gap: 8px; }
+.airport-connection-schedules > h5, .airport-direct-schedules > h5 { margin: 6px 0 0; font-size: 13px; }
+.airport-connection-card { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.airport-connection-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.airport-connection-title > span { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 700; }
+.airport-connection-title > b { font-variant-numeric: tabular-nums; }
+.airport-connection-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; }
+.airport-connection-path > span, .airport-connection-path > small { color: var(--muted); }
+.airport-connection-path > small { margin-left: auto; }
+.airport-bridge-options { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.airport-bridge-options > li { display: grid; grid-template-columns: 22px minmax(52px, .7fr) minmax(60px, .8fr) minmax(76px, 1fr) minmax(52px, .7fr); align-items: center; gap: 5px; padding: 8px 5px; border-radius: 9px; background: var(--bg); }
+.airport-bridge-options .bridge-index { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--line); color: var(--muted); font-size: 9px; }
+.airport-bridge-options li > span:not(.bridge-index) { display: flex; flex-direction: column; gap: 2px; }
+.airport-bridge-options small { color: var(--muted); font-size: 9px; }
+.airport-bridge-options b { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.airport-bridge-options .bridge-wait { padding: 4px 6px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
+.airport-bridge-options .bridge-wait b { color: var(--accent); }
+.airport-connection-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.airport-direct-schedules { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+.airport-sheet .competitor-list { display: grid; gap: 8px; }
+.airport-sheet .competitor-list > li.carrier { padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--panel) 96%, var(--accent)); }
+.airport-sheet .competitor-list > li.airport-carrier-hub { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.airport-sheet .competitor-list .name { gap: 4px; }
+.airport-sheet .competitor-list .carrier-bar { height: 5px; margin-top: 6px; }
+.airport-sheet .airport-carrier-meta { font-size: 11px; }
+.airport-sheet .vs-actions { margin-top: 12px; }
+.airport-sheet .vs-actions .chip { padding: 9px 14px; }
+.compact-carrier-name { display: flex; flex-direction: column; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-carrier-name small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; }
 
 /* A quieter operations interface: let the map and figures lead. */
 :root { --shadow: 0 8px 24px rgba(22, 43, 39, .12); --radius: 12px; }
@@ -1225,6 +1349,41 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .route-adjust > summary::before { content: '›'; display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 7px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); font-size: 19px; line-height: 1; transition: transform .16s ease; }
 .route-adjust[open] > summary::before { transform: rotate(90deg); }
 .route-adjust > summary small { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 500; }
+.route-sheet .sheet-body { gap: 10px; }
+.route-sheet .big-step { padding: 12px 14px; }
+.route-glance { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.route-load-glance, .route-profit-glance { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--accent) 3%, var(--panel)); text-align: left; }
+.route-load-glance { flex-wrap: wrap; }
+.route-load-glance > span:nth-child(2), .route-profit-glance { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.route-load-glance small, .route-profit-glance small { color: var(--muted); font-size: 10px; }
+.route-load-glance b, .route-profit-glance b { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
+.route-load-glance .route-load-ring { display: grid; place-items: center; }
+.route-glance-caption { flex-basis: 100%; padding-left: 43px; color: var(--muted); font-size: 10px; }
+.route-profit-glance { min-width: 120px; align-self: stretch; justify-content: center; }
+.route-profit-glance b.good { color: var(--good); }
+.route-profit-glance b.bad { color: var(--bad); }
+.route-sheet .route-fare { padding: 3px 1px 0; }
+.route-sheet .route-fare .price { font-size: 20px; }
+.route-sheet .route-fare .pm.small button { min-width: 48px; }
+.route-sheet .fare-tip { display: flex; align-items: center; gap: 7px; margin: -4px 0 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--good) 22%, var(--line)); background: color-mix(in srgb, var(--good) 6%, var(--panel)); font-size: 11px; }
+.route-sheet .fare-tip span { color: var(--muted); }
+.route-sheet .fare-tip b { color: var(--text); }
+.route-sheet .fare-tip strong { margin-left: auto; white-space: nowrap; }
+.route-detail { min-width: 0; }
+.route-detail > summary { min-height: 44px; padding: 6px 9px; gap: 8px; border: 1px solid var(--line); border-radius: 11px; background: transparent; align-items: center; }
+.route-detail > summary::before { display: none; }
+.route-detail[open] > summary { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius: 13px 13px 8px 8px; }
+.route-detail > summary > span:nth-child(2) { font-size: 12px; }
+.route-detail > summary small { overflow: hidden; max-width: 52%; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.route-detail-icon { display: grid; width: 25px; height: 25px; flex: none; place-items: center; align-self: center; border-radius: 8px; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-size: 15px; font-weight: 800; line-height: 1; }
+.route-detail[open] > :not(summary) { margin: 12px 4px 4px; }
+.route-analysis-block + .route-analysis-block { margin-top: 18px !important; padding-top: 14px; border-top: 1px solid var(--line); }
+.route-analysis-block > h4 { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 750; }
+@media (max-width: 420px) {
+  .route-glance { grid-template-columns: 1fr 1fr; }
+  .route-profit-glance { min-width: 0; }
+  .route-sheet .fare-tip { flex-wrap: wrap; }
+}
 .od { gap: 8px; }
 .od-end { padding: 10px 12px; border-radius: 13px; }
 .od-end b { font-size: 21px; letter-spacing: -.02em; }
@@ -1264,6 +1423,24 @@ button:disabled { box-shadow: none; }
 .pot-list { display: flex; flex-direction: column; gap: 8px; }
 .pot-list > li.potential-card { padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--panel) 92%, var(--accent)); }
 .pot-list > li.potential-card.expanded { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.pot-list > li.vs-card { display: flex; flex-direction: column; gap: 0; }
+.pot-list > li.vs-card .potential-toggle { align-items: flex-start; padding: 13px; }
+.pot-list > li.vs-card .potential-destination { gap: 5px; }
+.pot-list > li.vs-card .potential-destination b { font-size: 15px; }
+.pot-list > li.vs-card .potential-chevron { margin-top: 4px; }
+.pot-list > li.vs-card > .airport-row-summary,
+.pot-list > li.vs-card > .vs-actions,
+.pot-list > li.vs-card > .airport-share-groups,
+.pot-list > li.vs-card > .vs-more,
+.pot-list > li.vs-card > .airport-connection-note { margin-right: 13px; margin-left: 13px; }
+.pot-list > li.vs-card > .airport-row-summary { margin-top: 0; margin-bottom: 12px; }
+.pot-list > li.vs-card > .vs-actions { margin-top: 0; margin-bottom: 12px; }
+.pot-list > li.vs-card > .airport-share-groups { margin-top: 0; margin-bottom: 12px; }
+.pot-list > li.vs-card > .vs-more { margin-top: 0; margin-bottom: 12px; }
+.pot-list > li.vs-card > .airport-connection-note { margin-top: 0; margin-bottom: 12px; }
+.pot-list > li.vs-card .airport-row-summary > div:last-child { font-size: 10px; }
+.market-row-details { display: grid; gap: 12px; }
+.market-estimate-note { margin-top: 0; }
 .potential-toggle { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 13px 7px; text-align: left; }
 .potential-destination { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
 .potential-destination b { overflow: hidden; color: var(--text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1299,3 +1476,17 @@ button:disabled { box-shadow: none; }
 .connection-itinerary-heading small, .route-trip-label small { color: var(--muted); font-size: 10px; font-weight: 500; }
 .connection-layover { padding: 5px 8px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--accent); font-size: 10px; font-weight: 700; }
 .route-trip { gap: 10px; }
+
+/* Put the schedule in a first-class section and keep carrier names visible in rows. */
+.market-insight { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--text); font-size: 12px; line-height: 1.6; }
+.compact-columns, .compact-flight > summary { grid-template-columns: minmax(100px, 1.35fr) minmax(56px, .8fr) minmax(64px, .9fr) 44px; }
+.compact-carrier { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.compact-carrier > span:last-child { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 360px) {
+  .compact-columns, .compact-flight > summary { grid-template-columns: minmax(82px, 1.2fr) minmax(48px, .8fr) minmax(54px, .9fr) 38px; }
+}
+
+/* Lift the compact route preview clear of the centered desktop navigation. */
+@media (min-width: 820px) {
+  .sheet.route-sheet.compact { bottom: 100px; }
+}

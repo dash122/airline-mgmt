@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AIRCRAFT } from '../data/aircraft';
 import { dayShiftBetween } from '../sim/airports';
 import type { RivalService } from '../sim/competitors';
+import { countryName } from '../sim/networks';
 import { marketBetween, pairKey } from '../sim/markets';
 import { blockMinutes, flightsOn, hhmm, localMinutes, utcFromLocal, type FlightResult, type Plan } from '../sim/simulate';
 import { loadLine, LoadPill } from './FlightLoads';
@@ -12,7 +13,7 @@ export function CarrierMark({ name, color, own = false }: { name: string; color?
 }
 
 type Row = {
-  id: string; carrier: string; name: string; color?: string; dep: number; arr: number;
+  id: string; carrier: string; name: string; country?: string; color?: string; dep: number; arr: number;
   type: string; freq: number; fare?: number; reg?: string; edit?: () => void; load?: FlightResult;
 };
 
@@ -21,15 +22,15 @@ export function chronological<T extends { dep: number; id: string }>(rows: T[], 
   return [...rows].sort((a, b) => localMinutes(from, a.dep) - localMinutes(from, b.dep) || a.id.localeCompare(b.id));
 }
 
-export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
-  from: string; to: string; services: RivalService[]; plan?: Plan; loads?: FlightResult[]; onEdit?: (ac: string, leg: number) => void;
+export function CompactTimetable({ from, to, services, plan, loads, onEdit, showFilters = true }: {
+  from: string; to: string; services: RivalService[]; plan?: Plan; loads?: FlightResult[]; onEdit?: (ac: string, leg: number) => void; showFilters?: boolean;
 }) {
   const [mode, setMode] = useState<'own' | 'all' | 'select'>('all');
   const [selected, setSelected] = useState<string[]>([]);
   const carriers = [...new Map(services.map((s) => [s.airline.id, s.airline])).values()];
   const rows: Row[] = services.flatMap((s) => s.times.map((time, index) => {
     const dep = utcFromLocal(s.from, time);
-    return { id: s.airline.id + '-' + index, carrier: s.airline.id, name: s.airline.name, color: s.airline.color,
+    return { id: s.airline.id + '-' + index, carrier: s.airline.id, name: s.airline.name, country: countryName(s.airline.country), color: s.airline.color,
       dep, arr: dep + blockMinutes(s.from, s.to, s.type), type: AIRCRAFT[s.type].name, freq: s.freq, fare: s.fare };
   }));
   if (plan) {
@@ -42,12 +43,12 @@ export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
   const visible = chronological(rows.filter((r) => mode === 'all' || (mode === 'own' ? r.carrier === 'own' : selected.includes(r.carrier))), from);
   const toggle = (id: string) => setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   return <div className="compact-schedule">
-    <div className="schedule-filters" role="group" aria-label="顯示航空公司">
+    {showFilters && <div className="schedule-filters" role="group" aria-label="顯示航空公司">
       {plan && <button aria-pressed={mode === 'own'} onClick={() => setMode('own')}>自家</button>}
       <button aria-pressed={mode === 'all'} onClick={() => setMode('all')}>全部</button>
       <button aria-pressed={mode === 'select'} onClick={() => { if (mode !== 'select' && !selected.length) setSelected([...(plan ? ['own'] : []), ...carriers.map((c) => c.id)]); setMode('select'); }}>自選</button>
-    </div>
-    {mode === 'select' && <fieldset className="carrier-picker"><legend>選擇要比較的航空</legend>
+    </div>}
+    {showFilters && mode === 'select' && <fieldset className="carrier-picker"><legend>選擇要比較的航空</legend>
       {plan && <label><input type="checkbox" checked={selected.includes('own')} onChange={() => toggle('own')} /><CarrierMark name="你的航空" own />你的航空</label>}
       {carriers.map((c) => <label key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggle(c.id)} /><CarrierMark name={c.name} color={c.color} />{c.name}</label>)}
     </fieldset>}
@@ -59,12 +60,12 @@ export function CompactTimetable({ from, to, services, plan, loads, onEdit }: {
         const duration = Math.round(r.arr - r.dep);
         return <li key={r.id}><details className="compact-flight">
           <summary aria-label={`${r.name}，${from} ${hhmm(localMinutes(from, r.dep))} 出發，${to} ${hhmm(localMinutes(to, r.arr))} 抵達${shift ? '，日期差 ' + shift + ' 天' : ''}`}>
-            <CarrierMark name={r.name} color={r.color} own={r.carrier === 'own'} />
+            <span className="compact-carrier"><CarrierMark name={r.name} color={r.color} own={r.carrier === 'own'} /><span className="compact-carrier-name">{r.name}{r.country && <small>{r.country}</small>}</span></span>
             <time>{hhmm(localMinutes(from, r.dep))}</time>
             <span className="compact-arrival"><time>{hhmm(localMinutes(to, r.arr))}</time>{shift !== 0 && <sup>{shift > 0 ? '+' : ''}{shift}</sup>}</span>
             <span className="compact-duration">{Math.floor(duration / 60)}h{String(duration % 60).padStart(2, '0')}{r.load && <><br /><LoadPill f={r.load} /></>}</span>
           </summary>
-          <div className="compact-flight-detail"><b>{r.name}</b><span>{r.type}{r.reg ? ' · ' + r.reg : ''}{r.fare !== undefined ? ' · NT$' + count(r.fare) : ''}</span>
+          <div className="compact-flight-detail"><b>{r.name}{r.country ? ` · ${r.country}` : ''}</b><span>{r.type}{r.reg ? ' · ' + r.reg : ''}{r.fare !== undefined ? ' · NT$' + count(r.fare) : ''}</span>
             <span>{r.carrier === 'own' ? '每日營運' : `此方向每週 ${r.freq} 班`}{r.freq < 7 ? ' · 未指定營運星期' : ''}{shift !== 0 ? ` · 抵達日期差 ${shift > 0 ? '+' : ''}${shift} 天` : ''}</span>
             {r.load && <span>載客率 {Math.round(r.load.loadFactor * 100)}% · {loadLine(r.load)}</span>}
             {r.edit && <button onClick={r.edit}>調整這班航班</button>}

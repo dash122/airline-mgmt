@@ -92,6 +92,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         <div><span>你的旅客市占</span><strong>{pct(ownPax / total)}</strong><small>{count(ownPax)} 人／週 · 含直飛及轉機</small></div>
         <div className="share-overview-total"><span>市場旅客</span><strong>{count(total)}</strong><small>人／週 · 雙向</small></div>
       </div>
+      <p className="market-insight">{summary}</p>
       <DirectVsTransit rows={rows} total={total} />
       <div className="share-breakdown-label"><b>各航空公司分布</b><span>占全部旅客</span></div>
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>

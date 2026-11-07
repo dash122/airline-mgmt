@@ -433,8 +433,19 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
       // Every airline in the market flies about the market's typical aircraft size.
       const seatsNeeded = rivalPaxPerFlight(m.airDemand, m.distKm) / AVERAGE_LOAD;
       const type = pickType(al, A, B, m.distKm, seatsNeeded) ?? 'A20N';
+      const [outFrom, outTo] = al.bases.includes(m.a) ? [m.a, m.b] : al.bases.includes(m.b) ? [m.b, m.a] : [m.a, m.b];
+      const outbound = scheduleTimes(al, AIRPORT_BY_CODE[outFrom], AIRPORT_BY_CODE[outTo], m.distKm, n);
+      const pairedReturn = m.distKm <= LONG_HAUL_KM && (al.bases.includes(m.a) !== al.bases.includes(m.b))
+        ? outbound.map((dep) => {
+          const origin = AIRPORT_BY_CODE[outFrom], destination = AIRPORT_BY_CODE[outTo];
+          const arrival = dep + flightMinutes(origin, destination, RIVAL_JET_KMH) + destination.utcOffset - origin.utcOffset;
+          return wrap(arrival + 45);
+        }).sort((x, y) => x - y)
+        : null;
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
-        const times = scheduleTimes(al, AIRPORT_BY_CODE[from], AIRPORT_BY_CODE[to], m.distKm, n);
+        const times = from === outFrom
+          ? outbound
+          : pairedReturn ?? scheduleTimes(al, AIRPORT_BY_CODE[from], AIRPORT_BY_CODE[to], m.distKm, n);
         const F = AIRPORT_BY_CODE[from], T = AIRPORT_BY_CODE[to];
         const avgQ = times.reduce((s, t) => s + departureQuality(t, arrivalLocal(F, T, t), m.distKm), 0) / times.length;
         list.push({ airline: al, from, to, freq: n, times, effFreq: n * avgQ, fare: Math.round(m.refFare * al.fareMult), type });

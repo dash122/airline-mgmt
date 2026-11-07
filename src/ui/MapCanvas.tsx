@@ -386,7 +386,7 @@ export default function MapCanvas(props: Props) {
         const netHubs = new Set(net?.hubs.map((x) => x.code) ?? []);
         const picked = net && p.airline?.route ? p.airline.route.split('-') : [];
         for (const c of picked) hinted.add(c);
-        ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
+        ctx.font = '600 12px "Noto Sans TC", sans-serif';
         ctx.textBaseline = 'middle';
         const labels: { prio: number; text: string; x: number; y: number }[] = [];
         for (const a of AIRPORTS) {

@@ -61,7 +61,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           {action}
           <button className="close" onClick={onClose} aria-label="關閉">✕</button>
         </div>
-        {s === 'compact' ? <div className="sheet-body compact-body">{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : <div className="sheet-body">
+        {s === 'compact' ? <div className={`sheet-body compact-body${className ? ` ${className}-compact` : ''}`}>{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : <div className="sheet-body">
           {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
           {children}
         </div>}
@@ -188,12 +188,16 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   }, [a, b]);
   const types = [...new Set(flights.map((f) => shortType(f.ac.type)))].join('、');
   const [why, setWhy] = useState<ExplainKey | null>(null);
-  const [showTimes, setShowTimes] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(true);
   const split = useMemo(() => marketSplit(a, b, result, net), [a, b, result, net]);
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
-    <Sheet size="compact" summary={<span>{daily} 趟來回／日{result ? ` · 載客率 ${pct(result.loadFactor)} · 每週航段損益 ${money(result.revenue - result.flyingCost)}（不含租金）` : ''}</span>} title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={count(m?.distKm ?? 0)} label="距離" u="公里" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
+    <Sheet size="compact" className="route-sheet" summary={<div className="route-preview-summary">
+      <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
+      <div className="route-preview-meta"><b>{daily} 班來回／日</b><span>{result ? `${Math.round(result.pax).toLocaleString()} / ${Math.round(result.seats).toLocaleString()} 人／週` : '正在更新旅客數'}</span></div>
+      <div className="route-preview-profit"><span>每週航段損益</span><b className={result && result.revenue < result.flyingCost ? 'bad' : 'good'}>{result ? money(result.revenue - result.flyingCost) : '—'}</b></div>
+    </div>} title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={count(m?.distKm ?? 0)} label="距離" u="公里" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
       info={<>
         <p>點有 ? 的數字看原因。損益是每週航段損益，不含飛機租金。</p>
         {result && result.pax - result.localPax > 1 && <p>轉機旅客付直飛票價的 85%，再按兩段的票價設定分攤，所以這裡改票價也會影響他們。</p>}
@@ -208,20 +212,20 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <button onClick={onAdd} aria-label="加一班來回">＋</button>
         </div>
       </div>
-      {result && (
-        <div className="stats">
-          <Stat label="載客率" icon="seat" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} onTap={tap('lf')} active={why === 'lf'}
-            viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
-          <Stat label="航段損益/週" icon="money" value={money(result.revenue - result.flyingCost)} tone={result.revenue >= result.flyingCost ? 'good' : 'bad'} onTap={tap('profit')} active={why === 'profit'}
-            viz={<span className="arrow">{result.revenue >= result.flyingCost ? '▲' : '▼'}</span>} />
-          <Stat label="市占" icon="share" value={pct(result.marketShare)} onTap={tap('share')} active={why === 'share'}
-            viz={<Ring value={result.marketShare} size={24} stroke={4} />} />
-        </div>
-      )}
+      {result && <div className="route-glance">
+        <button className={`route-load-glance ${tone(result.loadFactor)}`} onClick={tap('lf')} aria-expanded={why === 'lf'}>
+          <span className="route-load-ring"><Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={34} stroke={5} /></span>
+          <span><small>載客率</small><b>{pct(result.loadFactor)}</b></span>
+          <span className="route-glance-caption">{Math.round(result.pax).toLocaleString()} / {Math.round(result.seats).toLocaleString()} 人／週</span>
+        </button>
+        <button className="route-profit-glance" onClick={tap('profit')} aria-expanded={why === 'profit'}>
+          <small>每週航段損益</small><b className={result.revenue >= result.flyingCost ? 'good' : 'bad'}>{money(result.revenue - result.flyingCost)}</b>
+        </button>
+      </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
       {full && <div className="hint warn"><Icon n="spill" /> 客滿：加班、換大飛機或漲價</div>}
       {result && result.loadFactor < 0.5 && daily > 1 && <div className="hint"><Icon n="seat" /> 空位多：減一班或降價</div>}
-      <div className="fare">
+      <div className="fare route-fare">
         <div className="grow">
           <div className="label">單程票價</div>
           <div className="price">NT${count((m?.refFare ?? 0) * fareMult)} <small>{pct(fareMult)}</small></div>
@@ -231,16 +235,18 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <button onClick={() => setFare(fareMult + FARE_STEP)} disabled={fareMult >= FARE_MAX} aria-label="漲價 5%">+5%</button>
         </div>
       </div>
-      {best && now && best !== now && (<button className="fare-tip" onClick={() => setFare(best.mult)} aria-label={`改用最賺票價 NT$${count((m?.refFare ?? 0) * best.mult)}，每週多賺 ${money(best.profit - now.profit)}`}>
-            ★ 最賺票價 NT${count((m?.refFare ?? 0) * best.mult)} <b className="good">每週多賺 {money(best.profit - now.profit)}</b>
-          </button>)}
-      {curve.length > 2 && now && best && <details className="route-adjust"><summary>查看票價與損益預測</summary><FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} /></details>}
-      {result && <details className="route-adjust"><summary>查看旅客與航班詳情</summary><DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} /><FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} /></details>}
-      <details className="route-adjust"><summary>查看市場與對手</summary>
+      <details className="route-adjust route-detail">
+      <summary><span className="route-detail-icon">⌄</span><span>更多分析</span><small>{pct(result?.marketShare ?? 0)} 市占</small></summary>
+      {curve.length > 2 && now && best && <section className="route-analysis-block"><h4>票價預測</h4><FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} /></section>}
+      {result && <section className="route-analysis-block"><h4>旅客與航班</h4><DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} /><FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} /></section>}
+      <section className="route-analysis-block">
       <MarketShare a={a} b={b} result={result} net={net} split={split} />
       {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</span>}</div>}
-      <Head right={<button className="chip" aria-expanded={showTimes} onClick={() => setShowTimes(!showTimes)}>{showTimes ? '收起' : '和對手比時刻'}</button>}>航線班表</Head>
-      {showTimes && <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />}
+      </section>
+      </details>
+      <details className="route-adjust route-detail route-schedule-detail" open={scheduleOpen} onToggle={(e) => setScheduleOpen(e.currentTarget.open)}>
+        <summary><span className="route-detail-icon"><Icon n="clock" /></span><span>航班時刻</span><small>{count(result?.flightsPerWeek ?? flights.length * 7)} 班／週 · 當地時間</small></summary>
+        <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
       </details>
       <Confirm label="停飛" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
     </Sheet>

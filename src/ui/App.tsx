@@ -1,9 +1,9 @@
 import { createComputeClient } from './compute-client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
@@ -78,6 +78,10 @@ export default function App() {
   }, [plan]);
   useEffect(() => () => { simulationWorker.current?.terminate(); simulationWorker.current = null; }, []);
   const result = simulation?.plan === plan ? simulation.result : null;
+  const selectedRouteKey = selection?.kind === 'route' ? selection.id : undefined;
+  // Keep route detail metrics in sync with the current itinerary while the worker
+  // computes the full network result used by the map and other panels.
+  const liveRouteResult = useMemo(() => plan && selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey) ? simulate(plan) : null, [plan, selectedRouteKey]);
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>(null);
@@ -242,7 +246,7 @@ export default function App() {
       )}
 
       {routeKey && routeExists && (
-        <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={result?.routes[routeKey]} net={result}
+        <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}

@@ -6,7 +6,7 @@ import { marketBetween, pairKey } from '../sim/markets';
 import { rivalsBetween } from '../sim/competitors';
 import { slotProblem } from '../sim/schedule';
 import {
-  applyChoice, BANDS, countryName, departsFrom, destination, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
+  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
   TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
@@ -67,17 +67,29 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
   const [q, setQ] = useState('');
   const [band, setBand] = useState<DistanceBand>('all');
   const [destinationState, setDestinationState] = useState<{ plan: Plan; from: string; rows: Destination[] } | null>(null);
+  const [destinationWorkerError, setDestinationWorkerError] = useState(false);
   useEffect(() => {
     if (field !== 'to') return;
-    const worker = previewWorker ??= createComputeClient('preview');
+    let worker: Worker;
+    try { worker = previewWorker ??= createComputeClient('preview'); }
+    catch { setDestinationWorkerError(true); return; }
     const request = ++previewRequest;
     const onMessage = (event: MessageEvent<{ request: number; destinations?: Destination[] }>) => {
       if (event.data.request === request && event.data.destinations) setDestinationState({ plan, from, rows: event.data.destinations });
     };
+    const onError = () => setDestinationWorkerError(true);
     worker.addEventListener('message', onMessage);
-    worker.postMessage({ kind: 'destinations', request, plan, from });
-    return () => worker.removeEventListener('message', onMessage);
+    worker.addEventListener('error', onError);
+    try { worker.postMessage({ kind: 'destinations', request, plan, from }); }
+    catch { setDestinationWorkerError(true); }
+    return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); };
   }, [plan, from, field]);
+  useEffect(() => {
+    if (field !== 'to' || !destinationWorkerError || (destinationState?.plan === plan && destinationState.from === from)) return;
+    // Worker startup can fail in restricted browsers. Calculate once on the main
+    // thread so the first route remains usable instead of waiting indefinitely.
+    setDestinationState({ plan, from, rows: destinationsFrom(plan, from) });
+  }, [destinationWorkerError, destinationState, field, from, plan]);
   const all = destinationState?.plan === plan && destinationState.from === from ? destinationState.rows : EMPTY_DESTINATIONS;
   const byCode = useMemo(() => new Map(all.map((d) => [d.code, d])), [all]);
   const rows: Destination[] = useMemo(() => {
@@ -112,6 +124,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
       )}
       {field === 'to' && (
         <>
+          {destinationWorkerError && <div className="hint">背景計算無法啟動，已改用本機計算。</div>}
           {rows.length === 0 && <div className="hint center">{destinationState?.plan !== plan || destinationState.from !== from ? '正在計算目的地…' : q.trim() ? '找不到' : '沒有可飛的目的地'}</div>}
           <ul className="dests">
             {rows.map((d) => <DestRow key={d.code} from={from} d={d} onPick={() => onChoose(d.code)} />)}

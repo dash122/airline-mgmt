@@ -11,6 +11,7 @@ import {
 import { count, money, pct, short } from './format';
 import { Sheet, tone } from './sheets';
 import { AirportCompetition, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
+import { rivalsAt } from '../sim/competitors';
 import { Badge, IN, Icon, Meter } from './viz';
 
 const EMPTY_IDEAS: NonNullable<ReturnType<typeof useAirportAnalysis>>['ideas'] = [];
@@ -81,15 +82,13 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const ideas = analysis?.ideas ?? EMPTY_IDEAS;
   const hubT = analysis?.hubT ?? null;
   useEffect(() => {
-    if (isPersp) onHint(tab === 'transfer' ? ideas.slice(0, 5).map((i) => [code, i.to]) : null);
+    if (tab !== 'transfer') onHint(null);
+    else if (isPersp) onHint(ideas.slice(0, 5).map((i) => [code, i.to]));
     else if (view) {
       const legs = new Map<string, [string, string]>();
-      if (!view.legFlown) legs.set(code, [code, persp]);
       // The fan out of the hub: the biggest destinations in the chosen list (dashed where the leg is not flown yet).
-      if (tab === 'transfer') {
-        const linked = view.rows.filter((r) => viaGroup(r) === 'flown');
-        for (const l of [...linked, ...view.rows.filter((r) => viaGroup(r) === 'hubLeg')].slice(0, Math.max(10, linked.length))) legs.set(l.d, [persp, l.d]);
-      }
+      const linked = view.rows.filter((r) => viaGroup(r) === 'flown');
+      for (const l of [...linked, ...view.rows.filter((r) => viaGroup(r) === 'hubLeg')].slice(0, Math.max(10, linked.length))) legs.set(l.d, [persp, l.d]);
       onHint(legs.size ? [...legs.values()] : null);
     }
     return () => onHint(null);
@@ -98,6 +97,13 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const a = AIRPORT_BY_CODE[code];
   const used = weeklyDepartures(plan, code);
   const list = spokes(plan, result, code);
+  // Destinations reachable nonstop on any scheduled service (ours or competitors'),
+  // deduplicated at airport level before counting destination countries.
+  const directDestinations = new Set([
+    ...list.map((s) => s.other),
+    ...rivalsAt(code).map((r) => r.to),
+  ]);
+  const directCountries = new Set([...directDestinations].map((to) => AIRPORT_BY_CODE[to].country));
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
   const served = used > 0;
@@ -118,7 +124,8 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
       info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <div className="airport-hero">
         <div className="airport-hero-top"><div><span className="airport-eyebrow">AIRPORT PROFILE · {a.country}</span><div className="airport-code">{code}</div><span className="airport-hero-name">{a.name}</span></div><span className="airport-compass" aria-hidden="true">✳</span></div>
-        <div className="airport-hero-stats"><div><strong>{list.length}</strong><span>你的航線</span></div><div><strong>{used}</strong><span>每週出發</span></div><div><strong>{analysis ? (analysis.annualPax / 1e6).toFixed(1) + 'M' : '—'}</strong><span>年旅客估計</span></div></div>
+        <div className="airport-hero-stats"><div><strong>{directDestinations.size}</strong><span>直飛航點 · {directCountries.size} 國/地區</span></div><div><strong>{list.length}</strong><span>你的航線</span></div><div><strong>{used}</strong><span>每週出發</span></div></div>
+        <div className="airport-reach-note">你可搭乘 {directDestinations.size} 個直飛航點，遍及 {directCountries.size} 個國家／地區（含對手航班）</div>
       </div>
       <div className="airport-actions"><button className="primary" onClick={onConnect}><span>＋</span> 規劃新航線 <span className="airport-action-arrow">↗</span></button>{served && <button className="secondary" onClick={onShowSchedule}>查看班表</button>}</div>
       <div className="airport-section-label">探索機場 <span>選擇一個項目查看詳情</span></div>
@@ -174,7 +181,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
         </>
       )}
 
-      {tab === 'rivals' && <AirportCompetition result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
+      {tab === 'rivals' && <AirportCompetition plan={plan} result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
 
       {tab === 'market' && <AirportMarkets plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}
     </Sheet>
