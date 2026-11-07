@@ -1671,3 +1671,84 @@ button:disabled { box-shadow: none; }
 /* Only the body scrolls; the head and foot never get squeezed by long content. */
 .sheet > .sheet-head, .sheet > .sheet-foot, .sheet > .grab { flex-shrink: 0; }
 .sheet > .sheet-body { flex: 1 1 auto; min-height: 0; }
+
+/* ---------- Route management: status first, one action per route ---------- */
+.routes-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.routes-summary > div, .airport-glance > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); border: 1px solid var(--line); }
+.routes-summary small, .airport-glance small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.routes-summary b, .airport-glance b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.routes-summary b.good, .route-row-profit.good { color: var(--good); }
+.routes-summary b.bad, .route-row-profit.bad { color: var(--bad); }
+.routes-summary b.warn { color: var(--warn); }
+.seg.two { grid-template-columns: repeat(2, 1fr); }
+.seg.route-tabs { grid-template-columns: repeat(4, 1fr); }
+.seg.route-tabs button, .seg.two button { min-height: 40px; justify-content: center; font-size: 13px; }
+
+.route-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.route-row { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.route-row.full, .route-row.empty { border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+.route-row.loss { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+.route-row-main { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 12px 10px 12px 12px; text-align: left; }
+.route-row-main .swatch { align-self: stretch; width: 4px; border-radius: 2px; flex: none; }
+.route-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.route-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.route-row-top strong { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-row-profit { flex: none; font-size: 14px; font-variant-numeric: tabular-nums; }
+.route-row-profit small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.route-row-sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-row-load { display: grid; grid-template-columns: minmax(60px, 1fr) auto auto; align-items: center; gap: 6px; margin-top: 3px; font-size: 12px; }
+.route-row-load small { color: var(--muted); font-size: 11px; }
+.route-row-load b { font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+.route-row-load .good, .route-kpis .good { color: var(--good); }
+.route-row-load .warn, .route-kpis .warn { color: var(--warn); }
+.route-row-load .bad, .route-kpis .bad { color: var(--bad); }
+.route-row-main .chev { flex: none; color: var(--muted); font-size: 20px; }
+.route-row-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 8px 26px; border-top: 1px dashed var(--line); background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
+.route-row-act { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 14px; border-radius: 11px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 700; }
+.route-row-act .ico { width: 15px; height: 15px; }
+
+/* Route detail: what's wrong, the fix, three numbers, then one tab at a time. */
+.route-advice { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, var(--good) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--good) 22%, var(--line)); }
+.route-advice.full, .route-advice.empty { background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border-color: color-mix(in srgb, var(--warn) 30%, var(--line)); }
+.route-advice.loss { background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 28%, var(--line)); }
+.route-advice-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.route-advice-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.route-advice-acts button { display: inline-flex; align-items: center; gap: 5px; min-height: 42px; padding: 0 14px; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-size: 13px; font-weight: 700; }
+.route-advice-acts button + button { background: var(--panel); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.route-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.route-kpis button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); text-align: left; min-width: 0; }
+.route-kpis button.on { border-color: var(--accent); }
+.route-kpis small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.route-kpis b { font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.route-kpi-v { display: flex; align-items: center; gap: 6px; }
+.route-sheet .sheet-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+.route-freq { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.route-freq > span:first-child { display: flex; flex-direction: column; min-width: 0; }
+.route-freq small { color: var(--muted); font-size: 11px; }
+.route-freq b { font-size: 16px; white-space: nowrap; }
+.route-freq .pm button { width: 56px; height: 48px; background: var(--accent); color: var(--accent-text); }
+.route-freq .pm button:first-child { background: var(--panel); color: var(--accent); border: 1px solid var(--line); }
+
+/* Airport view: a glance strip, the main action, then sticky tabs. */
+.airport-glance { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.airport-glance > div { padding: 9px 10px; }
+.airport-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.airport-cta .ico { width: 18px; height: 18px; }
+.airport-sheet .ap-tiles { position: sticky; top: -14px; z-index: 2; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 6px 16px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); }
+.airport-sheet .ap-tiles::-webkit-scrollbar { display: none; }
+.airport-sheet .ap-tiles button { flex: 1 0 auto; flex-direction: row; gap: 5px; min-height: 44px; padding: 0 12px; border-radius: 11px; background: transparent; }
+.airport-sheet .ap-tiles button.on { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); box-shadow: none; }
+.airport-sheet .ap-tiles .label { font-size: 14px; color: var(--muted); }
+.airport-sheet .ap-tiles button.on .label { color: var(--accent); }
+.airport-sheet .ap-tab-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.airport-schedule-link { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
+@media (min-width: 820px) {
+  .airport-sheet .ap-tiles { top: -22px; margin-inline: -18px; padding-inline: 18px; }
+}
+@media (max-width: 420px) {
+  .airport-sheet .ap-tiles { display: flex; grid-template-columns: none; }
+  .airport-sheet .ap-tiles button { flex-direction: row; gap: 5px; }
+  .airport-sheet .ap-tiles .label { font-size: 14px; }
+  .airport-glance b { font-size: 15px; }
+  .airport-glance small { font-size: 10px; }
+}

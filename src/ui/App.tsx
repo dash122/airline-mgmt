@@ -54,6 +54,7 @@ export default function App() {
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [routeFull, setRouteFull] = useState(false);
   const [game, setGame] = useState<GameState | null>(() => {
     const g = load<GameState>(GAME_KEY);
     return g && g.version === 1 ? g : null;
@@ -157,7 +158,9 @@ export default function App() {
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setBack(null); setAirlineRoute(null); };
+  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setBack(null); setAirlineRoute(null); setRouteFull(false); };
+  /** From a list the player wants the details, so the route opens full; a tap on the map only previews it. */
+  const openRoute = (key: string) => { select({ kind: 'route', id: key }); setRouteFull(true); };
   const openAirline = (id: string) => {
     const from = selection && selection.kind !== 'airline' ? selection : null;
     select({ kind: 'airline', id });
@@ -249,7 +252,7 @@ export default function App() {
       )}
 
       {routeKey && routeExists && (
-        <RouteSheet key={routeKey} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
+        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}
@@ -272,7 +275,9 @@ export default function App() {
           onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
           onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'add', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } })}
-          onOpenRoute={(key) => select({ kind: 'route', id: key })}
+          onOpenRoute={openRoute}
+          onAddFlight={(key) => setOverlay({ kind: 'add', key })}
+          onRemoveFlight={removeOne}
           onToggleHub={() => {
             const on = plan.hub === airport;
             update({ ...plan, hub: on ? undefined : airport });
@@ -297,7 +302,7 @@ export default function App() {
         <AirlinesPanel plan={plan} onPick={openAirline} onClose={() => openTab(null)} />
       )}
       {showPanel === 'routes' && (
-        <RoutesPanel plan={plan} result={result} onOpen={(key) => select({ kind: 'route', id: key })} onNew={() => planRoute(plan.hub ?? plan.base)}
+        <RoutesPanel plan={plan} result={result} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
       {showPanel === 'airports' && (
@@ -313,7 +318,7 @@ export default function App() {
         <FleetPanel plan={plan} result={result} onPick={(id) => select({ kind: 'aircraft', id })} onLease={() => setOverlay({ kind: 'lease' })} onClose={() => openTab(null)} />
       )}
       {showPanel === 'report' && result && (
-        <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={(key) => select({ kind: 'route', id: key })} onClose={() => openTab(null)} />
+        <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={openRoute} onClose={() => openTab(null)} />
       )}
 
       {overlay?.kind === 'edit' && (
