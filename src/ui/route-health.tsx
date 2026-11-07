@@ -41,23 +41,22 @@ export function RouteRow({ name, sub, swatch, figures, daily, onOpen, onAdd, onR
 }) {
   const h = routeHealth(figures, daily);
   const act = h.act === 'add' ? onAdd : h.act === 'remove' ? onRemove : undefined;
+  const status = h.key !== 'ok' && h.key !== 'pending';
   return (
-    <li className={`route-row ${h.key}`}>
+    <li className={`route-row ${h.key}${act ? ' has-act' : ''}`}>
       <button className="route-row-main" onClick={onOpen}>
         {swatch && <span className="swatch" style={{ background: swatch }} />}
         <span className="route-row-text">
           <span className="route-row-top"><strong>{name}</strong>{figures && <b className={`route-row-profit ${figures.profit < 0 ? 'bad' : 'good'}`}>{figures.profit >= 0 ? '+' : ''}{money(figures.profit)}<small>／週</small></b>}</span>
-          <small className="route-row-sub">{frequencyLabel(daily)}{sub ? ` · ${sub}` : ''}</small>
-          {figures && <span className="route-row-load"><Meter value={figures.loadFactor} tone={lfTone(figures.loadFactor)} label={`載客率 ${pct(figures.loadFactor)}`} /><small>載客率</small><b className={lfTone(figures.loadFactor)}>{pct(figures.loadFactor)}</b></span>}
+          <span className="route-row-meta">
+            {status && <Badge n={h.icon} tone={h.tone}>{h.label}</Badge>}
+            {figures && <span className="route-row-load"><Meter value={figures.loadFactor} tone={lfTone(figures.loadFactor)} label={`載客率 ${pct(figures.loadFactor)}`} /><b className={lfTone(figures.loadFactor)}>{pct(figures.loadFactor)}</b></span>}
+            <small className="route-row-sub">{frequencyLabel(daily)}{sub ? ` · ${sub}` : ''}</small>
+          </span>
         </span>
-        <span className="chev" aria-hidden="true">›</span>
+        {!act && <span className="chev" aria-hidden="true">›</span>}
       </button>
-      {h.key !== 'ok' && h.key !== 'pending' && (
-        <div className="route-row-status">
-          <Badge n={h.icon} tone={h.tone}>{h.label}</Badge>
-          {act && <button className="route-row-act" onClick={act}><Icon n={h.act === 'add' ? 'plus' : 'seat'} /> {h.actLabel}</button>}
-        </div>
-      )}
+      {act && <button className="route-row-act" onClick={act}><Icon n={h.act === 'add' ? 'plus' : 'seat'} /> {h.actLabel}</button>}
     </li>
   );
 }

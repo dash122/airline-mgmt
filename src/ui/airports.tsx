@@ -122,7 +122,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
     { key: 'schedule', icon: 'calendar', label: '時刻表', value: '—' },
   ];
   return (
-    <Sheet size="full" className="airport-sheet" title={a.name} onClose={onClose} action={action}
+    <Sheet size="half" className="airport-sheet" title={a.name} onClose={onClose} action={action}
       sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
       info={<p>直飛 {directDestinations.size} 個航點、{directCountries.size} 個國家／地區（含對手航班）· 腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <div className="airport-glance">

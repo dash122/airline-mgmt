@@ -411,11 +411,17 @@ function TabIcon({ tab }: { tab: Panel }) {
 
 function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void }) {
   const [, setTick] = useState(0);
+  const lastRun = useRef<Exclude<Speed, 0>>(speed === 0 ? 1 : speed);
+  if (speed !== 0) lastRun.current = speed;
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 500); return () => clearInterval(id); }, []);
   const now = clock.now();
   return (
     <div className="clockbar">
       <span className="when"><span className="day-n">第 {dayAt(base, now)} 天</span> <b>{hhmm(localMinutes(base, now))}</b></span>
+      <div className="speed-compact" role="group" aria-label="時間速度">
+        <button className={speed === 0 ? 'on' : ''} onClick={() => { if (speed === 0) onSpeed(lastRun.current); else { lastRun.current = speed; onSpeed(0); } }} aria-label={speed === 0 ? '繼續' : '暫停'}>{speed === 0 ? '▶' : '❚❚'}</button>
+        <button onClick={() => onSpeed(nextSpeed(speed === 0 ? lastRun.current : speed))} aria-label={`速度 ${speed === 0 ? lastRun.current : speed} 倍，點選切換`}>{speed === 0 ? lastRun.current : speed}×</button>
+      </div>
       <div className="speed" role="group" aria-label="時間速度">
         {SPEEDS.map((sp) => (
           <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>
@@ -423,6 +429,26 @@ function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: str
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+const RUN_SPEEDS = SPEEDS.filter((s): s is Exclude<Speed, 0> => s !== 0);
+const nextSpeed = (s: Exclude<Speed, 0>) => RUN_SPEEDS[(RUN_SPEEDS.indexOf(s) + 1) % RUN_SPEEDS.length];
+
+/** Phone header overflow: theme and restart live behind one ⋯ button. */
+function MoreMenu({ theme, onTheme, onReset }: { theme: Theme; onTheme: () => void; onReset: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="more-menu">
+      <button className="more-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="更多">⋯</button>
+      {open && <>
+        <div className="more-scrim" onClick={() => setOpen(false)} />
+        <div className="more-pop" role="menu">
+          <button role="menuitem" onClick={() => { onTheme(); setOpen(false); }}>{theme === 'day' ? '夜間模式' : '日間模式'}</button>
+          <button role="menuitem" className="danger-text" onClick={() => { setOpen(false); onReset(); }}>重新開始</button>
+        </div>
+      </>}
     </div>
   );
 }
@@ -468,6 +494,7 @@ function TopBar({ result, balance, history, theme, onTheme, onReset }: { result:
         <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>
         <button onClick={onReset} aria-label="重新開始">↺</button>
       </div>
+      <MoreMenu theme={theme} onTheme={onTheme} onReset={onReset} />
     </div>
   );
 }
