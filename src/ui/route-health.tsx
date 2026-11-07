@@ -5,7 +5,7 @@ import { money, pct } from './format';
 export type Health = {
   key: 'full' | 'loss' | 'empty' | 'ok' | 'pending';
   label: string;
-  tone: 'good' | 'warn' | 'bad' | 'muted';
+  tone: 'good' | 'warn' | 'bad' | 'accent' | 'muted';
   icon: IconName;
   /** The one quick action that helps most, if any. */
   act?: 'add' | 'remove';
@@ -16,7 +16,7 @@ export type RouteFigures = { loadFactor: number; spill: number; profit: number }
 
 export function routeHealth(r: RouteFigures | null | undefined, daily: number): Health {
   if (!r) return { key: 'pending', label: '計算中', tone: 'muted', icon: 'clock' };
-  if (r.spill > 1 && r.loadFactor >= 0.97) return { key: 'full', label: '客滿', tone: 'warn', icon: 'spill', act: 'add', actLabel: '加一班' };
+  if (r.spill > 1 && r.loadFactor >= 0.97) return { key: 'full', label: '客滿', tone: 'accent', icon: 'spill', act: 'add', actLabel: '加一班' };
   if (r.profit < 0) return { key: 'loss', label: '虧損', tone: 'bad', icon: 'down', ...(r.loadFactor < 0.6 && daily > 1 ? { act: 'remove' as const, actLabel: '減一班' } : {}) };
   if (r.loadFactor < 0.5) return { key: 'empty', label: '空位多', tone: 'warn', icon: 'seat', ...(daily > 1 ? { act: 'remove' as const, actLabel: '減一班' } : {}) };
   return { key: 'ok', label: '穩定', tone: 'good', icon: 'check' };
