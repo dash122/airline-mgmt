@@ -202,10 +202,11 @@ export default function App() {
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   const showPanel = !selection && !newRoute && panel;
+  const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'report' || panel === 'airports' || panel === 'airlines');
 
   return (
     <AirlineLink.Provider value={openAirline}>
-    <div className="app">
+    <div className={`app${hasSubnav ? ' has-subnav' : ''}`}>
       <MapCanvas
         plan={plan}
         result={result}
@@ -229,11 +230,13 @@ export default function App() {
         onDragRoute={(a, b) => planRoute(a, b)}
       />
 
+      <header className="hud">
       <TopBar result={result} balance={game?.balance ?? 0} history={game?.history ?? []} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReset={() => {
           if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
       <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
+      </header>
 
       {toast && <div className="toast">{toast}</div>}
       {result && !selection && !overlay && !panel && (
@@ -352,7 +355,7 @@ export default function App() {
           }} />
       )}
 
-      {!selection && (panel === 'fleet' || panel === 'schedule' || panel === 'report' || panel === 'airports' || panel === 'airlines') && (
+      {hasSubnav && (
         <nav className="subnav" aria-label="分類">
           {(panel === 'fleet' || panel === 'schedule'
             ? [['fleet', '飛機'], ['schedule', '班表']]
@@ -396,7 +399,7 @@ function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: str
   const now = clock.now();
   return (
     <div className="clockbar">
-      <span className="when">第 {dayAt(base, now)} 天 <b>{hhmm(localMinutes(base, now))}</b></span>
+      <span className="when"><span className="day-n">第 {dayAt(base, now)} 天</span> <b>{hhmm(localMinutes(base, now))}</b></span>
       <div className="speed" role="group" aria-label="時間速度">
         {SPEEDS.map((sp) => (
           <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>
