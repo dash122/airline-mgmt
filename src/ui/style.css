@@ -1767,7 +1767,7 @@ button:disabled { box-shadow: none; }
   .hud .kpi .value, .hud .topbar .kpi.main .value, .hud .clockbar .when b { font-size: var(--fs-md); }
 }
 /* Only the body scrolls; the head and foot never get squeezed by long content. */
-.sheet > .sheet-head, .sheet > .sheet-foot, .sheet > .grab { flex-shrink: 0; }
+.sheet > .sheet-top, .sheet > .sheet-head, .sheet > .sheet-foot, .sheet > .grab { flex-shrink: 0; }
 .sheet > .sheet-body { flex: 1 1 auto; min-height: 0; }
 
 /* ---------- Route management: status first, one action per route ---------- */
@@ -1912,4 +1912,102 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
 @media (min-width: 820px) {
   .tabbar button svg { padding: 0; background: none !important; }
   .tabbar button.on { background: var(--accent-soft); }
+}
+
+/* ---------- Compact layout: more content per screen on a phone ----------
+   One-row header, sheet title row that doubles as the drag handle, two-line route rows,
+   a one-line summary, tighter gaps. Tap targets stay 44px (visual size may be smaller). */
+.sheet-top { position: relative; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.speed-compact, .more-menu { display: none; }
+.routes-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 0 2px; }
+.routes-summary > span { display: inline-flex; align-items: baseline; gap: 4px; }
+.routes-summary small { color: var(--muted); font-size: var(--fs-xs); }
+.routes-summary b { font-size: var(--fs-md); }
+
+/* Route row: name + profit, then status · load · frequency; the one action sits on the right. */
+.route-row { display: flex; align-items: center; }
+.route-row-main { flex: 1; min-width: 0; min-height: 0; gap: 10px; padding: 10px 8px 10px 10px; }
+.route-row-text { gap: 6px; }
+.route-row-top strong { font-size: var(--fs-base); }
+.route-row-profit { font-size: var(--fs-sm); }
+.route-row-meta { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-xs); }
+.route-row-meta .badge { flex: none; }
+.route-row-load { display: inline-flex; align-items: center; gap: 5px; margin: 0; flex: none; }
+.route-row-load .meter { width: 44px; flex: none; }
+.route-row-load b { min-width: 0; font-size: var(--fs-xs); }
+.route-row-sub { flex: 1; min-width: 0; font-size: var(--fs-2xs); }
+.route-row > .route-row-act { flex: none; align-self: center; min-height: 44px; margin-right: 8px; padding: 0 12px; font-size: var(--fs-sm); }
+.route-rows { gap: 6px; }
+
+/* More menu (phones) */
+.more-menu { position: relative; }
+.more-btn { width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-lg); line-height: 1; position: relative; }
+.more-scrim { position: fixed; inset: 0; z-index: 40; }
+.more-pop { position: absolute; z-index: 41; right: 0; top: calc(100% + 6px); display: flex; flex-direction: column; min-width: 148px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); box-shadow: var(--shadow); }
+.more-pop button { min-height: 44px; padding: 0 12px; border-radius: var(--r-sm); text-align: left; font-size: var(--fs-base); }
+.more-pop button:hover { background: var(--surface-2); }
+.more-pop .danger-text { color: var(--bad); }
+
+@media (max-width: 819px) {
+  :root { --hud-h: 52px; }
+  .app.has-subnav { --subnav-h: 52px; }
+
+  /* Header: balance · est/day · time · play · speed · ⋯ in one row. */
+  .hud { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto auto auto; grid-template-areas: 'bal est when play speed more';
+    gap: 0 8px; padding: 6px 6px 6px 12px; min-height: var(--hud-h); border-radius: var(--r-md); }
+  .hud .top-actions, .hud .clockbar .speed { display: none; }
+  .hud .more-menu { display: block; grid-area: more; }
+  .hud .speed-compact { display: contents; }
+  .hud .speed-compact button { width: 40px; height: 40px; border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; position: relative; }
+  .hud .speed-compact button:first-child { grid-area: play; }
+  .hud .speed-compact button:last-child { grid-area: speed; color: var(--accent); }
+  .hud .speed-compact button.on { background: var(--warn-soft); color: var(--warn-ink); }
+  .hud .speed-compact button::after, .more-btn::after { content: ''; position: absolute; inset: -2px; }
+  .hud .kpi { gap: 0; }
+  .hud .kpi .label { font-size: var(--fs-2xs); letter-spacing: 0; text-transform: none; }
+  .hud .kpi .value, .hud .topbar .kpi.main .value { font-size: var(--fs-md); line-height: 1.2; }
+  .hud .clockbar .when { font-size: var(--fs-2xs); line-height: 1.2; }
+  .hud .clockbar .when b { font-size: var(--fs-md); }
+
+  /* Sheet top: the handle floats inside the title row; drag it (or the title) to resize. */
+  .sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .sheet.full, .airport-sheet.full { top: calc(env(safe-area-inset-top) + var(--hud-top) + var(--hud-h) + 6px); }
+  .sheet.half { max-height: 58%; }
+  .grab { position: absolute; z-index: 1; top: 0; left: 50%; width: 96px; min-height: 0; height: 18px; padding: 6px 0 0; transform: translateX(-50%); }
+  .grab span { width: 36px; height: 4px; }
+  .sheet-head, .airport-sheet .sheet-head { padding: 16px 8px 8px 16px; gap: 6px; }
+  .sheet-head h3, .airport-sheet .sheet-head h3 { font-size: var(--fs-lg); line-height: 1.3; }
+  .sheet-head .sub { margin-top: 1px; font-size: var(--fs-2xs); }
+  .close { width: 36px; height: 36px; border-radius: var(--r-pill); position: relative; font-size: var(--fs-sm); }
+  .close::after { content: ''; position: absolute; inset: -4px; }
+  .sheet-head button.primary, .sheet-head .primary.small { min-height: 36px; padding: 0 12px; font-size: var(--fs-sm); position: relative; }
+  .sheet-body, .airport-sheet .sheet-body { padding: 10px 12px 16px; gap: 10px; }
+  .sheet-foot { padding: 8px 12px; }
+
+  /* Tiles and controls: shorter, same tap size. */
+  .stat { padding: 8px 10px; gap: 2px; }
+  .stat .value { font-size: var(--fs-md); }
+  .route-kpis { gap: 6px; }
+  .route-kpis button { min-height: 60px; padding: 8px 10px; }
+  .route-kpis b { font-size: var(--fs-md); }
+  .route-advice { gap: 8px; padding: 10px; }
+  .airport-glance > div { padding: 6px 8px; }
+  .airport-glance b { font-size: var(--fs-md); }
+  .airport-cta { min-height: 44px; font-size: var(--fs-base); }
+  .airport-sheet .ap-tiles .label { font-size: var(--fs-sm); }
+  .seg { padding: 2px; }
+  .seg button { min-height: 36px; padding: 4px 2px; }
+  .seg.two button, .seg.route-tabs button { min-height: 36px; }
+  .airport-sheet .ap-tiles { top: -10px; margin-inline: -12px; padding: 4px 12px; }
+  .airport-sheet .ap-tiles button { min-height: 40px; }
+  .markets li, .report li, .fleet li, .timetable li { padding-top: 8px; padding-bottom: 8px; }
+
+  /* Docked sub-tabs: a slimmer strip. */
+  .subnav { padding: 4px 12px; gap: 4px; }
+  .subnav button { min-height: 44px; }
+}
+@media (max-width: 360px) {
+  .hud { gap: 0 6px; padding-left: 10px; }
+  .hud .speed-compact button, .more-btn { width: 36px; }
+  .hud .kpi .value, .hud .topbar .kpi.main .value, .hud .clockbar .when b { font-size: var(--fs-base); }
 }

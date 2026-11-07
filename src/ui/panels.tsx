@@ -55,9 +55,9 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
       )}
       {rows.length > 0 && (
         <div className="routes-summary">
-          <div><small>每週航段損益</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></div>
-          <div><small>每日來回</small><b>{daily} 班</b></div>
-          <div><small>要處理</small><b className={todo.length ? 'warn' : 'good'}>{todo.length} 條</b></div>
+          <span><small>每週</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></span>
+          <span><b>{daily}</b><small>班來回/日</small></span>
+          <span><b className={todo.length ? 'warn' : 'good'}>{todo.length}</b><small>條要處理</small></span>
         </div>
       )}
       {todo.length > 0 && rows.length > 3 && (

@@ -137,9 +137,10 @@ export default function MapCanvas(props: Props) {
       [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, 0.5);
     }
     const [x, y] = toScreen(v, w, h, lat, nearestLongitude(lon, v.cx));
-    const visibleBottom = h * 0.42;
-    if (y > 100 && y < visibleBottom && x > 20 && x < w - 20) return;
-    const targetY = h * 0.27;
+    // On a phone the selection sits between the one-row header and a half-height sheet.
+    const visibleBottom = h * 0.3;
+    if (y > 80 && y < visibleBottom && x > 20 && x < w - 20) return;
+    const targetY = h * 0.2;
     panTarget.current = { cx: v.cx + (x - w / 2) / v.scale, cy: v.cy + (targetY - y) / v.scale };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.selection?.kind, props.selection?.id]);

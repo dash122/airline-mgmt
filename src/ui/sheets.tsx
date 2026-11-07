@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { useContext, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
@@ -52,11 +52,38 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
 }) {
   const [s, setS] = useState<SheetSize>(size);
   const [showInfo, setShowInfo] = useState(false);
+  // Drag the top of a sheet: up to expand, down to shrink, down from the smallest size to close.
+  const drag = useRef<{ y: number; moved: boolean } | null>(null);
+  const [pull, setPull] = useState(0);
+  const onDown = (e: RPointerEvent) => {
+    if ((e.target as HTMLElement).closest('button:not(.grab), a, input, select, summary')) return;
+    drag.current = { y: e.clientY, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: RPointerEvent) => {
+    const d = drag.current; if (!d) return;
+    const dy = e.clientY - d.y;
+    if (Math.abs(dy) > 6) d.moved = true;
+    setPull(Math.max(0, dy));
+  };
+  const onUp = (e: RPointerEvent) => {
+    const d = drag.current; drag.current = null; setPull(0);
+    if (!d || !d.moved) return;
+    const dy = e.clientY - d.y;
+    if (Math.abs(dy) < 36) return;
+    if (dy < 0) setS(s === 'compact' ? 'half' : 'full');
+    else if (s === 'full') setS('half');
+    else if (s === 'half' && summary) setS('compact');
+    else if (!over) onClose();
+  };
+  const cycle = () => { if (drag.current?.moved) return; setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : summary ? 'compact' : 'half'); };
   return (
     <>
       {over && <div className="scrim" onClick={onClose} />}
-      <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}>
-        <button className="grab" onClick={() => setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : summary ? 'compact' : 'half')} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
+      <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
+        style={pull ? { transform: `translateY(${pull}px)`, transition: 'none' } : undefined}>
+        <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); }}>
+        <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
         <div className="sheet-head">
           <div className="grow">
             <h3>{title}{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</h3>
@@ -64,6 +91,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           </div>
           {action}
           <button className="close" onClick={onClose} aria-label="關閉">✕</button>
+        </div>
         </div>
         {s === 'compact' ? <div className={`sheet-body compact-body${className ? ` ${className}-compact` : ''}`}>{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : <div className="sheet-body">
           {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
