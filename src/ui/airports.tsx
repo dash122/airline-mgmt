@@ -111,7 +111,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
       : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
   ];
   return (
-    <Sheet title={`${a.name} ${a.code}`} onClose={onClose} action={action}
+    <Sheet size="compact" summary={<><span>{list.length} 條航線 · 每週 {used} 班出發</span><button className="primary" onClick={onConnect}>開新航線</button></>} title={`${a.name} ${a.code}`} onClose={onClose} action={action}
       sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
       info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />

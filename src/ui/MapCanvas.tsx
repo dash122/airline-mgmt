@@ -75,6 +75,7 @@ export default function MapCanvas(props: Props) {
   const dragRef = useRef<{ from: string; x: number; y: number } | null>(null);
   const landCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
   const panTarget = useRef<{ cx: number; cy: number; scale?: number } | null>(null);
+  const aircraftCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Fit a competitor's whole network (or its picked route) into the part of the map the sheet leaves free.
   useEffect(() => {
@@ -124,15 +125,22 @@ export default function MapCanvas(props: Props) {
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
+    const mapContext = canvas.getContext('2d')!;
+    const aircraftCanvas = aircraftCanvasRef.current!;
+    const aircraftContext = aircraftCanvas.getContext('2d')!;
+    let ctx = mapContext;
     let raf = 0;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // A 5K Retina display has far more pixels than this animated map needs.
+      // Keeping its backing store near 1440p cuts map fill and copy work sharply.
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.25, 2560 / rect.width, 1440 / rect.height);
       sizeRef.current = { w: rect.width, h: rect.height, dpr };
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
+      aircraftCanvas.width = canvas.width;
+      aircraftCanvas.height = canvas.height;
       if (!viewRef.current) {
         const a = AIRPORT_BY_CODE[propsRef.current.plan.base];
         const v = fitView(rect.width, rect.height, a.lat - 15, a.lon - 20, a.lat + 15, a.lon + 20);
@@ -191,9 +199,43 @@ export default function MapCanvas(props: Props) {
       return off;
     };
 
+    // Keep labels, airports and routes out of the aircraft animation hot path.
+    let sceneKey = '';
+    let scenePlan: Plan | null = null;
+    let sceneResult: NetworkResult | null = null;
+    let sceneView: View | null = null;
+    let flightPlan: Plan | null = null;
+    let flights: { acId: string; cycle: number; dep: number; block: number; points: [number, number][] }[] = [];
+    let lastPaint = -Infinity;
     let lastFrame = 0;
     const draw = (time: number) => {
+      raf = requestAnimationFrame(draw);
+      // Translate the existing layers while panning instead of rebuilding all
+      // geography and text for every pointer move. Refresh before edges drift far.
+      const currentView = viewRef.current!;
+      if (!document.hidden && mode === 'pan' && moved >= 8 && sceneView && currentView.scale === sceneView.scale) {
+        const dx = (sceneView.cx - currentView.cx) * currentView.scale;
+        const dy = (currentView.cy - sceneView.cy) * currentView.scale;
+        const { w, h } = sizeRef.current;
+        if (Math.abs(dx) < w * 0.2 && Math.abs(dy) < h * 0.2) {
+          const transform = `translate(${dx}px, ${dy}px)`;
+          canvas.style.transform = transform;
+          aircraftCanvas.style.transform = transform;
+          return;
+        }
+      }
+      if (document.hidden || time - lastPaint < 1000 / 30 - 0.5) return;
+      canvas.style.transform = '';
+      aircraftCanvas.style.transform = '';
+      lastPaint = time;
       const p = propsRef.current;
+      if (flightPlan !== p.plan) {
+        flights = p.plan.fleet.flatMap(ac => ac.legs.map(leg => ({
+          acId: ac.id, cycle: cycleOf(ac) * DAY, dep: leg.dep,
+          block: blockMinutes(leg.from, leg.to, ac.type), points: arc(leg.from, leg.to),
+        })));
+        flightPlan = p.plan;
+      }
       const pal = PALETTE[p.theme];
       const { w, h, dpr } = sizeRef.current;
       // Ease towards a target view at the same speed whatever the frame rate (a fifth of the way per 60 Hz frame).
@@ -209,219 +251,233 @@ export default function MapCanvas(props: Props) {
         } else viewRef.current = { cx: nx, cy: ny, scale: ns };
       }
       const v = viewRef.current!;
+      const key = JSON.stringify([w, h, dpr, v.cx, v.cy, v.scale, p.theme, p.selection, p.connectFrom, p.airline, p.hint, !!dragRef.current]);
+      const rebuild = key !== sceneKey || p.plan !== scenePlan || p.result !== sceneResult || !!dragRef.current;
+      if (!rebuild && (p.clock.speed === 0 || !p.plan.fleet.some(ac => ac.legs.length))) return;
+      ctx = mapContext;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(drawLand(pal), 0, 0);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (rebuild) {
+        ctx.drawImage(drawLand(pal), 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      for (const offset of worldCopies(v, w)) {
-      worldOffset = offset;
-      // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
-      const rivalFocus = p.selection?.kind === 'airport' && !p.hint?.length ? p.selection.id : null;
-      if (rivalFocus) {
-        for (const r of rivalsAt(rivalFocus)) {
-          const pts = arc(rivalFocus, r.to).map(([la, lo]) => screen(la, lo));
-          const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
-          const freq = r.services.reduce((s, x) => s + x.freq, 0);
-          ctx.beginPath();
-          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-          ctx.strokeStyle = top.airline.color;
-          ctx.globalAlpha = 0.45;
-          ctx.lineWidth = Math.min(4, 0.8 + Math.sqrt(freq) / 4);
-          ctx.setLineDash([2, 4]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.globalAlpha = 1;
+        for (const offset of worldCopies(v, w)) {
+        worldOffset = offset;
+        // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
+        const rivalFocus = p.selection?.kind === 'airport' && !p.hint?.length ? p.selection.id : null;
+        if (rivalFocus) {
+          for (const r of rivalsAt(rivalFocus)) {
+            const pts = arc(rivalFocus, r.to).map(([la, lo]) => screen(la, lo));
+            const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
+            const freq = r.services.reduce((s, x) => s + x.freq, 0);
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+            ctx.strokeStyle = top.airline.color;
+            ctx.globalAlpha = 0.45;
+            ctx.lineWidth = Math.min(4, 0.8 + Math.sqrt(freq) / 4);
+            ctx.setLineDash([2, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
         }
-      }
 
-      // A competitor's network, in its colour; its hubs get a ring below.
-      const net = p.airline ? airlineNetwork(p.airline.id) : null;
-      if (net) {
-        const maxF = Math.max(1, ...net.routes.map((r) => r.freq));
-        for (const r of net.routes) {
-          const picked = p.airline?.route === r.key;
+        // A competitor's network, in its colour; its hubs get a ring below.
+        const net = p.airline ? airlineNetwork(p.airline.id) : null;
+        if (net) {
+          const maxF = Math.max(1, ...net.routes.map((r) => r.freq));
+          for (const r of net.routes) {
+            const picked = p.airline?.route === r.key;
+            const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
+            if (!picked && pts.every(([x, y]) => x < -20 || y < -20 || x > w + 20 || y > h + 20)) continue;
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+            ctx.lineCap = 'round';
+            if (picked) {
+              ctx.strokeStyle = pal.sel;
+              ctx.lineWidth = 8;
+              ctx.globalAlpha = 0.35;
+              ctx.stroke();
+            }
+            ctx.strokeStyle = net.airline.color;
+            ctx.globalAlpha = picked ? 1 : p.airline?.route ? 0.15 : 0.7;
+            ctx.lineWidth = picked ? 3.5 : 0.8 + 2.4 * Math.sqrt(r.freq / maxF);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        // Routes
+        const pairs = routePairs(p.plan);
+        const hintedNodes = new Set((p.hint ?? []).flat());
+        for (const r of pairs) {
           const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-          if (!picked && pts.every(([x, y]) => x < -20 || y < -20 || x > w + 20 || y > h + 20)) continue;
+          const res = p.result?.routes[r.key];
+          const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
           ctx.beginPath();
           pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
           ctx.lineCap = 'round';
-          if (picked) {
+          if (selected) {
             ctx.strokeStyle = pal.sel;
-            ctx.lineWidth = 8;
+            ctx.lineWidth = 9;
             ctx.globalAlpha = 0.35;
             ctx.stroke();
+            ctx.globalAlpha = 1;
           }
-          ctx.strokeStyle = net.airline.color;
-          ctx.globalAlpha = picked ? 1 : p.airline?.route ? 0.15 : 0.7;
-          ctx.lineWidth = picked ? 3.5 : 0.8 + 2.4 * Math.sqrt(r.freq / maxF);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-      }
-
-      // Routes
-      const pairs = routePairs(p.plan);
-      const hintedNodes = new Set((p.hint ?? []).flat());
-      for (const r of pairs) {
-        const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-        const res = p.result?.routes[r.key];
-        const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
-        ctx.beginPath();
-        pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.lineCap = 'round';
-        if (selected) {
-          ctx.strokeStyle = pal.sel;
-          ctx.lineWidth = 9;
-          ctx.globalAlpha = 0.35;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-        ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
-        ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
-        // With an airport selected, show its direct routes and fade the rest.
-        const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
-        if (net) ctx.globalAlpha = 0.25;
-        else if (focus) {
-          if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
-          else if (hintedNodes.has(r.a) || hintedNodes.has(r.b)) { /* part of a transit idea: keep it visible */ }
-          else ctx.globalAlpha = 0.18;
-        }
-        if (!res) ctx.setLineDash([6, 5]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-      }
-
-      // Transit ideas: legs through the hub that would connect the selected airport's markets.
-      if (p.hint?.length) {
-        const flownKeys = new Set(pairs.map((r) => r.key));
-        for (const [a, b] of p.hint) {
-          if (!AIRPORT_BY_CODE[a] || !AIRPORT_BY_CODE[b]) continue;
-          const pts = arc(a, b).map(([la, lo]) => screen(la, lo));
-          ctx.beginPath();
-          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-          ctx.strokeStyle = pal.sel;
-          ctx.lineCap = 'round';
-          ctx.lineWidth = 3;
-          ctx.globalAlpha = 0.9;
-          if (!flownKeys.has(a < b ? `${a}-${b}` : `${b}-${a}`)) {
-            ctx.setLineDash([7, 6]);
-            ctx.lineDashOffset = -time / 60;
+          ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
+          ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
+          // With an airport selected, show its direct routes and fade the rest.
+          const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
+          if (net) ctx.globalAlpha = 0.25;
+          else if (focus) {
+            if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
+            else if (hintedNodes.has(r.a) || hintedNodes.has(r.b)) { /* part of a transit idea: keep it visible */ }
+            else ctx.globalAlpha = 0.18;
           }
+          if (!res) ctx.setLineDash([6, 5]);
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.lineDashOffset = 0;
           ctx.globalAlpha = 1;
         }
-      }
 
-      // Aircraft, placed by the game clock.
-      const now = p.clock.now();
-      for (const ac of p.plan.fleet) {
-        // A rotation that takes several days repeats on that cycle, so position is measured within it.
-        const C = cycleOf(ac) * DAY;
-        const clock = ((now % C) + C) % C;
-        const selectedAc = p.selection?.kind === 'aircraft' && p.selection.id === ac.id;
-        for (const leg of ac.legs) {
-          const block = blockMinutes(leg.from, leg.to, ac.type);
-          const t = (((clock - leg.dep) % C) + C) % C;
-          if (t >= block) continue;
-          const pts = arc(leg.from, leg.to);
-          const f = (t / block) * ARC_STEPS;
-          const i = Math.min(ARC_STEPS - 1, Math.floor(f));
-          const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
-          const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
-          ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
-          ctx.fillStyle = selectedAc ? pal.sel : pal.plane;
-          const s = selectedAc ? 1.6 : 1;
-          ctx.beginPath();
-          ctx.moveTo(6 * s, 0);
-          ctx.lineTo(-4 * s, -4 * s);
-          ctx.lineTo(-2 * s, 0);
-          ctx.lineTo(-4 * s, 4 * s);
-          ctx.closePath();
-          ctx.fill();
-          ctx.restore();
+        // Transit ideas: legs through the hub that would connect the selected airport's markets.
+        if (p.hint?.length) {
+          const flownKeys = new Set(pairs.map((r) => r.key));
+          for (const [a, b] of p.hint) {
+            if (!AIRPORT_BY_CODE[a] || !AIRPORT_BY_CODE[b]) continue;
+            const pts = arc(a, b).map(([la, lo]) => screen(la, lo));
+            ctx.beginPath();
+            pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+            ctx.strokeStyle = pal.sel;
+            ctx.lineCap = 'round';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.9;
+            if (!flownKeys.has(a < b ? `${a}-${b}` : `${b}-${a}`)) {
+              ctx.setLineDash([7, 6]);
+              ctx.lineDashOffset = 0;
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.lineDashOffset = 0;
+            ctx.globalAlpha = 1;
+          }
         }
-      }
 
-      // Rubber band while dragging a new route
-      const drag = dragRef.current;
-      if (drag && AIRPORT_BY_CODE[drag.from].lon + worldOffset === nearestLongitude(AIRPORT_BY_CODE[drag.from].lon, v.cx)) {
-        const A = AIRPORT_BY_CODE[drag.from];
-        const [ax, ay] = screen(A.lat, A.lon);
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(drag.x, drag.y);
-        ctx.strokeStyle = pal.sel;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([6, 5]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      // Airports
-      const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
-      const hinted = new Set((p.hint ?? []).flat());
-      const netHubs = new Set(net?.hubs.map((x) => x.code) ?? []);
-      const picked = net && p.airline?.route ? p.airline.route.split('-') : [];
-      for (const c of picked) hinted.add(c);
-      ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
-      ctx.textBaseline = 'middle';
-      const labels: { prio: number; text: string; x: number; y: number }[] = [];
-      for (const a of AIRPORTS) {
-        const [x, y] = screen(a.lat, a.lon);
-        if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
-        const r = airportMarkerRadius(a);
-        const isBase = a.code === p.plan.base;
-        const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
-        if (selected) {
+        // Rubber band while dragging a new route
+        const drag = dragRef.current;
+        if (drag && AIRPORT_BY_CODE[drag.from].lon + worldOffset === nearestLongitude(AIRPORT_BY_CODE[drag.from].lon, v.cx)) {
+          const A = AIRPORT_BY_CODE[drag.from];
+          const [ax, ay] = screen(A.lat, A.lon);
           ctx.beginPath();
-          ctx.arc(x, y, r + 7 + Math.sin(time / 250) * 1.5, 0, Math.PI * 2);
-          ctx.fillStyle = pal.sel;
-          ctx.globalAlpha = 0.25;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-        if (netHubs.has(a.code)) {
-          ctx.beginPath();
-          ctx.arc(x, y, r + 5, 0, Math.PI * 2);
-          ctx.strokeStyle = net!.airline.color;
+          ctx.moveTo(ax, ay);
+          ctx.lineTo(drag.x, drag.y);
+          ctx.strokeStyle = pal.sel;
           ctx.lineWidth = 3;
+          ctx.setLineDash([6, 5]);
           ctx.stroke();
-          hinted.add(a.code);
+          ctx.setLineDash([]);
         }
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.airport : pal.land;
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = isBase ? pal.sel : pal.airport;
-        ctx.stroke();
-        const showLabel = hinted.has(a.code) || a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
-        if (showLabel) {
-          const prio = selected || isBase || netHubs.has(a.code) ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
-          labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
+
+        // Airports
+        const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
+        const hinted = new Set((p.hint ?? []).flat());
+        const netHubs = new Set(net?.hubs.map((x) => x.code) ?? []);
+        const picked = net && p.airline?.route ? p.airline.route.split('-') : [];
+        for (const c of picked) hinted.add(c);
+        ctx.font = '600 12px system-ui, "PingFang TC", "Noto Sans TC", sans-serif';
+        ctx.textBaseline = 'middle';
+        const labels: { prio: number; text: string; x: number; y: number }[] = [];
+        for (const a of AIRPORTS) {
+          const [x, y] = screen(a.lat, a.lon);
+          if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
+          const r = airportMarkerRadius(a);
+          const isBase = a.code === p.plan.base;
+          const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
+          if (selected) {
+            ctx.beginPath();
+            ctx.arc(x, y, r + 7, 0, Math.PI * 2);
+            ctx.fillStyle = pal.sel;
+            ctx.globalAlpha = 0.25;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+          }
+          if (netHubs.has(a.code)) {
+            ctx.beginPath();
+            ctx.arc(x, y, r + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = net!.airline.color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            hinted.add(a.code);
+          }
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.airport : pal.land;
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = isBase ? pal.sel : pal.airport;
+          ctx.stroke();
+          const showLabel = hinted.has(a.code) || a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
+          if (showLabel) {
+            const prio = selected || isBase || netHubs.has(a.code) ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
+            labels.push({ prio, text: v.scale > 45 ? `${a.name} ${a.code}` : a.name, x: x + r + 4, y });
+          }
         }
+        // Labels, most important first, skipping any that would overlap one already placed.
+        labels.sort((l1, l2) => l1.prio - l2.prio);
+        const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+        ctx.lineWidth = 3;
+        for (const l of labels) {
+          const box = { x0: l.x - 2, y0: l.y - 8, x1: l.x + ctx.measureText(l.text).width + 2, y1: l.y + 8 };
+          if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
+          placed.push(box);
+          ctx.strokeStyle = pal.labelHalo;
+          ctx.strokeText(l.text, l.x, l.y);
+          ctx.fillStyle = pal.label;
+          ctx.fillText(l.text, l.x, l.y);
+        }
+        }
+        sceneKey = key;
+        scenePlan = p.plan;
+        sceneResult = p.result;
+        sceneView = { ...v };
       }
-      // Labels, most important first, skipping any that would overlap one already placed.
-      labels.sort((l1, l2) => l1.prio - l2.prio);
-      const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
-      ctx.lineWidth = 3;
-      for (const l of labels) {
-        const box = { x0: l.x - 2, y0: l.y - 8, x1: l.x + ctx.measureText(l.text).width + 2, y1: l.y + 8 };
-        if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
-        placed.push(box);
-        ctx.strokeStyle = pal.labelHalo;
-        ctx.strokeText(l.text, l.x, l.y);
-        ctx.fillStyle = pal.label;
-        ctx.fillText(l.text, l.x, l.y);
-      }
+      ctx = aircraftContext;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, aircraftCanvas.width, aircraftCanvas.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      for (const offset of worldCopies(v, w)) {
+        worldOffset = offset;
+        // Aircraft, placed by the game clock.
+        const now = p.clock.now();
+        for (const flight of flights) {
+          const C = flight.cycle;
+          const clock = ((now % C) + C) % C;
+          const selectedAc = p.selection?.kind === 'aircraft' && p.selection.id === flight.acId;
+            const block = flight.block;
+            const t = (((clock - flight.dep) % C) + C) % C;
+            if (t >= block) continue;
+            const pts = flight.points;
+            const f = (t / block) * ARC_STEPS;
+            const i = Math.min(ARC_STEPS - 1, Math.floor(f));
+            const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
+            const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
+            ctx.fillStyle = selectedAc ? pal.sel : pal.plane;
+            const s = selectedAc ? 1.6 : 1;
+            ctx.beginPath();
+            ctx.moveTo(6 * s, 0);
+            ctx.lineTo(-4 * s, -4 * s);
+            ctx.lineTo(-2 * s, 0);
+            ctx.lineTo(-4 * s, 4 * s);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+
       }
       worldOffset = 0;
-      raf = requestAnimationFrame(draw);
     };
     raf = requestAnimationFrame(draw);
 
@@ -558,5 +614,5 @@ export default function MapCanvas(props: Props) {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="map" aria-label="航線地圖" />;
+  return <><canvas ref={canvasRef} className="map" aria-label="航線地圖" /><canvas ref={aircraftCanvasRef} className="map" style={{ pointerEvents: 'none' }} aria-hidden="true" /></>;
 }

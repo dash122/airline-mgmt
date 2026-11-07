@@ -5,8 +5,8 @@ import { marketBetween, pairKey } from '../sim/markets';
 import { rivalsBetween } from '../sim/competitors';
 import { slotProblem } from '../sim/schedule';
 import {
-  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
-  TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice,
+  applyChoice, BANDS, countryName, departsFrom, destination, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
+  TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, money, pct, short } from './format';
@@ -21,6 +21,7 @@ export interface NewRouteState { from: string; to: string | null; pick: PickFiel
 const name = (c: string) => AIRPORT_BY_CODE[c].name;
 const hours = hm;
 const signed = (n: number) => `${n >= 0 ? '+' : ''}${money(n)}`;
+const EMPTY_DESTINATIONS: Destination[] = [];
 
 /** Opening a route in two steps: pick the two airports (list, search or map), then see what it would earn and confirm. */
 export function NewRouteSheet({ plan, result, state, onState, onHint, onDone, onClose }: {
@@ -64,13 +65,26 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
 }) {
   const [q, setQ] = useState('');
   const [band, setBand] = useState<DistanceBand>('all');
-  const all = useMemo(() => (field === 'to' ? destinationsFrom(plan, from) : []), [plan, from, field]);
+  const [destinationState, setDestinationState] = useState<{ plan: Plan; from: string; rows: Destination[] } | null>(null);
+  useEffect(() => {
+    if (field !== 'to') return;
+    const worker = previewWorker ??= new Worker(new URL('./route-preview.worker.ts', import.meta.url), { type: 'module' });
+    const request = ++previewRequest;
+    const onMessage = (event: MessageEvent<{ request: number; destinations?: Destination[] }>) => {
+      if (event.data.request === request && event.data.destinations) setDestinationState({ plan, from, rows: event.data.destinations });
+    };
+    worker.addEventListener('message', onMessage);
+    worker.postMessage({ kind: 'destinations', request, plan, from });
+    return () => worker.removeEventListener('message', onMessage);
+  }, [plan, from, field]);
+  const all = destinationState?.plan === plan && destinationState.from === from ? destinationState.rows : EMPTY_DESTINATIONS;
   const byCode = useMemo(() => new Map(all.map((d) => [d.code, d])), [all]);
   const rows: Destination[] = useMemo(() => {
     if (field !== 'to') return [];
+    if (destinationState?.plan !== plan || destinationState.from !== from) return [];
     if (q.trim()) return searchAirports(q, 40).filter((a) => a.code !== from).map((a) => byCode.get(a.code) ?? destination(plan, from, a.code));
     return all.filter((d) => inBand(d, band)).slice(0, 40);
-  }, [field, q, all, band, byCode, plan, from]);
+  }, [field, q, all, band, byCode, plan, from, destinationState]);
   const origins = useMemo(() => {
     if (field !== 'from') return [];
     if (q.trim()) return searchAirports(q, 40).map((a) => a.code);
@@ -97,7 +111,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
       )}
       {field === 'to' && (
         <>
-          {rows.length === 0 && <div className="hint center">{q.trim() ? '找不到' : '沒有可飛的目的地'}</div>}
+          {rows.length === 0 && <div className="hint center">{destinationState?.plan !== plan || destinationState.from !== from ? '正在計算目的地…' : q.trim() ? '找不到' : '沒有可飛的目的地'}</div>}
           <ul className="dests">
             {rows.map((d) => <DestRow key={d.code} from={from} d={d} onPick={() => onChoose(d.code)} />)}
           </ul>
@@ -146,17 +160,45 @@ function DestRow({ from, d, onPick }: { from: string; d: Destination; onPick: ()
 const startDep = (plan: Plan, c: RouteChoice, from: string, to: string) =>
   c.placement ? c.placement.dep : utcFromLocal(departsFrom(plan, c, from, to), 7 * 60);
 
-function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
+let previewWorker: Worker | null = null;
+let previewRequest = 0;
+
+type PlanStepProps = {
   plan: Plan; result: NetworkResult | null; from: string; to: string; ends: React.ReactNode;
   onHint: (legs: [string, string][] | null) => void; onDone: (plan: Plan, msg: string, key: string) => void; onClose: () => void;
-}) {
+};
+function PlanStep(props: PlanStepProps) {
+  const { plan, result, from, to, ends, onClose } = props;
+  const choices = useMemo(() => routeChoices(plan, from, to), [plan, from, to]);
+  const [state, setState] = useState<{ plan: Plan; result: NetworkResult | null; from: string; to: string; previews: Map<string, RoutePreview> } | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    setError(false);
+    const worker = previewWorker ??= new Worker(new URL('./route-preview.worker.ts', import.meta.url), { type: 'module' });
+    const request = ++previewRequest;
+    const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; error?: string }>) => {
+      if (event.data.request !== request) return;
+      if (event.data.previews) setState({ plan, result, from, to, previews: new Map(event.data.previews) });
+      else setError(true);
+    };
+    const onError = () => { worker.terminate(); if (previewWorker === worker) previewWorker = null; setError(true); };
+    worker.addEventListener('message', onMessage);
+    worker.addEventListener('error', onError);
+    worker.postMessage({ request, plan, result, from, to, choices: choices.map(choice => ({ choice, dep: startDep(plan, choice, from, to) })) });
+    return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); };
+  }, [plan, result, from, to, choices]);
+  if (!state || state.plan !== plan || state.result !== result || state.from !== from || state.to !== to) {
+    return <Sheet size="full" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : '正在計算航線方案…'}</div></Sheet>;
+  }
+  return <PlanStepReady {...props} choices={choices} previews={state.previews} />;
+}
+
+function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, choices, previews }: PlanStepProps & { choices: RouteChoice[]; previews: Map<string, RoutePreview> }) {
   useEffect(() => { onHint([[from, to]]); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = pairKey(from, to);
   const m = marketBetween(from, to);
   const flown = routePairs(plan).some((r) => r.key === key);
-  const choices = useMemo(() => routeChoices(plan, from, to), [plan, from, to]);
   // What each choice would earn at its own best-guess time: the whole week is simulated with the route added.
-  const previews = useMemo(() => new Map(choices.map((c) => [c.id, previewChoice(plan, result, c, from, to, startDep(plan, c, from, to))])), [choices, plan, result, from, to]);
   const best = choices.reduce<RouteChoice | null>((b, c) => (!b || previews.get(c.id)!.networkDelta > previews.get(b.id)!.networkDelta ? c : b), null);
   const [pickId, setPickId] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -167,7 +209,7 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
   const other = depFrom === from ? to : from;
   const w = chosen ? windowOf(chosen) : { lo: -Infinity, hi: Infinity };
   const dep = chosen ? Math.max(w.lo, Math.min(w.hi, depSet ?? startDep(plan, chosen, from, to))) : 0;
-  const preview = useMemo(() => (chosen ? previewChoice(plan, result, chosen, from, to, dep) : null), [plan, result, chosen, from, to, dep]);
+  const preview = useMemo(() => (chosen ? (dep === startDep(plan, chosen, from, to) ? previews.get(chosen.id)! : previewChoice(plan, result, chosen, from, to, dep)) : null), [plan, result, chosen, from, to, dep, previews]);
   const applied = useMemo(() => (chosen ? applyChoice(plan, chosen, from, to, dep) : null), [plan, chosen, from, to, dep]);
   const trip = useMemo(() => {
     if (!applied || !chosen) return null;
@@ -239,6 +281,9 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
       )}
       {preview && preview.loadFactor >= 0.97 && <div className="hint warn"><Icon n="spill" /> 幾乎客滿：換大飛機或之後加班</div>}
 
+      {chosen && <div className="hint">建議方案：{chosen.kind === 'lease' ? '租用' : '使用現有飛機'} {shortType(chosen.type)} · {depFrom} 當地 {at(depFrom, dep)} 出發{trip && trip.cycle > 1 ? ` · 每 ${trip.cycle} 天來回` : ' · 每日來回'}。依預計全網週損益選出。</div>}
+      <details className="route-adjust">
+      <summary>調整方案與查看市場詳情</summary>
       <h4>飛機</h4>
       {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
       <div className="options">
@@ -282,6 +327,7 @@ function PlanStep({ plan, result, from, to, ends, onHint, onDone, onClose }: {
         </div>
       )}
       {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</div>}
+      </details>
     </Sheet>
   );
 }

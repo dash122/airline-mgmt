@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
@@ -10,9 +10,8 @@ import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
 import { AirlineLink, AirlineSheet, AirlinesPanel } from './airlines';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
-import { count, money, pct } from './format';
+import { money } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
-import { Icon, Ring, Spark, type IconName } from './viz';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type GameState, type Speed } from './clock';
 
 const SAVE_KEY = 'waypoint.plan.v2';
@@ -38,7 +37,7 @@ function save(key: string, value: unknown) {
 type Panel = 'routes' | 'airports' | 'airlines' | 'schedule' | 'fleet' | 'report' | null;
 type Overlay =
   | { kind: 'edit'; acId: string; leg: number }
-  | { kind: 'add'; key: string; prefer?: { from: string; dep: number } }
+  | { kind: 'add'; key: string; prefer?: { from: string; dep: number; acId?: string; gap?: number }; returnGap?: { acId: string; t: number } }
   | { kind: 'move'; acId: string; unit: Unit; key: string }
   | { kind: 'gap'; acId: string; t: number }
   | { kind: 'lease' }
@@ -61,7 +60,23 @@ export default function App() {
   const clockRef = useRef<GameClock | null>(null);
   if (plan && !clockRef.current) clockRef.current = new GameClock((game ?? newGame(plan.base)).utcMin);
   const [speed, setSpeedState] = useState<Speed>(1);
-  const result = useMemo<NetworkResult | null>(() => (plan && plan.fleet.length ? simulate(plan) : null), [plan]);
+  const [simulation, setSimulation] = useState<{ plan: Plan; result: NetworkResult } | null>(null);
+  const simulationWorker = useRef<Worker | null>(null);
+  const simulationId = useRef(0);
+  useEffect(() => {
+    if (!plan?.fleet.length) return;
+    const worker = simulationWorker.current ??= new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' });
+    const id = ++simulationId.current;
+    const onMessage = (event: MessageEvent<{ id: number; result?: NetworkResult; error?: string }>) => {
+      if (event.data.id === id && event.data.result) setSimulation({ plan, result: event.data.result });
+      else if (event.data.id === id && event.data.error) console.error('Simulation failed:', event.data.error);
+    };
+    worker.addEventListener('message', onMessage);
+    worker.postMessage({ id, plan });
+    return () => worker.removeEventListener('message', onMessage);
+  }, [plan]);
+  useEffect(() => () => { simulationWorker.current?.terminate(); simulationWorker.current = null; }, []);
+  const result = simulation?.plan === plan ? simulation.result : null;
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>(null);
@@ -90,6 +105,8 @@ export default function App() {
         const today = dayAt(base, now);
         if (today <= lastDay) return g ? g : cur;
         const r = resultRef.current;
+        // Never book a day using an incomplete or outdated simulation.
+        if (plan.fleet.length && !r) return g ? g : cur;
         const history = [...cur.history];
         let balance = cur.balance;
         let last = { revenue: 0, cost: 0 };
@@ -115,7 +132,7 @@ export default function App() {
     const persist = () => { const c = clockRef.current; if (c) setGame((g) => (g ? { ...g, utcMin: Math.max(g.utcMin, c.now()) } : g)); };
     window.addEventListener('pagehide', persist);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', vis); window.removeEventListener('pagehide', persist); };
-  }, [plan?.base]);
+  }, [plan?.base, !!plan?.fleet.length]);
   useEffect(() => { save(THEME_KEY, theme); document.documentElement.dataset.theme = theme; }, [theme]);
   useEffect(() => {
     if (!toast) return;
@@ -180,7 +197,6 @@ export default function App() {
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   const showPanel = !selection && !newRoute && panel;
-  const airportCount = new Set(plan.fleet.flatMap((a) => a.legs.flatMap((l) => [l.from, l.to]))).size;
 
   return (
     <AirlineLink.Provider value={openAirline}>
@@ -300,7 +316,7 @@ export default function App() {
       {(overlay?.kind === 'add' || overlay?.kind === 'move') && (
         <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined} prefer={overlay.kind === 'add' ? overlay.prefer : undefined}
           onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
-          onClose={() => setOverlay(null)} />
+          onClose={() => setOverlay(overlay.kind === 'move' ? { kind: 'edit', acId: overlay.acId, leg: overlay.unit.start } : overlay.returnGap ? { kind: 'gap', ...overlay.returnGap } : null)} />
       )}
       {newRoute && (
         <NewRouteSheet plan={plan} result={result} state={newRoute}
@@ -311,7 +327,7 @@ export default function App() {
       )}
       {overlay?.kind === 'gap' && (
         <GapSheet plan={plan} acId={overlay.acId} t={overlay.t}
-          onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
+          onChoose={(key, prefer) => setOverlay({ kind: 'add', key, prefer, returnGap: { acId: overlay.acId, t: overlay.t } })}
           onClose={() => setOverlay(null)} />
       )}
       {overlay?.kind === 'lease' && (
@@ -330,14 +346,22 @@ export default function App() {
           }} />
       )}
 
-      <nav className="tabbar">
-        {([[null, '地圖'], ['routes', `航線`], ['airports', '機場'], ['airlines', '對手'], ['schedule', '班表'], ['fleet', `機隊`], ['report', '報表']] as [Panel, string][]).map(([p, label]) => (
-          <button key={label} className={(selection ? false : panel === p) ? 'on' : ''} onClick={() => openTab(panel === p && p !== null && !selection ? null : p)}
-            disabled={p === 'report' && !result}>
-            <TabIcon tab={p} />
-            <span>{label}{p === 'routes' && routePairs(plan).length ? ` ${routePairs(plan).length}` : ''}{p === 'airports' && airportCount ? ` ${airportCount}` : ''}{p === 'fleet' && plan.fleet.length ? ` ${plan.fleet.length}` : ''}</span>
-          </button>
-        ))}
+      {!selection && (panel === 'fleet' || panel === 'schedule' || panel === 'report' || panel === 'airports' || panel === 'airlines') && (
+        <nav className="subnav" aria-label="分類">
+          {(panel === 'fleet' || panel === 'schedule'
+            ? [['fleet', '飛機'], ['schedule', '班表']]
+            : [['report', '報表'], ['airports', '機場'], ['airlines', '對手']]).map(([p, label]) => (
+              <button key={p} className={panel === p ? 'on' : ''} disabled={p === 'report' && !result} onClick={() => openTab(p as Panel)}>{label}</button>
+            ))}
+        </nav>
+      )}
+      <nav className="tabbar" aria-label="主要導覽">
+        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['report', '經營']] as [Panel, string][]).map(([p, label]) => {
+          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : p === 'report' ? panel === 'report' || panel === 'airports' || panel === 'airlines' : panel === p);
+          return <button key={label} className={active ? 'on' : ''} onClick={() => openTab(p === 'report' && !result ? 'airports' : p)} aria-current={active ? 'page' : undefined}>
+            <TabIcon tab={p} /><span>{label}</span>
+          </button>;
+        })}
       </nav>
     </div>
     </AirlineLink.Provider>
@@ -378,11 +402,6 @@ function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: str
   );
 }
 
-/** A top-bar number with an icon for its name; the name is the icon's label and the tile's hover title. */
-function Kpi({ icon, label, value }: { icon: IconName; label: string; value: string }) {
-  return <div className="kpi"><span className="label"><Icon n={icon} /> {label}</span><span className="value">{value}</span></div>;
-}
-
 function confirmReset() {
   return window.confirm('要清除目前的航線網並重新選擇基地嗎？');
 }
@@ -409,26 +428,12 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
 }
 
 function TopBar({ result, balance, history, theme, onTheme, onReset }: { result: NetworkResult | null; balance: number; history: DayRecord[]; theme: Theme; onTheme: () => void; onReset: () => void }) {
-  const cr = result?.costRecovery ?? 0;
-  // Running balance at the end of each recorded day, ending at today's balance.
-  const trend = useMemo(() => {
-    let b = balance;
-    const out = [b];
-    for (let i = history.length - 1; i >= 0; i--) { b -= history[i].revenue - history[i].cost; out.push(b); }
-    return out.reverse();
-  }, [history, balance]);
+  const estimate = result ? (result.revenue - result.cost) / 7 : null;
+  const last = history.at(-1);
   return (
     <div className="topbar">
-      <div className="kpi main" title="成本回收率（半圈是收支平衡）">
-        <span className="label">成本回收</span>
-        <span className="kpi-row">
-          {result && <Ring value={Math.min(cr, 2) / 2} tone={cr >= 1 ? 'good' : 'bad'} size={18} stroke={3.5} label={`成本回收率 ${pct(cr)}，半圈是收支平衡`} />}
-          <span className={`value ${result ? (cr >= 1 ? 'good' : 'bad') : ''}`}>{result ? pct(cr) : '—'}</span>
-        </span>
-      </div>
-      <Kpi icon="pax" label="週旅客" value={result ? count(result.pax) : '—'} />
-      <div className="kpi"><span className="label"><Icon n="money" /> 累計</span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span>
-        <Spark values={trend} width={56} height={12} label="累計損益走勢" /></div>
+      <div className="kpi main"><span className="label">累計損益</span><span className={`value ${balance >= 0 ? 'good' : 'bad'}`}>{money(balance)}</span></div>
+      <div className="kpi" title={last ? `上日已結算 ${money(last.revenue - last.cost)}` : '尚未結算'}><span className="label">預估損益／日</span><span className={`value ${estimate === null ? '' : estimate >= 0 ? 'good' : 'bad'}`}>{estimate === null ? '—' : money(estimate)}</span></div>
       <div className="top-actions">
         <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>
         <button onClick={onReset} aria-label="重新開始">↺</button>

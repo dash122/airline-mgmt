@@ -310,6 +310,8 @@ const windowText = (code: string, lo: number, hi: number) =>
 export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClose }: {
   plan: Plan; result?: NetworkResult | null; acId: string; leg: number; onChange: (plan: Plan, msg?: string) => void; onMove: (acId: string, unit: Unit) => void; onClose: () => void;
 }) {
+  const [draftDep, setDraftDep] = useState<number | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const ac = plan.fleet.find((x) => x.id === acId);
   if (!ac || !ac.legs[leg]) return null;
   const u = unitOf(ac, leg);
@@ -317,30 +319,32 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
   const last = u.start + u.count - 1;
   const w = shiftWindow(ac, u);
   const isTrip = u.count === 2;
+  const dep = draftDep ?? first.dep;
+  const delta = dep - first.dep;
   return (
     <Sheet over title={isTrip ? `${first.from} ⇄ ${first.to}` : `${first.from} → ${first.to}`} sub={<span className="ins"><span>{ac.reg} · {shortType(ac.type)}</span><IN n="clock" v={dur(blockMinutes(first.from, first.to, ac.type))} label="單程" w="單程" /></span>} onClose={onClose}>
       <ul className="timetable">
         {Array.from({ length: u.count }, (_, k) => u.start + k).map((i) => (
           <li key={i}>
-            <span className="t">{at(ac.legs[i].from, ac.legs[i].dep)}</span>
-            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i))} label="抵達" w="抵達" /></small>
+            <span className="t">{at(ac.legs[i].from, ac.legs[i].dep + delta)}</span>
+            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i) + delta)} label="抵達" w="抵達" /></small>
               {result?.byFlight[`${ac.id}#${i}`] && <small><LoadIcons f={result.byFlight[`${ac.id}#${i}`]} /></small>}</span>
             {result?.byFlight[`${ac.id}#${i}`] && <LoadPill f={result.byFlight[`${ac.id}#${i}`]} />}
           </li>
         ))}
       </ul>
       <div>
-        <div className="label">{isTrip ? '去程出發（回程跟著移）' : '出發時間'}</div>
-        <TimeStepper code={first.from} dep={first.dep} lo={first.dep + w.min} hi={first.dep + w.max}
-          onChange={(d) => onChange(withAc(plan, shiftUnit(ac, u, d - first.dep)))} />
+        <div className="label">{isTrip ? '去程出發（回程跟著移）' : '出發時間'} · {first.from} 當地時間</div>
+        <TimeStepper code={first.from} dep={dep} lo={first.dep + w.min} hi={first.dep + w.max} onChange={setDraftDep} />
         <div className="hint">{windowText(first.from, first.dep + w.min, first.dep + w.max)}</div>
       </div>
+      {delta !== 0 && <button className="primary" onClick={() => { onChange(withAc(plan, shiftUnit(ac, u, delta)), '已儲存航班時間'); onClose(); }}>儲存時間變更</button>}
       <div className="row">
-        {isTrip && <button className="secondary grow" onClick={() => onMove(ac.id, u)}><Icon n="plane" /> 換飛機</button>}
-        <button className="danger grow" onClick={() => { onChange(withAc(plan, removeUnit(ac, u)), `已取消 ${at(first.from, first.dep)} ${first.from}→${first.to}${isTrip ? ' 與回程' : ''}`); onClose(); }}>
-          ✕ {isTrip ? '取消來回' : '取消'}
-        </button>
+        {isTrip && <button className="secondary grow" disabled={delta !== 0} onClick={() => onMove(ac.id, u)}><Icon n="plane" /> 換飛機</button>}
+        <button className="danger grow" onClick={() => setConfirmCancel(true)}>✕ {isTrip ? '取消來回航班' : '取消航班'}</button>
       </div>
+      {delta !== 0 && isTrip && <div className="hint">請先儲存時間，或關閉以放棄變更，再換飛機。</div>}
+      {confirmCancel && <div className="confirm"><span>確定取消{isTrip ? '這組來回航班' : '這班航班'}？</span><button onClick={() => setConfirmCancel(false)}>返回</button><button onClick={() => { onChange(withAc(plan, removeUnit(ac, u)), `已取消 ${at(first.from, first.dep)} ${first.from}→${first.to}${isTrip ? ' 與回程' : ''}`); onClose(); }}>確定取消</button></div>}
       {last < ac.legs.length - 1 && !isTrip && <div className="hint warn"><Icon n="warn" /> 飛機可能停在別的機場</div>}
     </Sheet>
   );
@@ -349,7 +353,7 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
 // ---------- Add a round trip on a route, or move one to another aircraft ----------
 
 export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }: {
-  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit }; prefer?: { from: string; dep: number };
+  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit }; prefer?: { from: string; dep: number; acId?: string; gap?: number };
   onDone: (plan: Plan, msg: string, acId: string) => void; onClose: () => void;
 }) {
   const [a, b] = routeKey.split('-');
@@ -357,11 +361,19 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
   const srcLeg = src && move ? src.legs[move.unit.start] : undefined;
   const opts = useMemo(() => {
     const pool = move ? { ...plan, fleet: plan.fleet.filter((x) => x.id !== move.acId) } : plan;
-    return placementOptions(pool, a, b, srcLeg?.dep ?? prefer?.dep);
-  }, [plan, a, b, move, srcLeg?.dep, prefer?.dep]);
+    const choices = placementOptions(pool, a, b, srcLeg?.dep ?? prefer?.dep);
+    if (prefer?.acId && prefer.gap !== undefined) {
+      const option = choices.find((o) => o.ac.id === prefer.acId);
+      const to = prefer.from === a ? b : a;
+      const w = option && insertWindow(option.ac, prefer.gap, prefer.from, to);
+      if (option && w) option.placement = { acId: option.ac.id, k: prefer.gap, from: prefer.from, to, dep: pickTime(w, prefer.dep), ...w };
+    }
+    return choices;
+  }, [plan, a, b, move, srcLeg?.dep, prefer]);
   const types = typesFor(plan, a, b);
   const firstOk = opts.findIndex((o) => o.placement);
-  const [choice, setChoice] = useState<number | 'lease'>(firstOk >= 0 ? firstOk : 'lease');
+  const preferred = opts.findIndex((o) => o.ac.id === prefer?.acId && o.placement);
+  const [choice, setChoice] = useState<number | 'lease'>(preferred >= 0 ? preferred : firstOk >= 0 ? firstOk : 'lease');
   const [leaseType, setLeaseType] = useState<AircraftModel | undefined>(types[0]);
   const chosen: Placement | null = choice === 'lease' ? null : opts[choice]?.placement ?? null;
   const [dep, setDep] = useState<number | null>(null);
@@ -422,7 +434,8 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
         <div className="label">{from} 出發（當地時間）</div>
         <TimeStepper code={from} dep={cur} lo={chosen ? chosen.lo : -Infinity} hi={chosen ? chosen.hi : Infinity} onChange={setDep} />
         <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '全天可飛'}</div>
-        {prefer && <div className="hint">建議 {prefer.from} {at(prefer.from, prefer.dep)} 出發，接得上轉機</div>}
+        {prefer && !prefer.acId && <div className="hint">建議 {prefer.from} {at(prefer.from, prefer.dep)} 出發，接得上轉機</div>}
+        <div className="hint">{choice === 'lease' ? '租用新飛機' : `使用 ${opts[choice]?.ac.reg}`} · {from} → {to} → {from} · {from} 當地時間 {at(from, cur)} 出發</div>
       </div>
     </Sheet>
   );
@@ -430,8 +443,8 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
 
 // ---------- Add a round trip in a gap of one aircraft's day ----------
 
-export function GapSheet({ plan, acId, t, onDone, onClose }: {
-  plan: Plan; acId: string; t: number; onDone: (plan: Plan, msg: string) => void; onClose: () => void;
+export function GapSheet({ plan, acId, t, onChoose, onClose }: {
+  plan: Plan; acId: string; t: number; onChoose: (key: string, prefer: { from: string; dep: number; acId: string; gap: number }) => void; onClose: () => void;
 }) {
   const ac = plan.fleet.find((x) => x.id === acId);
   if (!ac) return null;
@@ -454,7 +467,7 @@ export function GapSheet({ plan, acId, t, onDone, onClose }: {
         {options.map((m) => (
           <li key={m.to}>
             <span className="name">{AIRPORT_BY_CODE[m.to].name}<span className="ins"><IN n="clock" v={`${at(station, m.dep)}–${at(station, m.dep + blockMinutes(station, m.to, ac.type) * 2 + AIRCRAFT[ac.type].turnMin)}`} label="出發–回到" /><IN n="pax" v={count(m.airDemand)} label="旅客/週" u="人/週" />{served.has(pairKey(station, m.to)) && <Badge n="check" tone="good" label="已開航" />}</span></span>
-            <button onClick={() => onDone(withAc(plan, insertRoundTrip(ac, k, station, m.to, m.dep)), `${ac.reg} 加開 ${at(station, m.dep)} ${station}→${m.to} 與回程`)}>加入</button>
+            <button onClick={() => onChoose(pairKey(station, m.to), { from: station, dep: m.dep, acId, gap: k })}>選擇</button>
           </li>
         ))}
       </ul>

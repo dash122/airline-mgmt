@@ -41,10 +41,10 @@ export function routeColor(key: string) {
   return ROUTE_COLORS[h % ROUTE_COLORS.length];
 }
 
-export type SheetSize = 'half' | 'full';
+export type SheetSize = 'compact' | 'half' | 'full';
 
-export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer }: {
-  title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode;
+export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary }: {
+  title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode; summary?: ReactNode;
 }) {
   const [s, setS] = useState<SheetSize>(size);
   const [showInfo, setShowInfo] = useState(false);
@@ -52,7 +52,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
     <>
       {over && <div className="scrim" onClick={onClose} />}
       <div className={`sheet ${s}${over ? ' over' : ''}`} role="dialog" aria-label={title}>
-        <button className="grab" onClick={() => setS(s === 'half' ? 'full' : 'half')} aria-label={s === 'half' ? '展開' : '縮小'}><span /></button>
+        <button className="grab" onClick={() => setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : summary ? 'compact' : 'half')} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
         <div className="sheet-head">
           <div className="grow">
             <h3>{title}{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</h3>
@@ -61,10 +61,10 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           {action}
           <button className="close" onClick={onClose} aria-label="關閉">✕</button>
         </div>
-        <div className="sheet-body">
+        {s === 'compact' ? <div className="sheet-body compact-body">{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : <div className="sheet-body">
           {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
           {children}
-        </div>
+        </div>}
         {footer && <div className="sheet-foot">{footer}</div>}
       </div>
     </>
@@ -193,7 +193,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
-    <Sheet title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={count(m?.distKm ?? 0)} label="距離" u="公里" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
+    <Sheet size="compact" summary={<span>{daily} 趟來回／日{result ? ` · 每週航段損益 ${money(result.revenue - result.flyingCost)}` : ''}</span>} title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={count(m?.distKm ?? 0)} label="距離" u="公里" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
       info={<>
         <p>點有 ? 的數字看原因。損益是每週航段損益，不含飛機租金。</p>
         {result && result.pax - result.localPax > 1 && <p>轉機旅客付直飛票價的 85%，再按兩段的票價設定分攤，所以這裡改票價也會影響他們。</p>}
@@ -333,7 +333,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
   const canReturn = start && here !== start && !routeProblem(here, start, ac.type);
   const profit = result ? result.revenue - result.flyingCost - result.ownershipCost : 0;
   return (
-    <Sheet title={`${ac.reg} · ${shortType(ac.type)}`} sub={<span className="ins"><IN n="seat" v={spec.seats} label="座位" u="座" /><IN n="lease" v={`${money(spec.ownershipPerWeek)}/週`} label="租金" w="租金" /></span>} onClose={onClose}
+    <Sheet size="compact" summary={<span>利用率 {pct(info.utilisation)}{result ? ` · 每週損益 ${money(profit)}` : ' · 尚未排班'}</span>} title={`${ac.reg} · ${shortType(ac.type)}`} sub={<span className="ins"><IN n="seat" v={spec.seats} label="座位" u="座" /><IN n="lease" v={`${money(spec.ownershipPerWeek)}/週`} label="租金" w="租金" /></span>} onClose={onClose}
       info={<p>{spec.name}：每飛行小時 {money(spec.costPerBlockHour)}。上方色條是一天的排班（{AIRPORT_BY_CODE[plan.base].name}時間），點色塊可調整。</p>}>
       <div className="util-row">
         <div className="label util-label">

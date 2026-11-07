@@ -41,6 +41,12 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 button:disabled { opacity: 0.4; cursor: default; }
 
 .app { position: fixed; inset: 0; }
+.subnav { position: absolute; z-index: 15; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 6px); left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); }
+.subnav button { min-height: 44px; padding: 0 14px; border-radius: 10px; white-space: nowrap; }
+.subnav button.on { background: var(--accent); color: var(--accent-text); }
+.route-adjust > summary { cursor: pointer; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.route-adjust > * + * { margin-top: 12px; }
+.top-actions button { min-width: 44px; min-height: 44px; }
 .map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 
 /* Top KPI bar */
@@ -48,7 +54,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 10px; right: 10px;
   display: flex; gap: 8px; align-items: stretch;
   background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 8px 10px; backdrop-filter: blur(8px);
+  padding: 8px 10px; 
 }
 .kpi { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
 .kpi.main { flex: 1 1 auto; }
@@ -58,8 +64,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .value.good, .num.good { color: var(--good); }
 .value.bad, .num.bad { color: var(--bad); }
 .num.warn { color: var(--warn); }
-.top-actions { display: flex; flex-direction: column; gap: 4px; }
-.top-actions button { width: 28px; height: 22px; border-radius: 8px; background: var(--line); font-size: 12px; }
+.top-actions { display: flex; flex-direction: row; gap: 4px; }
+.top-actions button { width: 44px; height: 44px; border-radius: 8px; background: var(--line); font-size: 12px; }
 
 
 .banner {
@@ -78,10 +84,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 .sheet {
   position: absolute; left: 0; right: 0; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom)); max-height: 55%;
   background: var(--panel); border-radius: 20px 20px 0 0; box-shadow: var(--shadow);
-  display: flex; flex-direction: column; backdrop-filter: blur(8px); z-index: 10;
+  display: flex; flex-direction: column;  z-index: 10;
   animation: rise 0.18s ease-out;
 }
 .sheet.full { top: calc(env(safe-area-inset-top) + 124px); max-height: none; }
+.sheet.compact { max-height: 25%; }
+.sheet .compact-body { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
 .sheet.over { z-index: 21; bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
 .sheet.over.half { max-height: 70%; }
 .scrim { position: absolute; inset: 0; background: rgba(10, 18, 26, 0.35); z-index: 20; }
@@ -90,6 +98,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .grab span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
 @media (min-width: 820px) {
   .sheet, .sheet.full { left: auto; right: 12px; top: calc(env(safe-area-inset-top) + 124px); bottom: calc(var(--tabbar) + 12px); width: 400px; max-height: none; border-radius: var(--radius); }
+  .sheet.compact { top: auto; max-height: 25%; }
   .sheet.over, .sheet.over.half { right: 24px; top: 150px; bottom: calc(var(--tabbar) + 24px); max-height: none; }
   .grab { display: none; }
 }
@@ -207,7 +216,7 @@ button.primary { background: var(--accent); color: var(--accent-text); padding: 
 .tabbar {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
   height: calc(var(--tabbar) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
-  display: grid; grid-template-columns: repeat(7, 1fr); background: var(--panel); border-top: 1px solid var(--line); backdrop-filter: blur(8px);
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--panel); border-top: 1px solid var(--line); 
 }
 .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--muted); position: relative; }
 .tabbar button.on { color: var(--accent); font-weight: 700; }
