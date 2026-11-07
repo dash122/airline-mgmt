@@ -363,8 +363,12 @@ export interface CodeshareResult {
   /** Fares paid for the partner's flights (the partner keeps these). */
   partnerRevenue: number;
   fee: number;
+  /** Travellers who wanted these seats, before the seat block ran out (pax ≤ wanted). */
+  wanted: number;
   /** Biggest city pairs it connects, weekly travellers both directions. */
   markets: { o: string; d: string; via: string; pax: number }[];
+  /** The player's own routes these travellers also fly, with how many (weekly, both directions) and the fares they paid for them. */
+  feeds: { key: string; pax: number; revenue: number }[];
 }
 
 export interface NetworkResult {
@@ -791,14 +795,14 @@ export function simulate(plan: Plan): NetworkResult {
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
-  const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]> }>();
+  const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]>; feedMap: Map<string, CodeshareResult['feeds'][number]> }>();
   for (const cs of plan.codeshares ?? []) {
     const id = `${cs.airline}|${cs.key}`;
     const fl = partners.filter((f) => f.partner!.airline === cs.airline && f.partner!.key === cs.key);
     if (!fl.length) continue;
     csResults.set(id, {
       key: cs.key, airline: cs.airline, flights: fl.reduce((s, f) => s + f.perWeek, 0), seats: fl.reduce((s, f) => s + f.perWeek * f.seats, 0),
-      pax: 0, feedRevenue: 0, partnerRevenue: 0, fee: CODESHARE_FEE_PER_WEEK, markets: [], marketMap: new Map(),
+      pax: 0, wanted: 0, feedRevenue: 0, partnerRevenue: 0, fee: CODESHARE_FEE_PER_WEEK, markets: [], marketMap: new Map(), feeds: [], feedMap: new Map(),
     });
   }
   const csOf = (f: Flight) => csResults.get(`${f.partner!.airline}|${f.partner!.key}`)!;
@@ -832,7 +836,16 @@ export function simulate(plan: Plan): NetworkResult {
         const cs = csOf(partnerLeg);
         const toPartner = n * fare * it.perWeek * partnerShare;
         cs.pax += n * it.perWeek;
+        cs.wanted += want * it.perWeek;
         cs.partnerRevenue += toPartner;
+        for (const f of it.flights) {
+          if (f.partner) continue;
+          const fk = pairKey(f.from, f.to);
+          const feed = cs.feedMap.get(fk) ?? { key: fk, pax: 0, revenue: 0 };
+          feed.pax += n * it.perWeek;
+          feed.revenue += n * fare * it.perWeek * (1 - partnerShare);
+          cs.feedMap.set(fk, feed);
+        }
         cs.feedRevenue += n * fare * it.perWeek - toPartner;
         const [o, d] = k.split('>');
         const mk = [o, d].sort().join('|');
@@ -957,7 +970,9 @@ export function simulate(plan: Plan): NetworkResult {
   const revenue = revenueWeekly;
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const codeshares: Record<string, CodeshareResult> = {};
-  for (const [id, { marketMap, ...r }] of csResults) codeshares[id] = { ...r, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6) };
+  for (const [id, { marketMap, feedMap, ...r }] of csResults) {
+    codeshares[id] = { ...r, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6), feeds: [...feedMap.values()].sort((x, y) => y.pax - x.pax) };
+  }
   const codeshareCost = Object.values(codeshares).reduce((s, c) => s + c.fee, 0);
   const cost = flyingCost + ownershipCost + hubCost + codeshareCost;
   const transfers: NetworkResult['transfers'] = {};

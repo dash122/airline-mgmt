@@ -1667,21 +1667,59 @@ button:disabled { box-shadow: none; }
 .cs-gain small { font-size: var(--fs-3xs); color: var(--muted); margin-top: -2px; }
 .cs-gain .profit-bar { width: 100%; }
 .cs-top > button.small { min-width: 56px; min-height: 40px; flex-shrink: 0; }
-.cs-more { padding: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
-.cs-money { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.cs-money span { display: flex; flex-direction: column; padding: 7px 8px; border-radius: var(--r-sm); background: var(--line); }
-.cs-money small { font-size: var(--fs-2xs); color: var(--muted); }
-.cs-money b { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-.cs-money b.good { color: var(--good); }
-.cs-money b.bad { color: var(--bad); }
 .cs-markets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .cs-markets li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; font-size: var(--fs-sm); }
 .cs-markets i { font-style: normal; color: var(--muted); }
 .cs-markets small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-markets b { font-variant-numeric: tabular-nums; }
 .cs-routes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.cs-routes li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r-md); }
-.cs-routes .name { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 11px; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 2px 0; }
+.cs-routes > li { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-md); background: var(--panel); }
+.cs-routes .name { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 11px; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 2px 0; }
+.cs-routes .name .swatch { align-self: stretch; }
+.cs-routes .name .grow { flex: 1; }
+.cs-routes .chev { transition: transform .15s; }
+.cs-routes .chev.up { transform: rotate(90deg); }
+.cs-use { display: flex; align-items: center; gap: 6px; }
+.cs-use .meter { flex: 1; max-width: 120px; }
+.cs-use small { color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cs-row-money { display: flex; flex-direction: column; align-items: flex-end; flex: none; font-variant-numeric: tabular-nums; }
+.cs-row-money b { font-size: var(--fs-sm); }
+.cs-row-money small { color: var(--muted); font-size: var(--fs-3xs); }
+.cs-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cs-acts button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.cs-acts button.danger { color: var(--bad-ink); }
+.cs-detail { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 10px; }
+.cs-detail .head { margin-top: 4px; }
+.cs-steps { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.cs-net { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.cs-net small { color: var(--muted); font-size: var(--fs-xs); }
+.cs-net b { font-size: var(--fs-2xl); font-variant-numeric: tabular-nums; }
+.cs-net.good b { color: var(--good-ink); }
+.cs-net.bad b { color: var(--bad-ink); }
+.cs-net .badge { margin-left: auto; align-self: center; }
+.cs-step { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.cs-step .lbl { color: var(--muted); white-space: nowrap; }
+.cs-step .bar { height: 8px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
+.cs-step .bar i { display: block; height: 100%; border-radius: var(--r-pill); }
+.cs-step .bar i.good { background: var(--good); }
+.cs-step .bar i.warn { background: var(--warn); }
+.cs-step .bar i.bad { background: var(--bad); }
+.cs-step b { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+.cs-step b.good { color: var(--good-ink); }
+.cs-step b.warn { color: var(--warn-ink); }
+.cs-step b.bad { color: var(--bad-ink); }
+.cs-seats { display: flex; flex-direction: column; gap: 6px; }
+.cs-seats .meter { height: 8px; }
+.cs-seats .badge { align-self: flex-start; }
+.cs-feeds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cs-feeds li > button, .cs-feeds li > div { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: inherit; font: inherit; text-align: left; }
+.cs-feeds .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cs-feeds .grow .ins { flex-wrap: wrap; row-gap: 4px; }
+.cs-feeds .grow > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-feed-note { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--accent-soft); font-size: var(--fs-sm); }
+.cs-feed-note > span { display: inline-flex; align-items: center; gap: 5px; }
+.cs-feed-note .chips { flex-wrap: wrap; }
+.cs-feed-note .chip i.dash { display: inline-block; flex: none; width: 12px; height: 0; border-top: 3px dashed; background: none; border-radius: 0; }
 .cs-routes .name .grow { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .cs-routes .name strong { font-size: var(--fs-base); }
 .cs-routes .route-meta { color: var(--muted); font-size: var(--fs-2xs); }

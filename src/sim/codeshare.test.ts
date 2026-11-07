@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rivalsBetween } from './competitors';
-import { codeshareOptions } from './codeshare';
+import { codeshareImpact, codeshareOptions } from './codeshare';
 import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
 import { AIRCRAFT } from '../data/aircraft';
 import { hubTransit } from './airports';
@@ -24,6 +24,22 @@ describe('codeshare', () => {
   const before = simulate(plan);
   const after = simulate(withCs);
   const cs = after.codeshares[`${partner.id}|${key}`];
+
+  it('breaks the profit change into terms that add up, and says which of your routes it feeds', () => {
+    const imp = codeshareImpact(withCs, partner.id, key)!;
+    const off = codeshareImpact(plan, partner.id, key)!;
+    expect(imp.active).toBe(true);
+    expect(off.active).toBe(false);
+    expect(off.gain).toBeCloseTo(imp.gain, 0);
+    expect(imp.gain).toBeCloseTo((after.revenue - after.cost) - (before.revenue - before.cost), 0);
+    expect(imp.feedRevenue + imp.ownRevenue - imp.paxCost - imp.fee).toBeCloseTo(imp.gain, 0);
+    expect(cs.wanted).toBeGreaterThanOrEqual(cs.pax - 1e-6);
+    const feed = cs.feeds.find((f) => f.key === 'BKK-TPE')!;
+    expect(feed.pax).toBeCloseTo(cs.pax, 3);
+    expect(feed.revenue).toBeCloseTo(cs.feedRevenue, 0);
+    const r = imp.routes.find((x) => x.key === 'BKK-TPE')!;
+    expect(r.lfAfter).toBeGreaterThan(r.lfBefore);
+  });
 
   it('sells connections from your flights onto the partner route', () => {
     expect(cs.pax).toBeGreaterThan(50);

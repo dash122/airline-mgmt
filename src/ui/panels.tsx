@@ -24,9 +24,9 @@ const dur = hm;
 
 // ---------- Routes ----------
 
-export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onClose }: {
+export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onCodeshare, onClose }: {
   plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
-  onPartner: (airline: string) => void; onClose: () => void;
+  onPartner: (airline: string) => void; onCodeshare: (airline: string, key: string) => void; onClose: () => void;
 }) {
   const [only, setOnly] = useState<'all' | 'todo'>('all');
   const rows = routePairs(plan)
@@ -76,7 +76,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
           );
         })}
       </ul>
-      <CodeshareSection plan={plan} result={result} onPick={onPartner} />
+      <CodeshareSection plan={plan} result={result} onPick={onPartner} onToggle={onCodeshare} onOpenRoute={onOpen} />
     </Sheet>
   );
 }

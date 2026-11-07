@@ -313,6 +313,7 @@ export default function App() {
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onPartner={(id) => openAirline(id, 'share')}
+          onCodeshare={(id, key) => { update(toggleCodeshare(plan, id, key)); setToast(`已取消與${airlineName(id)}共享 ${key.replace('-', '⇄')}`); }}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
       {showPanel === 'airports' && (
