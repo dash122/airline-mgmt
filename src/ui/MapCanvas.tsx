@@ -6,6 +6,7 @@ import { blockMinutes, cycleOf, DAY, routePairs, type NetworkResult, type Plan }
 import { type GameClock } from './clock';
 import { useAirportAnalysis } from './airport-analysis';
 import { airlineNetwork } from '../sim/networks';
+import { airlines } from '../sim/competitors';
 import { fitView, nearestLongitude, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
@@ -309,6 +310,24 @@ export default function MapCanvas(props: Props) {
           }
         }
 
+        // Codeshare routes: the partner's flights the player sells, dashed in the partner's colour.
+        for (const cs of p.plan.codeshares ?? []) {
+          const [ca, cb] = cs.key.split('-');
+          const color = airlines().find((x) => x.id === cs.airline)?.color;
+          if (!color || !AIRPORT_BY_CODE[ca] || !AIRPORT_BY_CODE[cb]) continue;
+          const pts = arc(ca, cb).map(([la, lo]) => screen(la, lo));
+          ctx.beginPath();
+          pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = color;
+          ctx.globalAlpha = net && net.airline.id !== cs.airline ? 0.25 : 0.95;
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([7, 5]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+
         // Routes
         const pairs = routePairs(p.plan);
         const hintedNodes = new Set((p.hint ?? []).flat());
@@ -381,7 +400,7 @@ export default function MapCanvas(props: Props) {
         }
 
         // Airports
-        const inPlan = new Set(pairs.flatMap((r) => [r.a, r.b]));
+        const inPlan = new Set([...pairs.flatMap((r) => [r.a, r.b]), ...(p.plan.codeshares ?? []).flatMap((c) => c.key.split('-'))]);
         const hinted = new Set((p.hint ?? []).flat());
         const netHubs = new Set(net?.hubs.map((x) => x.code) ?? []);
         const picked = net && p.airline?.route ? p.airline.route.split('-') : [];

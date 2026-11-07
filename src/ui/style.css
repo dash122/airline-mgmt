@@ -942,6 +942,7 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .map-legend i { display: inline-block; width: 12px; height: 4px; border-radius: 2px; }
 .map-legend .w i { background: var(--muted); width: 8px; }
 .map-legend .w i.thin { height: 2px; } .map-legend .w i.thick { height: 6px; }
+.map-legend i.dash { height: 0; border-top: 3px dashed var(--muted); border-radius: 0; background: none; width: 14px; }
 .util-label { display: flex; align-items: center; gap: 6px; }
 .ring .track { stroke: var(--line); }
 .stat .ring .track { stroke: color-mix(in srgb, var(--panel) 70%, var(--line)); }
@@ -1591,6 +1592,51 @@ button:disabled { box-shadow: none; }
 .airport-day-destination b { font-size: 12px; }
 .airport-day-destination small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 420px) { .airport-sheet .ap-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } .airport-sheet .ap-tiles button { flex-direction: column; gap: 0; } .airport-sheet .ap-tiles .label { font-size: 10px; } }
+
+/* ---------- Codeshare ---------- */
+.ap-tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.ap-tiles.five button { padding: 7px 6px; }
+.ap-tiles.five .value { font-size: 15px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cs-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 10px 12px; margin: 4px 0 8px; border-radius: 12px; background: color-mix(in srgb, var(--good) 10%, var(--line)); font-size: 13px; }
+.cs-summary span { display: inline-flex; align-items: center; gap: 4px; }
+.cs-summary .ico { width: 14px; height: 14px; }
+.cs-summary .good { color: var(--good); }
+.cs-summary .bad { color: var(--bad); }
+.cs-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.cs-list li { border-bottom: 1px solid var(--line); }
+.cs-list li.on { background: color-mix(in srgb, var(--good) 6%, transparent); }
+.cs-top { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 0; }
+.cs-top .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 4px 0; }
+.cs-top .name b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-gain { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; width: 92px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.cs-gain b { font-size: 13px; }
+.cs-gain b.good { color: var(--good); }
+.cs-gain b.bad { color: var(--bad); }
+.cs-gain small { font-size: 10px; color: var(--muted); margin-top: -2px; }
+.cs-gain .profit-bar { width: 100%; }
+.cs-top > button.small { min-width: 56px; min-height: 40px; flex-shrink: 0; }
+.cs-more { padding: 0 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.cs-money { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.cs-money span { display: flex; flex-direction: column; padding: 7px 8px; border-radius: 10px; background: var(--line); }
+.cs-money small { font-size: 11px; color: var(--muted); }
+.cs-money b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.cs-money b.good { color: var(--good); }
+.cs-money b.bad { color: var(--bad); }
+.cs-markets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cs-markets li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; font-size: 13px; }
+.cs-markets i { font-style: normal; color: var(--muted); }
+.cs-markets small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-markets b { font-variant-numeric: tabular-nums; }
+.cs-routes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cs-routes li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 14px; }
+.cs-routes .name { flex: 1; min-width: 0; display: flex; align-items: stretch; gap: 11px; text-align: left; background: none; border: 0; color: inherit; font: inherit; padding: 2px 0; }
+.cs-routes .name .grow { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cs-routes .name strong { font-size: 14px; }
+.cs-routes .route-meta { color: var(--muted); font-size: 11px; }
+.swatch.dashed { width: 0; border-left: 4px dashed; border-radius: 0; background: none; }
+.chip.on { background: color-mix(in srgb, var(--good) 16%, var(--line)); color: var(--good); font-weight: 700; }
+.airline-card-stats i.partner { background: color-mix(in srgb, var(--good) 14%, var(--panel)); color: var(--good); display: inline-flex; align-items: center; gap: 3px; }
+.airline-card-stats i.partner .ico { width: 10px; height: 10px; }
 
 /* ---------- Mobile first: phone portrait is the primary layout ----------
    One header card (money + clock), sheets between it and the bottom bars,

@@ -1,3 +1,4 @@
+import { CodeshareSection } from './codeshare';
 import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
@@ -22,8 +23,9 @@ const dur = hm;
 
 // ---------- Routes ----------
 
-export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onClose }: {
-  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void; onClose: () => void;
+export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onClose }: {
+  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
+  onPartner: (airline: string) => void; onClose: () => void;
 }) {
   const rows = routePairs(plan)
     .map((r) => ({ ...r, res: result?.routes[r.key], types: [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))] }))
@@ -66,6 +68,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
           );
         })}
       </ul>
+      <CodeshareSection plan={plan} result={result} onPick={onPartner} />
     </Sheet>
   );
 }
