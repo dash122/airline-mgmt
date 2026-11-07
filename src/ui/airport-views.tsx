@@ -7,7 +7,7 @@ import type { NetworkResult } from '../sim/simulate';
 import { marketSplit, type ShareRow } from '../sim/share';
 import { allFlights, marketPotential, type AirportPotential, type MarketPotential } from '../sim/airports';
 import { LONG_HAUL_KM, marketBetween, pairKey } from '../sim/markets';
-import { blockMinutes, defaultAircraft, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
+import { blockMinutes, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
 import { CompactTimetable } from './CompactTimetable';
 import { AirlineName } from './rivals';
 import { count, pct } from './format';
@@ -325,8 +325,6 @@ function PotentialRow({ m, from, plan, result, onOpen, onOpenRoute }: { m: Marke
   const directPax = directRows.reduce((sum, x) => sum + x.pax, 0);
   const transitPax = transitRows.reduce((sum, x) => sum + x.pax, 0);
   const connectionRows = transitRows.filter((x) => x.kind === 'ownVia' || x.kind === 'rivalVia');
-  const aircraft = plan.fleet.find((ac) => ac.legs.some((leg) => pairKey(leg.from, leg.to) === m.key));
-  const type = aircraft?.type ?? defaultAircraft(from, m.to);
   return (
     <li className={`potential-card vs-card${m.flown ? ' flown' : ''}${open ? ' expanded' : ''}`}>
       <button className="potential-toggle vs-top" aria-expanded={open} onClick={() => setOpen(!open)}>

@@ -332,7 +332,8 @@ function departureTimes(key: string, freq: number): number[] {
   const out: number[] = [];
   for (let i = 0; i < perDay; i++) {
     const jitter = (hash(`${key}#${i}`) % 51) - 25;
-    out.push(Math.round((first + step * (i + 0.5) + jitter) / 5) * 5);
+    const time = Math.round((first + step * (i + 0.5) + jitter) / 5) * 5;
+    out.push(Math.max(FIRST_DEP, Math.min(LAST_DEP, time)));
   }
   return out;
 }
@@ -439,7 +440,7 @@ function buildServices(airlines: Airline[], m: Market): RivalService[] {
         ? outbound.map((dep) => {
           const origin = AIRPORT_BY_CODE[outFrom], destination = AIRPORT_BY_CODE[outTo];
           const arrival = dep + flightMinutes(origin, destination, RIVAL_JET_KMH) + destination.utcOffset - origin.utcOffset;
-          return wrap(arrival + 45);
+          return Math.max(FIRST_DEP, Math.min(LAST_DEP, wrap(arrival + 45)));
         }).sort((x, y) => x - y)
         : null;
       for (const [from, to] of [[m.a, m.b], [m.b, m.a]]) {
