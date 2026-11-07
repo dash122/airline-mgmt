@@ -37,7 +37,8 @@ export const arrival = (ac: Aircraft, i: number) => {
   return l.dep + blockMinutes(l.from, l.to, ac.type);
 };
 
-const ROUTE_COLORS = ['#2f6fb3', '#7a5cc4', '#2e9d6a', '#d9822b', '#3d8fa3', '#c2507a', '#8a7a2a', '#5a6fd6'];
+/** Route swatches: eight hues at matched lightness that sit with the petrol brand and stay clear of the status colours. */
+const ROUTE_COLORS = ['#1f7a8c', '#4f5fc9', '#8b52b5', '#cf6a3e', '#2f8f86', '#c0517d', '#5d6e80', '#4d78a8'];
 export function routeColor(key: string) {
   let h = 0;
   for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;

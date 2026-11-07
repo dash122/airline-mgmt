@@ -34,12 +34,13 @@ interface Props {
 }
 
 const PALETTE = {
-  day: { sea: '#dcebe8', land: '#f7f6ec', coast: '#b8d0c8', border: '#d6ddd2', label: '#294c48', labelHalo: '#f7f6ec', airport: '#294c48', route: '#267d70', idle: '#90a9a2', plane: '#183d39', sel: '#db8054' },
-  night: { sea: '#0c1620', land: '#17232e', coast: '#2b3a47', border: '#33424f', label: '#d6e2ea', labelHalo: '#0c1620', airport: '#d6e2ea', route: '#5fb0ff', idle: '#5d6f7d', plane: '#ffffff', sel: '#ff9a5a' },
+  day: { sea: '#d9e8ea', land: '#f6f7f3', coast: '#b5cdd0', border: '#d3dddc', label: '#23464d', labelHalo: '#f6f7f3', airport: '#23464d', route: '#14646f', idle: '#8fa6aa', plane: '#0f3d45', sel: '#d8693c' },
+  night: { sea: '#0b171a', land: '#162529', coast: '#293e44', border: '#2f454b', label: '#d3e4e7', labelHalo: '#0b171a', airport: '#d3e4e7', route: '#5fc0cc', idle: '#5a7277', plane: '#ffffff', sel: '#f2915f' },
 };
 
 const SIZE_PRIORITY = { hub: 2, major: 3, large: 4, medium: 5, small: 6 } as const;
-export const LF_COLORS = { good: '#2e9d6a', ok: '#d9a021', bad: '#d4493b' };
+/** Same hues as --good / --warn / --bad in style.css. */
+export const LF_COLORS = { good: '#2f8a4e', ok: '#c98b1f', bad: '#c4473a' };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;
