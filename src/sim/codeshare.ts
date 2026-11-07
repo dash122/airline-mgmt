@@ -64,3 +64,59 @@ export function partnersOf(plan: Plan): { id: string; name: string; color: strin
   });
 }
 
+
+/** What one codeshare does to one of the player's own routes. */
+export interface CodeshareRouteImpact {
+  key: string;
+  /** Codeshare travellers on it, weekly both directions. */
+  feedPax: number;
+  /** The player's own travellers it no longer has room for (onboard without minus the others onboard with it). */
+  displacedPax: number;
+  lfBefore: number;
+  lfAfter: number;
+  /** Full flights a week, without and with. */
+  fullBefore: number;
+  fullAfter: number;
+}
+
+/** A codeshare's weekly effect, from a full simulation with and without it. Every term adds up to `gain`. */
+export interface CodeshareImpact {
+  active: boolean;
+  stats: CodeshareResult;
+  /** Net change in the week's profit (fee included). */
+  gain: number;
+  /** Fares codeshare travellers pay for your flights (= stats.feedRevenue). */
+  feedRevenue: number;
+  /** Change in fares from everyone else on your flights: negative when codeshare travellers take their seats. */
+  ownRevenue: number;
+  /** Extra per-traveller costs (catering, check-in, airport fees) for the added travellers. */
+  paxCost: number;
+  fee: number;
+  routes: CodeshareRouteImpact[];
+}
+
+/** The effect of a codeshare (whether or not it is in the plan yet). Null when the partner doesn't fly it. */
+export function codeshareImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult): CodeshareImpact | null {
+  const active = hasCodeshare(plan, airlineId, key);
+  const cur = now ?? simulate(plan);
+  const other = simulate(toggleCodeshare(plan, airlineId, key));
+  const withIt = active ? cur : other;
+  const without = active ? other : cur;
+  const stats = withIt.codeshares[`${airlineId}|${key}`];
+  if (!stats) return null;
+  const gain = profit(withIt) - profit(without);
+  const ownRevenue = withIt.revenue - without.revenue - stats.feedRevenue;
+  const fee = stats.fee;
+  const paxCost = withIt.cost - without.cost - fee;
+  const routes: CodeshareRouteImpact[] = stats.feeds.map((f) => {
+    const a = withIt.routes[f.key];
+    const b = without.routes[f.key];
+    return {
+      key: f.key, feedPax: f.pax,
+      displacedPax: Math.max(0, f.pax - ((a?.pax ?? 0) - (b?.pax ?? 0))),
+      lfBefore: b?.loadFactor ?? 0, lfAfter: a?.loadFactor ?? 0,
+      fullBefore: b?.fullFlights ?? 0, fullAfter: a?.fullFlights ?? 0,
+    };
+  });
+  return { active, stats, gain, feedRevenue: stats.feedRevenue, ownRevenue, paxCost, fee, routes };
+}
