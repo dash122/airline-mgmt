@@ -1,9 +1,12 @@
+/* Latin letters and digits use Manrope; every Chinese character and full-width symbol
+   (，／⇄ etc.) falls through to Noto Sans TC, so all Chinese text is set in Noto. */
 @font-face {
   font-family: 'Waypoint Sans';
   src: url('../assets/fonts/Manrope-Variable.ttf') format('truetype');
   font-style: normal;
   font-weight: 400 800;
   font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201E, U+2022, U+2026, U+20AC, U+2122, U+2212;
 }
 @font-face {
   font-family: 'Noto Sans TC';
@@ -96,7 +99,8 @@
   --scrim: rgba(9, 24, 28, .38);
 
   --tabbar: 58px;
-  font-family: 'Waypoint Sans', 'Noto Sans TC', sans-serif;
+  --font-sans: 'Waypoint Sans', 'Noto Sans TC', sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
 }
@@ -134,6 +138,8 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+input, select, textarea { font-family: inherit; }
+svg text { font-family: var(--font-sans); }
 button:disabled { opacity: 0.4; cursor: default; }
 
 .app { position: fixed; inset: 0; }
@@ -2010,4 +2016,95 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
   .hud { gap: 0 6px; padding-left: 10px; }
   .hud .speed-compact button, .more-btn { width: 36px; }
   .hud .kpi .value, .hud .topbar .kpi.main .value, .hud .clockbar .when b { font-size: var(--fs-base); }
+}
+
+/* ---------- Grouped, quieter phone UI (iOS-style) ----------
+   The sheet is a grey grouped background; content sits in white rounded groups.
+   Lists are one group with inset hairlines instead of separate bordered cards.
+   Chrome (header, tab bar, sub-tabs) is translucent, borderless and tinted only by colour. */
+@media (max-width: 819px) {
+  :root { --tabbar: 50px; --group: var(--panel); --seg-track: color-mix(in srgb, var(--text) 7%, var(--bg)); }
+  .app.has-subnav { --subnav-h: 50px; }
+
+  /* Sheet = grouped background. */
+  .sheet, .sheet-foot { background: var(--bg); }
+  .sheet { border: 0; box-shadow: 0 -6px 30px rgba(9, 24, 28, .12); }
+  .sheet-head, .airport-sheet .sheet-head { border-bottom: 0; padding: 14px 8px 4px 16px; }
+  .sheet-head h3, .airport-sheet .sheet-head h3 { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.01em; }
+  .sheet-foot { border-top: 1px solid var(--line); }
+  .sheet-body, .airport-sheet .sheet-body { padding: 6px 12px 16px; gap: 10px; }
+  .close { background: var(--seg-track); color: var(--muted); width: 30px; height: 30px; font-size: var(--fs-xs); }
+  .close::after { inset: -7px; }
+  .grab span { background: var(--line-strong); }
+
+  /* White groups: tiles, cards and lists. */
+  .stat, .routes-summary > div, .airport-glance > div, .route-kpis button, .route-load-glance, .route-profit-glance,
+  .route-advice, .plan-summary, .share-overview, .pot-list > li.potential-card, .share-mode, .hubbox, .route-detail[open],
+  .empty-cta, .opt { background: var(--group); border-color: transparent; }
+  .route-advice.full, .route-advice.empty, .route-advice.loss { border: 0; box-shadow: inset 3px 0 0 var(--accent); }
+  .route-advice.empty { box-shadow: inset 3px 0 0 var(--warn); }
+  .route-advice.loss { box-shadow: inset 3px 0 0 var(--bad); }
+  .markets, .report, .fleet, .timetable { background: var(--group); border-radius: var(--r-md); padding: 0 12px; }
+  .markets li:last-child, .report li:last-child, .fleet li:last-child, .timetable li:last-child { border-bottom: 0; }
+
+  /* Route list = one inset group; rows divided by hairlines that start after the swatch. */
+  .route-rows { gap: 0; background: var(--group); border-radius: var(--r-md); overflow: hidden; }
+  .route-row, .route-row.loss { border: 0; border-radius: 0; background: transparent; position: relative; }
+  .route-row + .route-row::before { content: ''; position: absolute; top: 0; left: 24px; right: 0; border-top: 1px solid var(--line); }
+  .route-row-main { padding: 9px 6px 9px 12px; }
+  .route-row-main .swatch { width: 4px; }
+  .route-row-text { gap: 4px; }
+  .route-row-top strong { font-size: var(--fs-base); font-weight: 600; }
+  .route-row > .route-row-act { position: relative; min-height: 30px; margin-right: 10px; padding: 0 12px; border-radius: var(--r-pill); font-size: var(--fs-xs); }
+  .route-row > .route-row-act::after { content: ''; position: absolute; inset: -7px -4px; }
+  .route-row-main .chev { font-size: var(--fs-lg); color: var(--line-strong); }
+
+  /* Summary line sits on the grouped background. */
+  .routes-summary { padding: 2px 4px 0; }
+
+  /* Segmented controls: grey track, white thumb (also the docked sub-tabs). */
+  .seg, .hud .clockbar .speed { background: var(--seg-track); border: 0; border-radius: 9px; }
+  .seg button { border-radius: 7px; }
+  .seg button.on { background: var(--thumb); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+  .subnav { background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--line); padding: 5px 12px; }
+  .subnav button { min-height: 40px; border-radius: 9px; color: var(--text); font-weight: 600; }
+  .subnav { display: grid; }
+  .subnav::before { content: ''; position: absolute; inset: 5px 12px; border-radius: 9px; background: var(--seg-track); z-index: -1; }
+  .subnav button.on { background: var(--thumb); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+  .subnav button::after { content: ''; position: absolute; inset: -5px 0; }
+  .subnav button { position: relative; }
+
+  /* Tab bar: translucent, tint-only active state. */
+  .tabbar { background: color-mix(in srgb, var(--panel) 86%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--line); box-shadow: none; }
+  .tabbar button { gap: 1px; font-size: var(--fs-3xs); font-weight: 600; color: var(--muted); }
+  .tabbar button svg { padding: 0; background: none !important; width: 24px; height: 24px; }
+  .tabbar button.on { color: var(--accent); }
+  .tabbar button.on svg { stroke-width: 2.4; }
+  .tabbar button.on svg path { stroke-width: 2.3; }
+
+  /* Header: translucent material, borderless. */
+  .hud { border: 0; background: color-mix(in srgb, var(--panel) 82%, transparent); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4); box-shadow: 0 2px 12px rgba(9, 24, 28, .1); }
+  .hud .speed-compact button, .more-btn { width: 36px; height: 36px; border-radius: var(--r-pill); background: var(--seg-track); }
+  .hud .speed-compact button::after, .more-btn::after { inset: -4px; }
+  :root { --hud-h: 48px; }
+
+  /* Primary actions: one size. */
+  button.primary, .primary.wide, .airport-cta { min-height: 44px; border-radius: 12px; box-shadow: none; font-size: var(--fs-base); }
+  .sheet-head button.primary { min-height: 32px; border-radius: var(--r-pill); padding: 0 12px; font-size: var(--fs-xs); }
+  .sheet-head button.primary::after { content: ''; position: absolute; inset: -6px -2px; }
+  .route-freq .pm button { width: 48px; height: 40px; border-radius: 12px; box-shadow: none; }
+
+  /* Section labels: Apple-style small caps feel. */
+  .sheet h4 { margin: 4px 4px 0; font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .04em; color: var(--muted); }
+  .airport-sheet .ap-tiles { background: var(--bg); border-bottom: 0; margin-inline: -12px; padding: 4px 12px; }
+
+  /* Every plain list becomes a white inset group. */
+  .stations, .airline-list, .competitor-list, .vs-list, .al-routes, .dep-board, .trs, .airport-day-flights, .fleet-lines {
+    background: var(--group); border-radius: var(--r-md); padding: 0 12px; }
+  .stations > li:last-child, .airline-list > :last-child, .competitor-list > li:last-child, .vs-list > li:last-child,
+  .al-routes > li:last-child, .dep-board > li:last-child, .trs > li:last-child { border-bottom: 0; }
+  .stations li { padding: 8px 0; gap: 3px; }
+  .airline-card { min-height: 0; padding: 9px 0; }
+  .airline-card:hover { padding-inline: 0; }
+  .directory-search, .search, .directory-toolbar select { background: var(--group); }
 }
