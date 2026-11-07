@@ -3,13 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, cycleOf, emptyPlan, hhmm, localMinutes, newAircraft, routePairs, simulate, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, simulate, toggleCodeshare, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
-import { AirlineLink, AirlineSheet, AirlinesPanel } from './airlines';
+import { AirlineLink, AirlineSheet, AirlinesPanel, type Section as AirlineSection } from './airlines';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel } from './panels';
 import { money } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
@@ -50,6 +50,7 @@ export default function App() {
     const p = load<Plan>(SAVE_KEY);
     if (!p || p.version !== 2 || !AIRPORT_BY_CODE[p.base]) return null;
     return { ...p, hub: p.hub && AIRPORT_BY_CODE[p.hub] ? p.hub : undefined,
+      codeshares: (p.codeshares ?? []).filter((c) => c.key.split('-').every((x) => AIRPORT_BY_CODE[x])),
       fleet: p.fleet.map(ac => ({ ...ac, legs: ac.legs.filter(l => AIRPORT_BY_CODE[l.from] && AIRPORT_BY_CODE[l.to]) })) };
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
@@ -93,6 +94,7 @@ export default function App() {
   /** Where the airline profile was opened from, for its back button. */
   const [back, setBack] = useState<Selection | null>(null);
   const [airlineRoute, setAirlineRoute] = useState<string | null>(null);
+  const [airlineTab, setAirlineTab] = useState<AirlineSection | undefined>(undefined);
 
   useEffect(() => { if (plan) save(SAVE_KEY, plan); }, [plan]);
   useEffect(() => { if (game) save(GAME_KEY, game); }, [game]);
@@ -158,13 +160,14 @@ export default function App() {
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setBack(null); setAirlineRoute(null); setRouteFull(false); };
+  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setBack(null); setAirlineRoute(null); setAirlineTab(undefined); setRouteFull(false); };
   /** From a list the player wants the details, so the route opens full; a tap on the map only previews it. */
   const openRoute = (key: string) => { select({ kind: 'route', id: key }); setRouteFull(true); };
-  const openAirline = (id: string) => {
+  const openAirline = (id: string, tab?: AirlineSection) => {
     const from = selection && selection.kind !== 'airline' ? selection : null;
     select({ kind: 'airline', id });
     setBack(from);
+    setAirlineTab(tab);
   };
   /** From the airline profile to an airport or route, with a way back to the airline. */
   const fromAirline = (s: Selection) => { const prev = selection; select(s); setBack(prev); };
@@ -248,6 +251,7 @@ export default function App() {
           <span><i style={{ background: LF_COLORS.ok }} />60%</span>
           <span><i style={{ background: LF_COLORS.bad }} />低</span>
           <span className="w"><i className="thin" /><i className="thick" />客量</span>
+          {!!plan.codeshares?.length && <span><i className="dash" />共享</span>}
         </div>
       )}
 
@@ -291,7 +295,12 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {airlineId && (
-        <AirlineSheet key={airlineId} plan={plan} result={result} id={airlineId} focus={airlineRoute} onFocus={setAirlineRoute}
+        <AirlineSheet key={airlineId} plan={plan} result={result} id={airlineId} focus={airlineRoute} onFocus={setAirlineRoute} initialTab={airlineTab}
+          onCodeshare={(key) => {
+            const on = hasCodeshare(plan, airlineId, key);
+            update(toggleCodeshare(plan, airlineId, key));
+            setToast(on ? `已取消與${airlineName(airlineId)}共享 ${key.replace('-', '⇄')}` : `和${airlineName(airlineId)}共享 ${key.replace('-', '⇄')}`);
+          }}
           onPickAirport={(code) => fromAirline({ kind: 'airport', id: code })}
           onOpenRoute={(key) => fromAirline({ kind: 'route', id: key })}
           onOpen={(a, b) => planRoute(a, b)}
@@ -299,10 +308,11 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {showPanel === 'airlines' && (
-        <AirlinesPanel plan={plan} onPick={openAirline} onClose={() => openTab(null)} />
+        <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => openTab(null)} />
       )}
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
+          onPartner={(id) => openAirline(id, 'share')}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
       {showPanel === 'airports' && (

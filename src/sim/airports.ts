@@ -4,7 +4,7 @@ import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, marketsAt, pairKey } from './markets';
 import {
-  blockMinutes, competitionFor, CONNECT_FARE_SHARE, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
+  blockMinutes, codeshareFlights, competitionFor, CONNECT_FARE_SHARE, connectionWeight, todaySplit, DAY, fareMultOf, respondingAirTotal, defaultAircraft, detourOk, HUB_COST_PER_WEEK, layoverKind, localMinutes, LONG_LAYOVER_MIN, minConnect,
   topMarketsFrom, utcOffsetMin, weeklyDepartures, type Aircraft, type Leg, type NetworkResult, type Plan, type TransferFlow,
 } from './simulate';
 import { airChoice } from './choice';
@@ -19,6 +19,8 @@ export interface BoardFlight {
   to: string;
   depUtc: number;
   arrUtc: number;
+  /** A codeshare partner's flight (its airline id); travellers can connect between it and your own flights only. */
+  partner?: string;
 }
 
 const mod = (x: number, m: number) => ((x % m) + m) % m;
@@ -31,6 +33,16 @@ export function allFlights(plan: Plan): BoardFlight[] {
       out.push({ ac, index, leg, from: leg.from, to: leg.to, depUtc: leg.dep, arrUtc: leg.dep + blockMinutes(leg.from, leg.to, ac.type) });
     });
   }
+  return out;
+}
+
+/** Your flights plus the codeshare partners' flights you sell, for connections. */
+export function connectingFlights(plan: Plan): BoardFlight[] {
+  const out = allFlights(plan);
+  codeshareFlights(plan).forEach((p, i) => {
+    const ac: Aircraft = { id: `cs:${p.airline}|${p.key}#${i}`, reg: '', type: p.type, legs: [] };
+    out.push({ ac, index: -1, leg: { from: p.from, to: p.to, dep: p.dep }, from: p.from, to: p.to, depUtc: p.dep, arrUtc: p.dep + p.block, partner: p.airline });
+  });
   return out;
 }
 
@@ -271,7 +283,7 @@ function bestWait(flights: BoardFlight[], plan: Plan, o: string, hub: string, d:
     if (a.from !== o || a.to !== hub) continue;
     anyArr ??= a;
     for (const f of flights) {
-      if (f.from !== hub || f.to !== d) continue;
+      if (f.from !== hub || f.to !== d || (a.partner && f.partner)) continue;
       const through = f.ac === a.ac && f.index === a.index + 1;
       const wait = mod(f.depUtc - a.arrUtc, DAY);
       if (wait < (through ? 0 : mct)) continue;
@@ -287,14 +299,21 @@ interface PairContext {
   hub: string;
   flights: BoardFlight[];
   flownSet: Set<string>;
+  /** Ends flown with your own aircraft (flownSet also has codeshare ends). */
+  ownSet: Set<string>;
   flows: TransferFlow[];
 }
 
 function pairContext(plan: Plan, result: NetworkResult | null, hub: string): PairContext {
-  const flights = allFlights(plan);
-  const flownSet = new Set<string>();
-  for (const f of flights) { if (f.from === hub) flownSet.add(f.to); if (f.to === hub) flownSet.add(f.from); }
-  return { plan, result, hub, flights, flownSet, flows: result?.transfers[hub]?.flows ?? [] };
+  const flights = connectingFlights(plan);
+  const flownSet = new Set<string>(), ownSet = new Set<string>();
+  for (const f of flights) {
+    const end = f.from === hub ? f.to : f.to === hub ? f.from : null;
+    if (!end) continue;
+    flownSet.add(end);
+    if (!f.partner) ownSet.add(end);
+  }
+  return { plan, result, hub, flights, flownSet, ownSet, flows: result?.transfers[hub]?.flows ?? [] };
 }
 
 /** How the market o-d stands for travel through the hub. Null when it is not a market at all. */
@@ -305,10 +324,12 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
   if (!m) return null;
   const demand = m.airDemand * 2;
   const legs = km(o, hub) + km(hub, d);
-  const nonstopFlown = c.flights.some((f) => pairKey(f.from, f.to) === pairKey(o, d));
+  const nonstopFlown = c.flights.some((f) => !f.partner && pairKey(f.from, f.to) === pairKey(o, d));
   const nonstopPax = result?.routes[pairKey(o, d)]?.localPax ?? 0;
   const viaPax = c.flows.filter((f) => (f.from === o && f.to === d) || (f.from === d && f.to === o)).reduce((s, f) => s + f.pax, 0);
+  // Two codeshare legs don't make a trip: one of them has to be your own flight.
   const missing = [o, d].filter((x) => !c.flownSet.has(x));
+  if (!missing.length && !c.ownSet.has(o) && !c.ownSet.has(d)) missing.push(d);
   const ok = detourOk(m.distKm, legs);
   const est = ok ? estimateVia(plan, o, hub, d) : 0;
   // What quick connections could carry: per direction, the flights you fly on its two legs (at least one a day), and
@@ -419,7 +440,7 @@ export function hubOpportunities(plan: Plan, hub: string, limit = 6): SpokeIdea[
     if (!defaultAircraft(hub, x)) continue;
     const markets: SpokeIdea['markets'] = [];
     for (const y of flown) {
-      if (c.flights.some((f) => pairKey(f.from, f.to) === pairKey(x, y))) continue;
+      if (c.flights.some((f) => !f.partner && pairKey(f.from, f.to) === pairKey(x, y))) continue;
       const est = estimateVia(plan, x, hub, y);
       if (est >= 1) markets.push({ d: y, est });
     }

@@ -6,7 +6,8 @@ import { KIND_NAMES, type AirlineKind } from '../sim/competitors';
 import { LONG_HAUL_KM } from '../sim/markets';
 import { airlineNetwork, airlineNetworks, countryName, departuresFrom, overlapWithPlan, type AirlineNetwork, type AirlineRoute } from '../sim/networks';
 import { marketSplit } from '../sim/share';
-import { hhmm, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
+import { canCodeshare, hasCodeshare, hhmm, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
+import { CodeshareTab } from './codeshare';
 import { CompactTimetable } from './CompactTimetable';
 import { count, pct, short } from './format';
 import { Head, Sheet, shortType } from './sheets';
@@ -48,8 +49,9 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
   const all = useMemo(() => airlineNetworks(), []);
   const flown = routePairs(plan).length;
   const rows = useMemo(() => all.map((net) => ({ net, ...overlapWithPlan(net, plan) })), [all, plan]);
+  const partner = (id: string) => (plan.codeshares ?? []).some((c) => c.airline === id) ? 1 : 0;
   const mine = rows.filter((r) => r.routes.length || r.airports.length)
-    .sort((x, y) => y.routes.length - x.routes.length || y.airports.length - x.airports.length || y.net.flights - x.net.flights);
+    .sort((x, y) => partner(y.net.airline.id) - partner(x.net.airline.id) || y.routes.length - x.routes.length || y.airports.length - x.airports.length || y.net.flights - x.net.flights);
   const [filter, setFilter] = useState<DirFilter>(mine.length ? 'mine' : 'all');
   const [kind, setKind] = useState<KindFilter>('any');
   const [continent, setContinent] = useState('all');
@@ -64,6 +66,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
   const rank = (net: AirlineNetwork) => (net.airline.name.toUpperCase().includes(query) ? 0 : net.hubs.some((h) => h.code === query) || net.airline.bases[0] === query ? 1
     : countryName(net.airline.country).includes(q.trim()) || net.airline.country === query ? 2 : 3);
   const source = filter === 'mine' ? mine : rows;
+  const partnerCount = (id: string) => (plan.codeshares ?? []).filter((c) => c.airline === id).length;
   const list = source.filter((r) => match(r.net)).sort((x, y) => {
     if (query && rank(x.net) !== rank(y.net)) return rank(x.net) - rank(y.net);
     if (sort === 'name') return x.net.airline.name.localeCompare(y.net.airline.name);
@@ -97,7 +100,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
           <Tail net={net} size={42} /><span className="airline-card-main">
             <span className="airline-card-title"><b>{net.airline.name}</b><em>{KIND_NAMES[net.airline.kind]}</em></span>
             <small>{countryName(net.airline.country)} <span>·</span> 樞紐 {hubCodes(net) || '—'}</small>
-            <span className="airline-card-stats"><span><b>{short(net.flights)}</b> 班/週</span><span><b>{net.routes.length}</b> 條航線</span>{routes.length > 0 ? <i>{routes.length} 條同線</i> : airports.length > 0 ? <i>{airports.length} 個同機場</i> : null}</span>
+            <span className="airline-card-stats"><span><b>{short(net.flights)}</b> 班/週</span><span><b>{net.routes.length}</b> 條航線</span>{partnerCount(net.airline.id) > 0 ? <i className="partner"><Icon n="link" /> 共享 {partnerCount(net.airline.id)} 條</i> : routes.length > 0 ? <i>{routes.length} 條同線</i> : airports.length > 0 ? <i>{airports.length} 個同機場</i> : null}</span>
           </span><span className="chev" aria-hidden="true">›</span>
         </button>))}</div>
       {!list.length && <div className="directory-empty"><span>⌕</span><b>{query ? '找不到符合的航空公司' : '這個篩選沒有航空公司'}</b><small>試試其他地區、類型或搜尋字詞。</small><button className="secondary" onClick={() => { setQ(''); setContinent('all'); setKind('any'); }}>清除篩選</button></div>}
@@ -107,31 +110,36 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
 
 // ---------- Profile ----------
 
-type Section = 'routes' | 'hubs' | 'fleet' | 'vs';
+export type Section = 'routes' | 'hubs' | 'fleet' | 'vs' | 'share';
 type RouteFilter = 'all' | 'long' | 'mine' | `hub:${string}`;
 const PAGE = 15;
 
-export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, onOpenRoute, onOpen, back, onClose }: {
+export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, onOpenRoute, onOpen, onCodeshare, initialTab, back, onClose }: {
   plan: Plan; result: NetworkResult | null; id: string;
+  /** Start or end a codeshare on one of its routes. */
+  onCodeshare: (key: string) => void;
+  initialTab?: Section;
   /** The route picked out on the map. */
   focus: string | null; onFocus: (key: string | null) => void;
   onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void;
   back?: { label: string; go: () => void }; onClose: () => void;
 }) {
   const net = useMemo(() => airlineNetwork(id), [id]);
-  const [tab, setTab] = useState<Section>('routes');
+  const [tab, setTab] = useState<Section>(initialTab ?? 'routes');
   if (!net) return <Sheet title="航空公司" onClose={onClose}><div className="hint center">這家航空目前沒有航班。</div></Sheet>;
   const a = net.airline;
   const overlap = overlapWithPlan(net, plan);
+  const shared = (plan.codeshares ?? []).filter((c) => c.airline === a.id).length;
   const aircraft = net.fleet.reduce((s, f) => s + f.aircraft, 0);
   const main = net.hubs[0];
   const tiles: { key: Section; icon: IconName; label: string; value: string; sub?: React.ReactNode }[] = [
-    { key: 'routes', icon: 'route', label: '航線', value: count(net.routes.length), sub: <IN n="base" v={count(net.airports.length)} label="航點" u="個航點" /> },
+    { key: 'routes', icon: 'route', label: '航線', value: count(net.routes.length), sub: `${count(net.airports.length)} 航點` },
     net.pointToPoint
       ? { key: 'hubs', icon: 'hub', label: '主要機場', value: main.code, sub: '點對點' }
       : { key: 'hubs', icon: 'hub', label: '樞紐', value: net.hubs.length > 1 ? `${net.hubs.length}` : main.code, sub: net.hubs.length > 1 ? hubCodes(net) : <IN n="share" v={pct(main.share)} label="占班次" w="占" u="班次" /> },
-    { key: 'fleet', icon: 'plane', label: '機隊', value: `約 ${count(aircraft)} 架`, sub: `${net.fleet.length} 種機型` },
+    { key: 'fleet', icon: 'plane', label: '機隊', value: `≈${count(aircraft)}`, sub: `架 · ${net.fleet.length} 型` },
     { key: 'vs', icon: 'rival', label: '和你', value: overlap.routes.length ? `${overlap.routes.length}` : '—', sub: overlap.routes.length ? <IN n="route" v="同線" label="同航線競爭" /> : overlap.airports.length ? <IN n="base" v={overlap.airports.length} label="同機場" u="個同機場" /> : undefined },
+    { key: 'share', icon: 'link', label: '共享', value: shared ? `${shared}` : '—', sub: !canCodeshare(a) ? '不共享' : shared ? '條共享中' : '挑航線' },
   ];
   return (
     <Sheet title={a.name} onClose={onClose}
@@ -146,14 +154,15 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
           </div>
         </div>
       </div>
-      <div className="ap-tiles" role="tablist">
+      <div className="ap-tiles five" role="tablist">
         {tiles.map((t) => (
           <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
             <span className="label"><Icon n={t.icon} /> {t.label}</span><span className="value">{t.value}</span>{t.sub && <small>{t.sub}</small>}
           </button>
         ))}
       </div>
-      {tab === 'routes' && <RouteList plan={plan} net={net} focus={focus} onFocus={onFocus} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
+      {tab === 'routes' && <RouteList plan={plan} net={net} focus={focus} onFocus={onFocus} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} onCodeshare={onCodeshare} />}
+      {tab === 'share' && <CodeshareTab plan={plan} net={net} onToggle={onCodeshare} onPickAirport={onPickAirport} />}
       {tab === 'hubs' && <Hubs net={net} onPickAirport={onPickAirport} onShowRoutes={() => setTab('routes')} />}
       {tab === 'fleet' && <Fleet net={net} />}
       {tab === 'vs' && <VersusYou plan={plan} result={result} net={net} onOpenRoute={onOpenRoute} onOpen={onOpen} onPickAirport={onPickAirport} />}
@@ -172,9 +181,9 @@ function blurb(net: AirlineNetwork): string {
   return `${hubs}，${reach}；${style}。`;
 }
 
-function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOpen }: {
+function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOpen, onCodeshare }: {
   plan: Plan; net: AirlineNetwork; focus: string | null; onFocus: (key: string | null) => void;
-  onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void;
+  onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void; onCodeshare: (key: string) => void;
 }) {
   const [filter, setFilter] = useState<RouteFilter>('all');
   const [q, setQ] = useState('');
@@ -201,7 +210,8 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
       <ul className="al-routes">
         {list.slice(0, shown).map((r) => (
           <RouteRow key={r.key} r={r} plan={plan} flown={ours.has(r.key)} open={focus === r.key}
-            onToggle={() => onFocus(focus === r.key ? null : r.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} />
+            shared={hasCodeshare(plan, net.airline.id, r.key)} canShare={canCodeshare(net.airline)}
+            onToggle={() => onFocus(focus === r.key ? null : r.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} onCodeshare={() => onCodeshare(r.key)} />
         ))}
       </ul>
       {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, list.length - shown)} 條</button>}
@@ -210,9 +220,9 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
   );
 }
 
-function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, onOpen }: {
-  r: AirlineRoute; plan: Plan; flown: boolean; open: boolean; onToggle: () => void;
-  onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void;
+function RouteRow({ r, plan, flown, open, shared, canShare, onToggle, onPickAirport, onOpenRoute, onOpen, onCodeshare }: {
+  r: AirlineRoute; plan: Plan; flown: boolean; open: boolean; shared: boolean; canShare: boolean; onToggle: () => void;
+  onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void; onCodeshare: () => void;
 }) {
   const [reverse, setReverse] = useState(false);
   const s = reverse ? r.back : r.out;
@@ -223,6 +233,7 @@ function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, 
           <b>{r.a} ⇄ {name(r.b)} {r.b}</b>
           <span className="ins"><IN n="long" v={`${count(r.distKm)}km`} label={r.distKm > LONG_HAUL_KM ? '長程' : '距離'} u={r.distKm > LONG_HAUL_KM ? ' 長程' : undefined} tone={r.distKm > LONG_HAUL_KM ? 'accent' : undefined} /><IN n="plane" v={shortType(r.type)} label="機型" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /></span>
         </span>
+        {shared && <Badge n="link" tone="good" label="共享" />}
         {flown && <Badge n="route" tone="warn" label="你也飛" />}
         <span className="rival-share">{count(r.freq)}<small>班/週</small></span>
       </button>
@@ -237,6 +248,7 @@ function RouteRow({ r, plan, flown, open, onToggle, onPickAirport, onOpenRoute, 
             {flown
               ? <button className="chip strong" onClick={() => onOpenRoute(r.key)}>看你的 {r.a} ⇄ {r.b}</button>
               : <button className="chip strong" onClick={() => onOpen(r.a, r.b)}>你也開航 {r.a} ⇄ {r.b}</button>}
+            {canShare && <button className={`chip${shared ? ' on' : ''}`} onClick={onCodeshare} aria-pressed={shared}><Icon n="link" /> {shared ? '取消共享' : '共享這條'}</button>}
             <button className="chip" onClick={() => onPickAirport(r.b)}>看{name(r.b)}機場</button>
           </div>
         </div>
