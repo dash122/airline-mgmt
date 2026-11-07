@@ -116,8 +116,8 @@ const CONTINENT_COUNTRIES: Record<Continent, Set<string>> = {
 const continentOf = (country: string): Continent => Object.entries(CONTINENT_COUNTRIES).find(([, countries]) => countries.has(country))?.[0] as Continent ?? 'asia';
 
 /** Routes from this airport with the player against each competitor: flights and share of travellers. */
-export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen }: {
-  plan: Plan; result: NetworkResult | null; code: string; onOpenRoute: (key: string) => void; onOpen: (to: string) => void;
+export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, onPickAirline }: {
+  plan: Plan; result: NetworkResult | null; code: string; onOpenRoute: (key: string) => void; onOpen: (to: string) => void; onPickAirline?: (id: string) => void;
 }) {
   const [shown, setShown] = useState(PAGE);
   const [filter, setFilter] = useState<RouteView>('all');
@@ -271,7 +271,7 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen }: 
       <ul className="competitor-list">
         {(allCarriers ? carriers : carriers.slice(0, 8)).map((c) => (
           <li key={c.airline.id} className={`carrier${c.airline.bases.includes(code) ? ' airport-carrier-hub' : ''}`}>
-            <span className="name"><AirlineName airline={c.airline} />
+            <span className="name">{onPickAirline ? <button className="airline link" onClick={() => onPickAirline(c.airline.id)} aria-label={`查看 ${c.airline.name} 航空公司資料`}><i style={{ background: c.airline.color }} />{c.airline.name}<span className="chev">›</span></button> : <AirlineName airline={c.airline} />}
               <small className="airport-carrier-meta">{countryName(c.airline.country)} · {c.airline.bases[0] === code ? '主要樞紐' : c.airline.bases.includes(code) ? '基地' : `樞紐：${c.airline.bases[0]}`}</small>
               <span className="carrier-bar"><i style={{ width: `${(100 * c.flights) / topFlights}%`, background: c.airline.color }} /></span></span>
             {c.airline.bases[0] === code ? <Badge n="hub" tone="accent" label="主要樞紐" /> : c.airline.bases.includes(code) ? <Badge n="base" tone="muted" label="基地" /> : null}

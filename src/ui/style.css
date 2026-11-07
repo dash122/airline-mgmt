@@ -1,4 +1,4 @@
-﻿@font-face {
+@font-face {
   font-family: 'Waypoint Sans';
   src: url('../assets/fonts/Manrope-Variable.ttf') format('truetype');
   font-style: normal;
@@ -592,7 +592,8 @@ b.daymark { vertical-align: baseline; font-size: 1em; margin: 0 1px; }
 .hubteaser { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: transparent; color: var(--text); }
 .hubteaser .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .hubteaser small { color: var(--muted); font-size: 11px; margin-top: 2px; }
-.hubteaser .chev { font-size: 20px; color: var(--muted); }
+.hubteaser .chev { display: grid; place-items: center; align-self: center; width: 24px; height: 24px; flex: none; color: var(--muted); font-size: 0; line-height: 1; }
+.hubteaser .chev::before { content: ''; width: 8px; height: 8px; border-right: 2px solid currentColor; border-top: 2px solid currentColor; transform: rotate(45deg); }
 .seg button small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); }
 
 /* Tap-to-explain numbers */
@@ -675,6 +676,51 @@ button.stat.tappable.on { border-color: var(--accent); background: color-mix(in 
 .airline-list .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .airline-list .name b em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; margin-left: 6px; }
 .airline-list small { color: var(--muted); font-size: 11px; }
+
+/* Airline directory: search, geographic scope and sort stay visible as one control surface. */
+.airlines-directory .sheet-body { gap: 12px; }
+.directory-search { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--accent); }
+.directory-search > span { font-size: 23px; line-height: 1; }
+.directory-search .search { flex: 1; width: 100%; min-width: 0; margin: 0; padding: 10px 0; border: 0; background: transparent; }
+.directory-search .search:focus { outline: 0; }
+.directory-search button { color: var(--accent); font-size: 12px; font-weight: 700; }
+.directory-section-heading, .directory-results-label { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 13px; font-weight: 800; }
+.directory-section-heading small, .directory-results-label small { color: var(--muted); font-size: 11px; font-weight: 500; }
+.directory-scope { margin: 0; }
+.directory-scope button { min-height: 40px; }
+.directory-scope b { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.directory-filter-label { margin: 3px 0 -7px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.directory-chips { margin: 0; padding: 1px 0 4px; }
+.directory-chips .chip { flex: none; min-height: 34px; padding: 7px 12px; }
+.directory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0 2px; border-top: 1px solid var(--line); }
+.directory-toolbar > .chips { flex: 1; min-width: 0; }
+.directory-toolbar > label { display: flex; align-items: center; gap: 6px; flex: none; color: var(--muted); font-size: 11px; }
+.directory-toolbar select { max-width: 118px; padding: 8px 26px 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; font-weight: 700; }
+.directory-results-label { margin-top: 6px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+.airlines-directory .airline-list { display: flex; flex-direction: column; }
+.airline-card { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 82px; padding: 11px 4px; border-bottom: 1px solid var(--line); color: var(--text); text-align: left; transition: background .15s ease, padding .15s ease; }
+.airline-card:hover { padding-right: 9px; padding-left: 9px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
+.airline-card .tail { flex: none; border-radius: 10px; font-weight: 800; }
+.airline-card-main { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
+.airline-card-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.airline-card-title b { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.airline-card-title em { flex: none; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 9px; font-style: normal; }
+.airline-card-main > small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.airline-card-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 12px; color: var(--muted); font-size: 10px; }
+.airline-card-stats b { color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.airline-card-stats i { padding: 3px 7px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--accent); font-size: 9px; font-style: normal; font-weight: 750; }
+.airline-card > .chev { color: var(--muted); font-size: 21px; }
+.directory-empty { display: flex; align-items: center; flex-direction: column; gap: 8px; padding: 44px 16px; color: var(--muted); text-align: center; }
+.directory-empty > span { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--accent); font-size: 25px; }
+.directory-empty b { color: var(--text); font-size: 14px; }
+.directory-empty small { font-size: 11px; }
+.directory-empty button { margin-top: 6px; }
+@media (max-width: 430px) {
+  .directory-toolbar { align-items: flex-start; flex-direction: column; }
+  .directory-toolbar > label { align-self: flex-end; }
+  .airline-card { gap: 9px; }
+  .airline-card .tail { width: 36px !important; height: 36px !important; }
+}
 .chev { color: var(--muted); font-size: 18px; }
 h4 small { font-weight: 400; color: var(--muted); font-size: 11px; }
 button.back { background: var(--line); border-radius: 14px; padding: 5px 10px; font-size: 12px; white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; align-self: center; }
@@ -1346,9 +1392,14 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .sheet .route-adjust { padding: 0; }
 .route-adjust > summary { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 12px 14px; color: var(--text); font-size: 13px; font-weight: 750; list-style: none; background: color-mix(in srgb, var(--accent) 3%, var(--panel)); }
 .route-adjust > summary::-webkit-details-marker { display: none; }
-.route-adjust > summary::before { content: '›'; display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 7px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); font-size: 19px; line-height: 1; transition: transform .16s ease; }
-.route-adjust[open] > summary::before { transform: rotate(90deg); }
+.route-adjust > summary::before { display: none; }
+.route-sheet .route-adjust > summary::before { content: '›'; display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 7px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); font-size: 19px; line-height: 1; transition: transform .16s ease; }
+.route-sheet .route-adjust[open] > summary::before { transform: rotate(90deg); }
 .route-adjust > summary small { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 500; }
+.airport-sheet .route-adjust > summary { position: relative; justify-content: flex-start; min-height: 66px; padding: 12px 40px 12px 14px; border: 1px solid var(--line); border-radius: 16px; }
+.airport-sheet .route-adjust > summary::after { content: ''; position: absolute; right: 17px; top: 50%; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-70%) rotate(45deg); transition: transform .16s ease; }
+.airport-sheet .route-adjust[open] > summary::after { transform: translateY(-30%) rotate(225deg); }
+.airport-sheet .route-adjust > summary > .ico { flex: none; width: 28px; height: 28px; }
 .route-sheet .sheet-body { gap: 10px; }
 .route-sheet .big-step { padding: 12px 14px; }
 .route-glance { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
@@ -1376,9 +1427,36 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .route-detail > summary > span:nth-child(2) { font-size: 12px; }
 .route-detail > summary small { overflow: hidden; max-width: 52%; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .route-detail-icon { display: grid; width: 25px; height: 25px; flex: none; place-items: center; align-self: center; border-radius: 8px; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-size: 15px; font-weight: 800; line-height: 1; }
-.route-detail[open] > :not(summary) { margin: 12px 4px 4px; }
-.route-analysis-block + .route-analysis-block { margin-top: 18px !important; padding-top: 14px; border-top: 1px solid var(--line); }
-.route-analysis-block > h4 { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 750; }
+.route-detail > summary > span:nth-child(2) { font-size: 13px; font-weight: 800; }
+.route-detail > summary small { color: var(--muted); font-size: 11px; }
+.route-detail[open] { overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); border-radius: 13px; background: color-mix(in srgb, var(--accent) 2%, var(--panel)); }
+.route-detail[open] > :not(summary) { margin: 0; }
+.route-detail[open] > summary { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); }
+.route-analysis-block { padding: 11px 12px; }
+.route-analysis-block + .route-analysis-block { margin-top: 0 !important; border-top: 1px solid var(--line); }
+.route-analysis-block > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--text); font-size: 12px; font-weight: 800; }
+.route-analysis-block > h4 > span { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 6px; background: color-mix(in srgb, var(--accent) 10%, var(--panel)); color: var(--accent); font-size: 9px; font-variant-numeric: tabular-nums; }
+.route-analysis-block .flight-loads { margin-top: 8px; }
+.route-analysis-block .flight-loads-dirname { margin-top: 6px; }
+.route-analysis-block .flight-load-row { padding: 6px 0; }
+.route-analysis-block .flight-load-right b { font-size: 13px; }
+.route-analysis-block .flight-load-row time { font-size: 13px; }
+.route-analysis-block .sec-head { min-height: 28px; margin-bottom: 3px; }
+.route-analysis-block .sec-head h4 { margin: 0; font-size: 11px; }
+.route-analysis-block .share-overview { gap: 8px; padding: 11px 12px; border-radius: 11px; }
+.route-analysis-block .share-overview strong { font-size: 22px; }
+.route-analysis-block .share-overview-total strong { font-size: 17px; }
+.route-analysis-block .share-modes { gap: 6px; margin: 7px 0 11px; }
+.route-analysis-block .share-mode { gap: 3px; padding: 8px 9px; border-radius: 9px; }
+.route-analysis-block .market-insight { margin: 8px 0 10px; padding: 8px 10px; border: 0; border-left: 2px solid var(--accent); border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--accent) 5%, var(--panel)); font-size: 11px; }
+.route-analysis-block .share-list li { gap: 7px; padding: 5px 0; }
+.route-analysis-block .share-list .name b { font-size: 12px; }
+.route-analysis-block .share-list .name .ins { gap: 3px 7px; }
+.route-analysis-block .share-list .in { font-size: 10px; }
+.route-analysis-block .share-list .rival-share { font-size: 12px; }
+.route-analysis-block .share-list .rival-share small { font-size: 10px; }
+.route-analysis-block .share-list li.group { padding: 8px 0 2px; }
+.route-analysis-block .share-more { min-height: 34px; margin-top: 7px; padding: 6px 10px; }
 @media (max-width: 420px) {
   .route-glance { grid-template-columns: 1fr 1fr; }
   .route-profit-glance { min-width: 0; }
@@ -1403,6 +1481,12 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .trip { gap: 10px; padding: 13px; background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
 .dests li > button { padding: 13px 4px; }
 .dests .name { gap: 4px; }
+.route-competitors-entry { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.route-competitor-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.route-competitor-chips .chip { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--accent) 4%, var(--panel)); color: var(--text); font-size: 12px; line-height: 1.2; white-space: nowrap; }
+.route-competitor-chips .chip i { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+.route-competitor-chips .chip span { color: var(--muted); }
+.route-competitor-chips .hint { font-size: 11px; }
 
 
 /* Action hierarchy and tactile states. */

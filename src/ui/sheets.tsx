@@ -1,7 +1,8 @@
-import { useMemo, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { useContext, useMemo, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
+import { rivalsBetween } from '../sim/competitors';
 import { units } from '../sim/schedule';
 import { bestFare, clampFare, fareCurve, FARE_MAX, FARE_MIN, FARE_STEP } from '../sim/fares';
 import { dayMark, dayShiftBetween } from '../sim/airports';
@@ -11,6 +12,7 @@ import {
 } from '../sim/simulate';
 import { count, money, pct } from './format';
 import { MarketShare, RouteRivals } from './rivals';
+import { AirlineLink } from './airlines';
 import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
@@ -167,6 +169,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode;
 }) {
   const [a, b] = routeKey.split('-');
+  const airlineLink = useContext(AirlineLink);
   const m = marketBetween(a, b);
   const flights = flightsOn(plan, routeKey);
   const daily = flights.length / 2;
@@ -188,8 +191,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   }, [a, b]);
   const types = [...new Set(flights.map((f) => shortType(f.ac.type)))].join('、');
   const [why, setWhy] = useState<ExplainKey | null>(null);
-  const [scheduleOpen, setScheduleOpen] = useState(true);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const split = useMemo(() => marketSplit(a, b, result, net), [a, b, result, net]);
+  const routeCompetitors = useMemo(() => [...new Map(rivalsBetween(a, b).map((service) => [service.airline.id, service.airline])).values()], [a, b]);
   const explained = result && why ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   return (
@@ -237,9 +241,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>
       <details className="route-adjust route-detail">
       <summary><span className="route-detail-icon">⌄</span><span>更多分析</span><small>{pct(result?.marketShare ?? 0)} 市占</small></summary>
-      {curve.length > 2 && now && best && <section className="route-analysis-block"><h4>票價預測</h4><FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} /></section>}
-      {result && <section className="route-analysis-block"><h4>旅客與航班</h4><DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} /><FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} /></section>}
+      {curve.length > 2 && now && best && <section className="route-analysis-block"><h4><span>01</span>票價預測</h4><FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} /></section>}
+      {result && <section className="route-analysis-block"><h4><span>02</span>旅客與航班</h4><DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} /><FlightLoads a={a} b={b} flights={result.flights} plan={plan} onEdit={onEditFlight} /></section>}
       <section className="route-analysis-block">
+      <h4><span>{curve.length > 2 && now && best && result ? '03' : '01'}</span>市場占有率</h4>
       <MarketShare a={a} b={b} result={result} net={net} split={split} />
       {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</span>}</div>}
       </section>
@@ -247,6 +252,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       <details className="route-adjust route-detail route-schedule-detail" open={scheduleOpen} onToggle={(e) => setScheduleOpen(e.currentTarget.open)}>
         <summary><span className="route-detail-icon"><Icon n="clock" /></span><span>航班時刻</span><small>{count(result?.flightsPerWeek ?? flights.length * 7)} 班／週 · 當地時間</small></summary>
         <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
+        {routeCompetitors.length > 0 && airlineLink && <div className="route-competitors-entry">
+          <span>{routeCompetitors.length} 家航空公司經營這條航線</span>
+          <div className="route-competitor-chips">{routeCompetitors.slice(0, 4).map((airline) => <button key={airline.id} className="chip" onClick={() => airlineLink(airline.id)}><i style={{ background: airline.color }} />{airline.name} <span aria-hidden="true">›</span></button>)}
+            {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>
+        </div>}
       </details>
       <Confirm label="停飛" confirm={`取消全部 ${flights.length} 個航班？`} onYes={onCloseRoute} />
     </Sheet>

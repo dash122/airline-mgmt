@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
+import { marketSplit } from '../sim/share';
 import { rivalsBetween } from '../sim/competitors';
 import { slotProblem } from '../sim/schedule';
 import {
@@ -12,6 +13,7 @@ import {
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { FlightTimes } from './FlightTimes';
+import { MarketShare } from './rivals';
 import { at, Sheet, shortType, tone } from './sheets';
 import { TimeStepper } from './panels';
 import { Badge, hm, IN, Icon, Ring } from './viz';
@@ -244,6 +246,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
     }
     return [...by.values()].sort((x, y) => y.freq - x.freq);
   }, [from, to]);
+  const previewMarket = useMemo(() => marketSplit(from, to), [from, to]);
 
   const fleetChoices = choices.filter((c) => c.kind === 'fleet');
   const leaseChoices = choices.filter((c) => c.kind === 'lease').sort((x, y) => previews.get(y.id)!.networkDelta - previews.get(x.id)!.networkDelta);
@@ -344,6 +347,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
           {rivals.length > 5 && <span>另 {rivals.length - 5} 家</span>}
         </div>
       )}
+      <MarketShare a={from} b={to} split={previewMarket} title="目前行程與市場占有率" />
       {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</div>}
       </details>
     </Sheet>

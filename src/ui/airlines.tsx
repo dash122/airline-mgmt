@@ -4,10 +4,9 @@ import { AIRCRAFT, CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { KIND_NAMES, type AirlineKind } from '../sim/competitors';
 import { LONG_HAUL_KM } from '../sim/markets';
-import { airlineNetwork, airlineNetworks, AREA_NAMES, AREA_ORDER, areaOf, countryName, departuresFrom, overlapWithPlan, type AirlineNetwork, type AirlineRoute } from '../sim/networks';
+import { airlineNetwork, airlineNetworks, countryName, departuresFrom, overlapWithPlan, type AirlineNetwork, type AirlineRoute } from '../sim/networks';
 import { marketSplit } from '../sim/share';
 import { hhmm, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
-import { nameAreaOf } from '../sim/competitors';
 import { CompactTimetable } from './CompactTimetable';
 import { count, pct, short } from './format';
 import { Head, Sheet, shortType } from './sheets';
@@ -31,6 +30,19 @@ const hubCodes = (net: AirlineNetwork) => net.hubs.map((h) => h.code).join('・'
 
 type DirFilter = 'mine' | 'all';
 type KindFilter = 'any' | AirlineKind;
+type SortBy = 'relevance' | 'flights' | 'routes' | 'name';
+const CONTINENTS = [
+  { id: 'asia', label: '亞洲' }, { id: 'europe', label: '歐洲' }, { id: 'northAmerica', label: '北美' },
+  { id: 'southAmerica', label: '南美' }, { id: 'africa', label: '非洲' }, { id: 'oceania', label: '大洋洲' },
+] as const;
+const CONTINENT_COUNTRIES: Record<string, string[]> = {
+  asia: 'AF AM AZ BD BH BN BT CN CY GE HK ID IL IN IQ IR JO JP KG KH KP KR KW KZ LA LB LK MM MN MO MV MY NP OM PH PK PS QA SA SG SY TH TJ TL TM TR TW UZ VN YE AE'.split(' '),
+  europe: 'AD AL AT BA BE BY CH CZ DE DK EE ES FI FO GB GR HR HU IE IS IT LI LT LU LV MC MD ME MK MT NL NO PL PT RO RS RU SE SI SK SM UA VA XK'.split(' '),
+  africa: 'AO BF BI BJ BW CD CF CG CI CM CV DJ DZ EG EH ER ET GA GH GM GN GQ GW KE KM LR LS LY MA MG ML MR MU MW MZ NA NE NG RE RW SC SD SN SO SS ST SZ TD TG TN TZ UG YT ZA ZM ZW'.split(' '),
+  northAmerica: 'AG AI AW BB BL BM BQ BS BZ CA CR CU CW DM DO GD GL GP GT HN HT JM KN KY LC MF MQ MS MX NI PA PR SV SX TC TT US VC VG VI'.split(' '),
+  southAmerica: 'AR BO BR CL CO EC FK GF GY PE PY SR UY VE'.split(' '),
+  oceania: 'AS AU CK FJ FM GU KI MH MP NC NF NR NU NZ PF PG PW SB TK TO TV VU WF WS'.split(' '),
+};
 
 export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (id: string) => void; onClose: () => void }) {
   const all = useMemo(() => airlineNetworks(), []);
@@ -40,59 +52,55 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
     .sort((x, y) => y.routes.length - x.routes.length || y.airports.length - x.airports.length || y.net.flights - x.net.flights);
   const [filter, setFilter] = useState<DirFilter>(mine.length ? 'mine' : 'all');
   const [kind, setKind] = useState<KindFilter>('any');
+  const [continent, setContinent] = useState('all');
+  const [sort, setSort] = useState<SortBy>('relevance');
   const [q, setQ] = useState('');
   const query = q.trim().toUpperCase();
-  const match = (net: AirlineNetwork) => (kind === 'any' || net.airline.kind === kind) && (!query
+  const match = (net: AirlineNetwork) => (kind === 'any' || net.airline.kind === kind)
+    && (continent === 'all' || CONTINENT_COUNTRIES[continent]?.includes(net.airline.country)) && (!query
     || net.airline.name.toUpperCase().includes(query) || countryName(net.airline.country).includes(q.trim())
     || net.airline.country === query || net.airports.includes(query) || net.hubs.some((h) => name(h.code).includes(q.trim())));
   // Searching ranks name matches, then airlines based at the airport, then those that only fly there.
   const rank = (net: AirlineNetwork) => (net.airline.name.toUpperCase().includes(query) ? 0 : net.hubs.some((h) => h.code === query) || net.airline.bases[0] === query ? 1
     : countryName(net.airline.country).includes(q.trim()) || net.airline.country === query ? 2 : 3);
-  const list = query
-    ? rows.filter((r) => match(r.net)).sort((x, y) => rank(x.net) - rank(y.net) || y.net.flights - x.net.flights)
-    : (filter === 'mine' ? mine : rows).filter((r) => match(r.net));
-  const homeArea = nameAreaOf(AIRPORT_BY_CODE[plan.base].country);
-  const groups = filter === 'all' && !query
-    ? [homeArea, ...AREA_ORDER.filter((a) => a !== homeArea)].map((area) => ({ area, rows: list.filter((r) => areaOf(r.net.airline) === area) })).filter((g) => g.rows.length)
-    : [{ area: null, rows: list }];
+  const source = filter === 'mine' ? mine : rows;
+  const list = source.filter((r) => match(r.net)).sort((x, y) => {
+    if (query && rank(x.net) !== rank(y.net)) return rank(x.net) - rank(y.net);
+    if (sort === 'name') return x.net.airline.name.localeCompare(y.net.airline.name);
+    if (sort === 'routes') return y.net.routes.length - x.net.routes.length || y.net.flights - x.net.flights;
+    if (sort === 'flights') return y.net.flights - x.net.flights;
+    return y.routes.length - x.routes.length || y.airports.length - x.airports.length || y.net.flights - x.net.flights;
+  });
+  const homeLabel = CONTINENTS.find((c) => CONTINENT_COUNTRIES[c.id].includes(AIRPORT_BY_CODE[plan.base].country))?.label ?? '全球';
   return (
-    <Sheet size="full" title={`航空公司 · ${all.length}`} onClose={onClose} info={<p>對手的樞紐、航線和機隊。點一家看它的航線網。搜尋可用航空、國家或機場代碼（如 HKG）。</p>}>
-      <input className="search" type="search" placeholder="🔍 航空、國家、機場" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜尋航空公司" />
-      {!query && (
-        <div className="seg two" role="tablist">
-          <button role="tab" aria-selected={filter === 'mine'} className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>與你重疊 {mine.length}</button>
-          <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>全部 {all.length}</button>
-        </div>
-      )}
-      <div className="chips scroll kind-chips">
-        {(['any', 'full', 'low', 'regional'] as KindFilter[]).map((k) => (
-          <button key={k} className={`chip${kind === k ? ' strong' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}>{k === 'any' ? '全部類型' : KIND_NAMES[k]}</button>
-        ))}
+    <Sheet size="full" className="airlines-directory" title="航空公司" sub={<span className="ins">{list.length} 家符合 · {homeLabel}航空市場</span>} onClose={onClose} info={<p>瀏覽航空公司的航線網、樞紐和估算機隊。選擇航空公司即可開啟完整資料。</p>}>
+      <div className="directory-search"><span aria-hidden="true">⌕</span><input className="search" type="search" placeholder="搜尋航空公司、國家或機場" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜尋航空公司" />{q && <button onClick={() => setQ('')} aria-label="清除搜尋">清除</button>}</div>
+      <div className="directory-section-heading"><span>快速篩選</span><small>{list.length} / {filter === 'mine' ? mine.length : all.length}</small></div>
+      <div className="seg two directory-scope" role="tablist" aria-label="航空公司範圍">
+        <button role="tab" aria-selected={filter === 'mine'} className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>與我重疊 <b>{mine.length}</b></button>
+        <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>全部航空 <b>{all.length}</b></button>
       </div>
+      <div className="directory-filter-label">地區</div>
+      <div className="chips scroll kind-chips directory-chips">
+        <button className={`chip${continent === 'all' ? ' strong' : ''}`} onClick={() => setContinent('all')} aria-pressed={continent === 'all'}>全球</button>
+        {CONTINENTS.map((c) => <button key={c.id} className={`chip${continent === c.id ? ' strong' : ''}`} onClick={() => setContinent(c.id)} aria-pressed={continent === c.id}>{c.label}</button>)}
+      </div>
+      <div className="directory-toolbar"><div className="chips scroll kind-chips">
+        {(['any', 'full', 'low', 'regional'] as KindFilter[]).map((k) => <button key={k} className={`chip${kind === k ? ' strong' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}>{k === 'any' ? '全部類型' : KIND_NAMES[k]}</button>)}
+      </div><label>排序<select value={sort} onChange={(e) => setSort(e.target.value as SortBy)} aria-label="排序方式">
+        <option value="relevance">相關性</option><option value="flights">班次最多</option><option value="routes">航線最多</option><option value="name">名稱 A–Z</option>
+      </select></label></div>
       {filter === 'mine' && !query && !flown && mine.length > 0 && <div className="hint"><Icon n="base" /> {plan.base}</div>}
-      {groups.map((g) => (
-        <section key={g.area ?? 'list'}>
-          {g.area && <h4>{AREA_NAMES[g.area]} <small>{g.rows.length}</small></h4>}
-          <ul className="airline-list">
-            {g.rows.map(({ net, routes, airports }) => (
-              <li key={net.airline.id}>
-                <button onClick={() => onPick(net.airline.id)}>
-                  <Tail net={net} />
-                  <span className="name">
-                    <b>{net.airline.name}<em>{KIND_NAMES[net.airline.kind]}</em></b>
-                    <span className="ins"><span>{countryName(net.airline.country)}</span><IN n="hub" v={hubCodes(net)} label="樞紐" w="樞紐" /><IN n="plane" v={short(net.flights)} label="班/週" u="班/週" /></span>
-                  </span>
-                  {routes.length > 0
-                    ? <Badge n="route" tone="warn">{routes.length} 條同線</Badge>
-                    : airports.length > 0 ? <Badge n="base" tone="muted">{airports.length} 個同機場</Badge> : null}
-                  <span className="chev">›</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      {!list.length && <div className="hint center">{query ? '找不到' : '還沒有和你重疊的航空'}</div>}
+      <div className="directory-results-label">{continent === 'all' ? '所有地區' : CONTINENTS.find((c) => c.id === continent)?.label} <small>{list.length} 家</small></div>
+      <div className="airline-list">{list.map(({ net, routes, airports }) => (
+        <button className="airline-card" key={net.airline.id} onClick={() => onPick(net.airline.id)}>
+          <Tail net={net} size={42} /><span className="airline-card-main">
+            <span className="airline-card-title"><b>{net.airline.name}</b><em>{KIND_NAMES[net.airline.kind]}</em></span>
+            <small>{countryName(net.airline.country)} <span>·</span> 樞紐 {hubCodes(net) || '—'}</small>
+            <span className="airline-card-stats"><span><b>{short(net.flights)}</b> 班/週</span><span><b>{net.routes.length}</b> 條航線</span>{routes.length > 0 ? <i>{routes.length} 條同線</i> : airports.length > 0 ? <i>{airports.length} 個同機場</i> : null}</span>
+          </span><span className="chev" aria-hidden="true">›</span>
+        </button>))}</div>
+      {!list.length && <div className="directory-empty"><span>⌕</span><b>{query ? '找不到符合的航空公司' : '這個篩選沒有航空公司'}</b><small>試試其他地區、類型或搜尋字詞。</small><button className="secondary" onClick={() => { setQ(''); setContinent('all'); setKind('any'); }}>清除篩選</button></div>}
     </Sheet>
   );
 }

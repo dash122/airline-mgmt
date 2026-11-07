@@ -277,6 +277,7 @@ export default function App() {
           }}
           onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
           onPickAirport={(code) => select({ kind: 'airport', id: code })}
+          onPickAirline={openAirline}
           onHint={setTransitHint}
           action={backToAirline}
           onClose={() => select(null)} />
@@ -361,9 +362,9 @@ export default function App() {
         </nav>
       )}
       <nav className="tabbar" aria-label="主要導覽">
-        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['report', '經營']] as [Panel, string][]).map(([p, label]) => {
-          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : p === 'report' ? panel === 'report' || panel === 'airports' || panel === 'airlines' : panel === p);
-          return <button key={label} className={active ? 'on' : ''} onClick={() => openTab(p === 'report' && !result ? 'airports' : p)} aria-current={active ? 'page' : undefined}>
+        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['airlines', '對手']] as [Panel, string][]).map(([p, label]) => {
+          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : panel === p);
+          return <button key={label} className={active ? 'on' : ''} onClick={() => openTab(p)} aria-current={active ? 'page' : undefined}>
             <TabIcon tab={p} /><span>{label}</span>
           </button>;
         })}

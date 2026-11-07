@@ -67,12 +67,12 @@ function Radial({ code, list, onPick }: { code: string; list: Spoke[]; onPick: (
   );
 }
 
-export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action }: {
+export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action, onPickAirline }: {
   plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
   onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
   onToggleHub: () => void; onShowSchedule: () => void; onPickAirport: (code: string) => void;
   /** Legs to sketch on the map while transit ideas are on screen (dashed = not flown yet). */
-  onHint: (legs: [string, string][] | null) => void; onClose: () => void; action?: ReactNode;
+  onHint: (legs: [string, string][] | null) => void; onClose: () => void; action?: ReactNode; onPickAirline?: (id: string) => void;
 }) {
   const [tab, setTab] = useState<AirportSection>('routes');
   const persp = hubOf(plan);
@@ -114,7 +114,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
     { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" u="人/週" /> : undefined },
     { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" u="班/週" /> : undefined },
     { key: 'market', icon: 'market', label: '市場', value: traffic ? pct(traffic.ours / Math.max(1, traffic.total)) : '?', sub: <IN n="pax" v={traffic ? short(traffic.total) : '?'} label="機場旅客/週" u="人/週" /> },
-    { key: 'schedule', icon: 'calendar', label: '全日班表', value: `${used}`, sub: '班/週' },
+    { key: 'schedule', icon: 'calendar', label: '時刻表', value: `${used}`, sub: '班/週' },
     isPersp
       ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週' }
       : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
@@ -183,7 +183,8 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
       )}
 
       {tab === 'schedule' && <AirportDaySchedule plan={plan} code={code} />}
-      {tab === 'rivals' && <AirportCompetition plan={plan} result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} />}
+
+      {tab === 'rivals' && <AirportCompetition plan={plan} result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} onPickAirline={onPickAirline} />}
 
       {tab === 'market' && <AirportMarkets plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}
     </Sheet>
