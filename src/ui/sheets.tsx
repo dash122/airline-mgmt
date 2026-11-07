@@ -470,6 +470,7 @@ function MoneyFlow({ result }: { result: NetworkResult }) {
   const parts = [
     { key: 'fly', value: result.flyingCost, color: 'var(--cost-fly)', label: '飛行成本' },
     { key: 'lease', value: result.ownershipCost, color: 'var(--cost-lease)', label: '租金' },
+    { key: 'fees', value: result.hubCost + result.codeshareCost, color: 'var(--warn)', label: result.codeshareCost ? '轉運站・共享費' : '轉運站費' },
     { key: 'profit', value: Math.max(0, profit), color: 'var(--good)', label: '賺' },
   ];
   // A loss: costs are larger than revenue, so the bar is costs and a red notch shows the gap.
