@@ -8,11 +8,12 @@ import {
   HUB_COST_PER_WEEK, HUB_MCT_CUT, minConnect,
   weeklyDepartures, type NetworkResult, type Plan,
 } from '../sim/simulate';
-import { count, money, pct, short } from './format';
-import { Sheet, tone } from './sheets';
+import { count, money, short } from './format';
+import { routeColor, Sheet } from './sheets';
+import { RouteRow } from './route-health';
 import { AirportCompetition, AirportDaySchedule, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
 import { rivalsAt } from '../sim/competitors';
-import { Badge, IN, Icon, Meter } from './viz';
+import { Badge, IN, Icon } from './viz';
 
 const EMPTY_IDEAS: NonNullable<ReturnType<typeof useAirportAnalysis>>['ideas'] = [];
 
@@ -67,14 +68,16 @@ function Radial({ code, list, onPick }: { code: string; list: Spoke[]; onPick: (
   );
 }
 
-export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action, onPickAirline }: {
+export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action, onPickAirline, onAddFlight, onRemoveFlight }: {
   plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
   onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
   onToggleHub: () => void; onShowSchedule: () => void; onPickAirport: (code: string) => void;
   /** Legs to sketch on the map while transit ideas are on screen (dashed = not flown yet). */
   onHint: (legs: [string, string][] | null) => void; onClose: () => void; action?: ReactNode; onPickAirline?: (id: string) => void;
+  onAddFlight?: (key: string) => void; onRemoveFlight?: (key: string) => void;
 }) {
-  const [tab, setTab] = useState<AirportSection>('routes');
+  // Open on what the player can act on: their routes here, or where to fly if they don't fly here yet.
+  const [tab, setTab] = useState<AirportSection>(() => (weeklyDepartures(plan, code) > 0 ? 'routes' : 'market'));
   const persp = hubOf(plan);
   const isPersp = code === persp;
   const analysis = useAirportAnalysis(plan, result, code, tab === 'transfer');
@@ -108,44 +111,42 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const transfer = result?.transfers[code];
   const served = used > 0;
   const carriers = analysis?.carriers ?? [];
-  const traffic = analysis?.traffic;
   const ourPax = list.reduce((s, x) => s + x.pax, 0);
   const tiles: Tile[] = [
-    { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" u="人/週" /> : undefined },
-    { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" u="班/週" /> : undefined },
-    { key: 'market', icon: 'market', label: '市場', value: traffic ? pct(traffic.ours / Math.max(1, traffic.total)) : '?', sub: <IN n="pax" v={traffic ? short(traffic.total) : '?'} label="機場旅客/週" u="人/週" /> },
-    { key: 'schedule', icon: 'calendar', label: '時刻表', value: `${used}`, sub: '班/週' },
+    { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—' },
+    { key: 'market', icon: 'market', label: '市場', value: '—' },
     isPersp
-      ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週' }
-      : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
+      ? { key: 'transfer', icon: 'transfer', label: '轉機', value: '—' }
+      : { key: 'transfer', icon: 'transfer', label: `經${persp}轉機`, value: '—' },
+    { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—' },
+    { key: 'schedule', icon: 'calendar', label: '時刻表', value: '—' },
   ];
   return (
     <Sheet size="full" className="airport-sheet" title={a.name} onClose={onClose} action={action}
       sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
-      info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
-      <div className="airport-hero">
-        <div className="airport-hero-top"><div><span className="airport-eyebrow">AIRPORT PROFILE · {a.country}</span><div className="airport-code">{code}</div><span className="airport-hero-name">{a.name}</span></div><span className="airport-compass" aria-hidden="true">✳</span></div>
-        <div className="airport-hero-stats"><div><strong>{directDestinations.size}</strong><span>直飛航點 · {directCountries.size} 國/地區</span></div><div><strong>{list.length}</strong><span>你的航線</span></div><div><strong>{used}</strong><span>每週出發</span></div></div>
-        <div className="airport-reach-note">你可搭乘 {directDestinations.size} 個直飛航點，遍及 {directCountries.size} 個國家／地區（含對手航班）</div>
+      info={<p>直飛 {directDestinations.size} 個航點、{directCountries.size} 個國家／地區（含對手航班）· 腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
+      <div className="airport-glance">
+        <div><b>{list.length}</b><small>你的航線</small></div>
+        <div><b>{used}</b><small>每週出發</small></div>
+        <div><b>{short(ourPax)}</b><small>你的旅客/週</small></div>
+        <div><b>{directDestinations.size}</b><small>直飛航點</small></div>
       </div>
-      <div className="airport-actions"><button className="primary" onClick={onConnect}><span>＋</span> 規劃新航線 <span className="airport-action-arrow">↗</span></button>{served && <button className="secondary" onClick={onShowSchedule}>查看班表</button>}</div>
-      <div className="airport-section-label">探索機場 <span>選擇一個項目查看詳情</span></div>
+      <button className="primary airport-cta" onClick={onConnect}><Icon n="plus" /> 從{a.name}開新航線</button>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
       {!analysis && <div className="hint" role="status">正在載入機場分析…</div>}
 
       {tab === 'routes' && (
         <>
           {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地 <span aria-hidden="true">→</span></button></div></div>}
-          {list.length > 0 && <h4>你的航線 <small>每週航段損益，不含租金</small></h4>}
-          <ul className="markets">
-            {list.map((s) => (
-              <li key={s.key} onClick={() => onOpenRoute(s.key)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenRoute(s.key); } }} role="button" tabIndex={0} className="tapli">
-                <span className="name">{AIRPORT_BY_CODE[s.other].name} <small>{s.other} · 每日 {s.flightsPerDay} 班</small>
-                  {s.loadFactor !== null && <span className="lf-line"><Meter value={s.loadFactor} tone={tone(s.loadFactor)} label={`載客率 ${pct(s.loadFactor)}`} /><b className={tone(s.loadFactor)}>{pct(s.loadFactor)}</b></span>}</span>
-                {s.profit !== null && <span className={`pill ${s.profit >= 0 ? 'good' : 'bad'}`}>{s.profit >= 0 ? '+' : ''}{money(s.profit)}</span>}
-              </li>
-            ))}
+          <ul className="route-rows">
+            {list.map((s) => {
+              const res = result?.routes[s.key];
+              return <RouteRow key={s.key} name={AIRPORT_BY_CODE[s.other].name} sub={s.other} swatch={routeColor(s.key)} daily={s.flightsPerDay}
+                figures={res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null}
+                onOpen={() => onOpenRoute(s.key)} onAdd={onAddFlight && (() => onAddFlight(s.key))} onRemove={onRemoveFlight && (() => onRemoveFlight(s.key))} />;
+            })}
           </ul>
+          {served && <button className="link-btn airport-schedule-link" onClick={onShowSchedule}><Icon n="calendar" /> 在班表看這裡的航班 ›</button>}
           {list.length > 0 && <details className="route-adjust"><summary>查看航線分布</summary><Radial code={code} list={list} onPick={onOpenRoute} /></details>}
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>

@@ -14,9 +14,10 @@ import {
 } from '../sim/simulate';
 import { marketBetween } from '../sim/markets';
 import { count, money, pct } from './format';
-import { arrival, at, dayStart, legSegments, routeColor, routeName, Sheet, shortType, tone, UtilBar } from './sheets';
+import { arrival, at, dayStart, legSegments, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
-import { Badge, hm, IN, Icon, Meter, Ring } from './viz';
+import { healthRank, RouteRow, routeHealth } from './route-health';
+import { Badge, hm, IN, Icon, Ring } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = hm;
@@ -27,13 +28,22 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
   plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
   onPartner: (airline: string) => void; onClose: () => void;
 }) {
+  const [only, setOnly] = useState<'all' | 'todo'>('all');
   const rows = routePairs(plan)
-    .map((r) => ({ ...r, res: result?.routes[r.key], types: [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))] }))
-    .sort((x, y) => (y.res ? y.res.revenue - y.res.flyingCost : 0) - (x.res ? x.res.revenue - x.res.flyingCost : 0));
+    .map((r) => {
+      const res = result?.routes[r.key];
+      const figures = res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null;
+      const types = [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))];
+      return { ...r, figures, types, health: routeHealth(figures, r.flightsPerDay / 2) };
+    })
+    .sort((x, y) => healthRank(x.health) - healthRank(y.health) || (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0));
+  const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
+  const shown = only === 'todo' ? todo : rows;
+  const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   return (
-    <Sheet size="full" title={`航線 · ${rows.length}`} sub={rows.length ? `每日 ${daily} 班來回` : undefined} onClose={onClose}
-      info={rows.length > 0 && <p>右邊是每日來回班數；＋ 會讓你選飛機和時間。綠色數字是每週航段損益，不含租金。</p>}
+    <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
+      info={rows.length > 0 && <p>先列出要處理的航線（客滿、虧損、空位多），每條只給一個建議動作。點航線看票價、航班和市場。損益是每週航段損益，不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length === 0 && (
         <div className="empty-cta">
@@ -43,28 +53,26 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
           <button className="primary wide" onClick={onNew}>＋ 開第一條航線</button>
         </div>
       )}
-      <ul className="routes">
-        {rows.map((r) => {
-          const p = r.res ? r.res.revenue - r.res.flyingCost : 0;
+      {rows.length > 0 && (
+        <div className="routes-summary">
+          <div><small>每週航段損益</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></div>
+          <div><small>每日來回</small><b>{daily} 班</b></div>
+          <div><small>要處理</small><b className={todo.length ? 'warn' : 'good'}>{todo.length} 條</b></div>
+        </div>
+      )}
+      {todo.length > 0 && rows.length > 3 && (
+        <div className="seg two routes-filter" role="tablist">
+          <button role="tab" aria-selected={only === 'all'} className={only === 'all' ? 'on' : ''} onClick={() => setOnly('all')}>全部 {rows.length}</button>
+          <button role="tab" aria-selected={only === 'todo'} className={only === 'todo' ? 'on' : ''} onClick={() => setOnly('todo')}>要處理 {todo.length}</button>
+        </div>
+      )}
+      <ul className="route-rows">
+        {shown.map((r) => {
           const market = marketBetween(r.a, r.b);
           return (
-            <li key={r.key}>
-              <button className="name" onClick={() => onOpen(r.key)}>
-                <span className="swatch" style={{ background: routeColor(r.key) }} />
-                <span className="grow"><strong>{routeName(r.a, r.b)}</strong>
-                  <small className="route-meta">{r.types.join(' · ') || '尚未安排機型'}{market?.distKm ? ` · ${Math.round(market.distKm).toLocaleString()} 公里` : ''}</small>
-                  {r.res
-                    ? <span className="lf-line"><Meter value={r.res.loadFactor} tone={tone(r.res.loadFactor)} label={`載客率 ${pct(r.res.loadFactor)}`} /><b className={tone(r.res.loadFactor)}>{pct(r.res.loadFactor)}</b><small>{Math.round(r.res.pax).toLocaleString()} / {Math.round(r.res.seats).toLocaleString()} 人/週</small></span>
-                    : <small>模擬計算中</small>}
-                </span>
-              </button>
-              {r.res && <span className={`pill ${p < 0 ? 'bad' : tone(r.res.loadFactor) === 'bad' ? 'warn' : 'good'}`} title="每週航段損益，不含租金">{p >= 0 ? '+' : ''}{money(p)}<small>／週</small></span>}
-              <span className="step" aria-label="每日來回班次">
-                <button onClick={() => onRemoveOne(r.key)} aria-label="減一班來回">−</button>
-                <output>{r.flightsPerDay / 2}</output>
-                <button onClick={() => onAdd(r.key)} aria-label="加一班來回">＋</button>
-              </span>
-            </li>
+            <RouteRow key={r.key} name={routeName(r.a, r.b)} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
+              sub={[r.types.join('、'), market?.distKm ? `${count(market.distKm)} 公里` : ''].filter(Boolean).join(' · ')}
+              onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
           );
         })}
       </ul>
