@@ -7,7 +7,7 @@ import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
 import { count, pct } from './format';
 import { useAirlineLink } from './airlines';
 import { Head } from './sheets';
-import { IN, Icon } from './viz';
+import { IN } from './viz';
 
 /** An airline's name; taps open its profile wherever the app provides one. */
 export function AirlineName({ airline }: { airline: Airline }) {
@@ -70,7 +70,10 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
 }) {
   const split = useMemo(() => given ?? marketSplit(a, b, result, net), [a, b, result, net, given]);
   const { total, rows, ownTurnedAway } = split;
+  // The biggest few carriers first; the long tail waits behind one tap.
+  const [all, setAll] = useState(false);
   if (total < 1) return null;
+  const SHOWN = 4;
   const summary = marketSummary(split);
   const segments = rows.map((r) => <div key={r.id} className={isTransit(r) ? 'tr-seg' : undefined} style={{ width: `${100 * r.share}%`, background: rowColor(r) }} />);
   if (ownTurnedAway >= 1) segments.push(<div key="lost" className="lost" style={{ width: `${(100 * ownTurnedAway) / total}%` }} />);
@@ -82,11 +85,11 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         <p>{a} ⇄ {b} 每週共 {count(total)} 人（雙向）。{split.ownFreqShare > 0 && rows.some((r) => r.kind === 'rival') ? `你的班次占全部直飛的 ${pct(split.ownFreqShare)}。` : ''}</p>
         <p>市占看班次、起飛時段、票價和服務；轉機票價較低，也會搶直飛旅客，但等越久分到越少。對手的班表和票價固定。</p>
         {result && result.pax - result.localPax >= 1 && <p>另有每週 {count(result.pax - result.localPax)} 人只在這條航線轉機去別處，算在別的市場。客滿時本地和轉機旅客按比例分座位。</p>}
-      </>} right={<small className="muted"><IN n="pax" v={`${count(total)}/週`} label="旅客/週" /></small>}>{title}</Head>
+      </>} right={<small className="muted"><IN n="pax" v={count(total)} label="旅客/週" u="人/週" /></small>}>{title}</Head>
       <DirectVsTransit rows={rows} total={total} />
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
       <ul className="share-list">
-        {rows.map((r, i) => {
+        {(all ? rows : rows.slice(0, SHOWN)).map((r, i) => {
           const lost = result && r.kind === 'rival' ? r.before - r.pax : 0;
           return (
             <Fragment key={r.id}>
@@ -97,16 +100,16 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
                 <span className="name">
                   {r.airline ? <b><AirlineName airline={r.airline} /></b> : <b>{rowName(r)}</b>}
                   <span className="ins">
-                    {r.kind === 'connecting' ? <IN n="transfer" v="…" label="在其他城市換機" />
-                      : r.kind === 'ownVia' || r.kind === 'rivalVia' ? <IN n="transfer" v={r.via} label={`${a} → ${r.via} → ${b}`} /> : null}
-                    {r.kind !== 'connecting' && r.kind !== 'ownVia' && <IN n="plane" v={count(r.freq)} label="班/週" />}
-                    {r.fare ? <IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" /> : null}
+                    {r.kind === 'connecting' ? <IN n="transfer" v="其他城市" label="在其他城市換機" w="經" />
+                      : r.kind === 'ownVia' || r.kind === 'rivalVia' ? <IN n="transfer" v={r.via} label={`${a} → ${r.via} → ${b}`} w="經" /> : null}
+                    {r.kind !== 'connecting' && r.kind !== 'ownVia' && <IN n="plane" v={count(r.freq)} label="班/週" u="班/週" />}
+                    {r.fare ? <IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /> : null}
                     {r.airports.length ? <span className="code-chips" title="飛的機場">{r.airports.map((k) => <span key={k}>{k.replace('-', '–')}</span>)}</span> : null}
                   </span>
                 </span>
                 <span className="rival-share">
                   {pct(r.share)}
-                  <small>{count(r.pax)}{lost >= 1 && <span className="lost-n" title={`被你搶走 ${count(lost)} 人`}> ▼{count(lost)}</span>}</small>
+                  <small>{count(r.pax)} 人{lost >= 1 && <span className="lost-n"> · 被你搶走 {count(lost)}</span>}</small>
                 </span>
               </li>
             </Fragment>
@@ -115,11 +118,12 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         {ownTurnedAway >= 1 && (
           <li className="lost-row">
             <i />
-            <span className="name"><b><Icon n="spill" /> 客滿</b></span>
+            <span className="name"><b>想搭你但客滿</b></span>
             <span className="rival-share">{pct(ownTurnedAway / total)}<small>{count(ownTurnedAway)} 人</small></span>
           </li>
         )}
       </ul>
+      {!all && rows.length > SHOWN && <button className="secondary" onClick={() => setAll(true)}>其他 {rows.length - SHOWN} 家</button>}
     </div>
   );
 }

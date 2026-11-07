@@ -29,7 +29,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
     .sort((x, y) => (y.res ? y.res.revenue - y.res.flyingCost : 0) - (x.res ? x.res.revenue - x.res.flyingCost : 0));
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   return (
-    <Sheet size="full" title={`航線 · ${rows.length}`} sub={rows.length ? <IN n="plane" v={`⇄ ×${daily}/日`} label="每日來回班數" /> : undefined} onClose={onClose}
+    <Sheet size="full" title={`航線 · ${rows.length}`} sub={rows.length ? `每日 ${daily} 班來回` : undefined} onClose={onClose}
       info={rows.length > 0 && <p>右邊是每日來回班數；＋ 會讓你選飛機和時間。綠色數字是每週航段損益，不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length === 0 && (
@@ -89,7 +89,7 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
     onGap(ac.id, start0 + minute);
   };
   return (
-    <Sheet size="full" title="班表" sub={view === 'aircraft' ? <IN n="clock" v={plan.base} label="時間基準" /> : undefined} onClose={onClose}
+    <Sheet size="full" title="班表" sub={view === 'aircraft' ? <IN n="clock" v={plan.base} label="時間基準" u="時間" /> : undefined} onClose={onClose}
       info={view === 'aircraft'
         ? <p>點航班調整，點空白處加班。斜線是飛機停在地面的時間：空檔越少，租金攤得越薄。</p>
         : <p>點航班調整。每個航班每天飛一次。<b className="daymark">+1</b> 隔天抵達（含時差），<b className="daymark">-1</b> 抵達當地日期比出發早一天。</p>}>
@@ -130,7 +130,7 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
         })}
       </div>}
       {view === 'aircraft' && result && plan.fleet.length > 0 && (
-        <div className="ins"><IN n="util" v={pct(result.avgUtilisation)} label="平均利用率" /></div>
+        <div className="ins"><IN n="util" v={pct(result.avgUtilisation)} label="平均利用率" w="利用率" /></div>
       )}
     </Sheet>
   );
@@ -144,7 +144,7 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
   const served = useMemo(() => [...new Set(plan.fleet.flatMap((ac) => ac.legs.flatMap((l) => [l.from, l.to])))].sort(), [plan]);
   const rowsOf = (r: ReturnType<typeof timeline>[number]) => {
     const mark = dayMark(r.shift);
-    const zone = basis === 'local' && r.zone !== 0 ? <IN n="clock" v={`${r.zone > 0 ? '+' : ''}${r.zone}h`} label="時差" /> : null;
+    const zone = basis === 'local' && r.zone !== 0 ? <IN n="clock" v={`${r.zone > 0 ? '+' : ''}${r.zone}h`} label="時差" w="時差" /> : null;
     const fr = result?.byFlight[`${r.ac.id}#${r.index}`];
     return (
       <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
@@ -155,7 +155,7 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
             {mode === 'dep'
               ? <span className="in" title="抵達"><Icon n="down" />{hhmm(r.other)}{mark && <sup className="daymark" title={r.shift > 0 ? '隔天抵達' : '前一天抵達'}>{mark}</sup>}</span>
               : <span className="in" title={`出發${r.shift > 0 ? '（前一天）' : r.shift < 0 ? '（後一天）' : ''}`}><Icon n="up" />{hhmm(r.other)}{r.shift !== 0 ? <sup className="daymark">{r.shift > 0 ? '-1' : '+1'}</sup> : null}</span>}
-            {' '}<span className="ins inline"><IN n="plane" v={dur(r.durMin)} label="飛行" />{zone}<span>{r.ac.reg}</span></span>
+            {' '}<span className="ins inline"><IN n="plane" v={dur(r.durMin)} label="飛行" w="飛" />{zone}<span>{r.ac.reg}</span></span>
             {fr && <><br /><LoadIcons f={fr} /></>}
           </small>
         </span>
@@ -184,12 +184,12 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
           {served.map((c) => <button key={c} className={`chip${airport === c ? ' strong' : ''}`} onClick={() => onAirport(airport === c ? null : c)}>{c}</button>)}
         </div>
       )}
-      {list && (list.length === 0 ? <div className="hint center">—</div> : <ul className="timetable">{list.map(rowsOf)}</ul>)}
-      {groups && (groups.length === 0 ? <div className="hint center">—</div> : groups.map((g) => (
+      {list && (list.length === 0 ? <div className="hint center">沒有符合的航班</div> : <ul className="timetable">{list.map(rowsOf)}</ul>)}
+      {groups && (groups.length === 0 ? <div className="hint center">沒有符合的航班</div> : groups.map((g) => (
         <div key={g.code} className="group">
           <button className="group-head" onClick={() => setCollapsed({ ...collapsed, [g.code]: !collapsed[g.code] })} aria-expanded={!collapsed[g.code]}>
             <span className="grow">{AIRPORT_BY_CODE[g.code].name} {g.code}{basis === 'local' && g.code !== plan.base && <small className="tz" title={`比${plan.base}${zoneDiffHours(plan.base, g.code) >= 0 ? '快' : '慢'}`}> <Icon n="clock" />{zoneDiffHours(plan.base, g.code) >= 0 ? '+' : ''}{zoneDiffHours(plan.base, g.code)}h</small>}</span>
-            <small><IN n={mode === 'dep' ? 'up' : 'down'} v={`${g.rows.length}/日`} label={mode === 'dep' ? '出發班次/日' : '抵達班次/日'} /></small>
+            <small><IN n={mode === 'dep' ? 'up' : 'down'} v={`${g.rows.length}/日`} label={mode === 'dep' ? '出發班次/日' : '抵達班次/日'} w={mode === 'dep' ? '出發' : '抵達'} /></small>
             <span className="chev">{collapsed[g.code] ? '▸' : '▾'}</span>
           </button>
           {!collapsed[g.code] && <ul className="timetable">{g.rows.map(rowsOf)}</ul>}
@@ -206,7 +206,7 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
 }) {
   const avg = plan.fleet.length ? plan.fleet.reduce((s, a) => s + rotationInfo(a).utilisation, 0) / plan.fleet.length : 0;
   return (
-    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`} sub={<span className="ins"><IN n="util" v={pct(avg)} label="平均利用率" /><IN n="lease" v={`${money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))}/週`} label="租金" /></span>}
+    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`} sub={<span className="ins"><IN n="util" v={pct(avg)} label="平均利用率" w="利用率" /><IN n="lease" v={`${money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))}/週`} label="租金" w="租金" /></span>}
       info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
       onClose={onClose} action={<button className="primary small" onClick={onLease}>租飛機</button>}>
       {plan.fleet.length === 0 && <div className="hint center">還沒有飛機</div>}
@@ -216,14 +216,13 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           const r = result?.aircraft[ac.id];
           const p = r ? r.revenue - r.flyingCost - r.ownershipCost : 0;
           const warn = !ac.legs.length ? '沒有航班' : !info.closed ? '沒回到起點' : !info.fits ? `超過 ${info.cycleDays * 24} 小時` : info.utilisation < 0.3 ? '閒置太久' : '';
-          const warnShort = !ac.legs.length ? '0' : !info.closed ? '↩✕' : !info.fits ? `>${info.cycleDays * 24}h` : '閒置';
           return (
             <li key={ac.id} onClick={() => onPick(ac.id)}>
               <div className="fleet-top">
                 <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={34} stroke={4} label={`利用率 ${pct(info.utilisation)}`}>
                   <small>{Math.round(info.utilisation * 100)}</small>
                 </Ring>
-                <span className="name">{ac.reg} · {shortType(ac.type)}<span className="ins"><IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行" />{warn && <Badge n="warn" tone="warn" label={warn}>{warnShort}</Badge>}</span></span>
+                <span className="name">{ac.reg} · {shortType(ac.type)}<span className="ins"><IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行" w="飛" />{warn && <Badge n="warn" tone="warn">{warn}</Badge>}</span></span>
                 {r && <span className={`pill ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>}
               </div>
               <DayBar ac={ac} base={plan.base} compact />
@@ -251,22 +250,22 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
   const dests = topMarketsFrom(plan.base, plan, 40).filter((m) => !routeProblem(plan.base, m.to, pick)).slice(0, 8);
   const flyable = (t: AircraftModel) => routes.filter((r) => !routeProblem(r.a, r.b, t)).length;
   return (
-    <Sheet over size="full" title="租飛機" sub={<IN n="base" v={base.name} label="停在" />} onClose={onClose}
+    <Sheet over size="full" title="租飛機" sub={<IN n="base" v={base.name} label="停在" w="停在" />} onClose={onClose}
       info={<p>每座公里：1,000 公里航班的飛行成本除以座位，不含租金，越低越省。灰色機型無法在{base.name}起降。</p>}
       footer={<div className="lease-foot">
-        <div className="label">{shortType(pick)} → ⇄ 每日</div>
+        <div className="label">租 {shortType(pick)} 並每日飛往</div>
         <div className="chips scroll">
           {dests.map((m) => (
             <button key={m.to} className="chip" onClick={() => onLease(pick, m.to)}>
-              {AIRPORT_BY_CODE[m.to].name}{m.served ? ' ＋' : ''}<small> <Icon n="pax" />{count(m.airDemand)}</small>
+              {AIRPORT_BY_CODE[m.to].name}{m.served ? '（加班）' : ''}<small> {count(m.airDemand)} 人/週</small>
             </button>
           ))}
         </div>
-        <button className="ghost" onClick={() => onLease(pick, null)}>只租</button>
+        <button className="ghost" onClick={() => onLease(pick, null)}>只租，稍後排班</button>
       </div>}>
       <div className="cmp-wrap">
         <table className="cmp">
-          <thead><tr><th>機型</th><th><Icon n="seat" label="座位" /></th><th><Icon n="long" label="航程（公里）" /></th><th><Icon n="lease" label="租金/週" /></th><th title="每座公里成本"><Icon n="money" label="每座公里成本" />/km</th>{routes.length > 0 && <th><Icon n="route" label="可飛航線" /></th>}</tr></thead>
+          <thead><tr><th>機型</th><th>座位</th><th>航程</th><th>租金/週</th><th>每座公里</th>{routes.length > 0 && <th>可飛</th>}</tr></thead>
           <tbody>
             {MODEL_ORDER.map((t) => {
               const s = AIRCRAFT[t];
@@ -304,7 +303,7 @@ export function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep
 }
 
 const windowText = (code: string, lo: number, hi: number) =>
-  hi - lo >= DAY - 5 ? '0–24h' : lo === hi ? '🔒' : `↔ ${at(code, lo)}–${at(code, hi)}`;
+  hi - lo >= DAY - 5 ? '全天可飛' : lo === hi ? '沒有空檔可移動' : `可 ${at(code, lo)}–${at(code, hi)} 出發`;
 
 // ---------- Edit one flight ----------
 
@@ -319,19 +318,19 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
   const w = shiftWindow(ac, u);
   const isTrip = u.count === 2;
   return (
-    <Sheet over title={isTrip ? `${first.from} ⇄ ${first.to}` : `${first.from} → ${first.to}`} sub={<span className="ins"><span>{ac.reg} · {shortType(ac.type)}</span><IN n="clock" v={dur(blockMinutes(first.from, first.to, ac.type))} label="單程" /></span>} onClose={onClose}>
+    <Sheet over title={isTrip ? `${first.from} ⇄ ${first.to}` : `${first.from} → ${first.to}`} sub={<span className="ins"><span>{ac.reg} · {shortType(ac.type)}</span><IN n="clock" v={dur(blockMinutes(first.from, first.to, ac.type))} label="單程" w="單程" /></span>} onClose={onClose}>
       <ul className="timetable">
         {Array.from({ length: u.count }, (_, k) => u.start + k).map((i) => (
           <li key={i}>
             <span className="t">{at(ac.legs[i].from, ac.legs[i].dep)}</span>
-            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i))} label="抵達" /></small>
+            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i))} label="抵達" w="抵達" /></small>
               {result?.byFlight[`${ac.id}#${i}`] && <small><LoadIcons f={result.byFlight[`${ac.id}#${i}`]} /></small>}</span>
             {result?.byFlight[`${ac.id}#${i}`] && <LoadPill f={result.byFlight[`${ac.id}#${i}`]} />}
           </li>
         ))}
       </ul>
       <div>
-        <div className="label"><Icon n="up" /> {first.from}{isTrip ? ' ⇄' : ''}</div>
+        <div className="label">{isTrip ? '去程出發（回程跟著移）' : '出發時間'}</div>
         <TimeStepper code={first.from} dep={first.dep} lo={first.dep + w.min} hi={first.dep + w.max}
           onChange={(d) => onChange(withAc(plan, shiftUnit(ac, u, d - first.dep)))} />
         <div className="hint">{windowText(first.from, first.dep + w.min, first.dep + w.max)}</div>
@@ -394,7 +393,7 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
   };
 
   return (
-    <Sheet over size="full" title={move ? '換飛機' : `＋ ${a} ⇄ ${b}`} sub={<span className="ins"><span>{routeName(a, b)}</span><IN n="clock" v={dur(blockMinutes(a, b, leaseType ?? 'A20N'))} label="單程" /></span>} onClose={onClose}
+    <Sheet over size="full" title={move ? '換到別架飛機' : '加一班來回'} sub={<span className="ins"><span>{routeName(a, b)}</span><IN n="clock" v={dur(blockMinutes(a, b, leaseType ?? 'A20N'))} label="單程" w="單程" /></span>} onClose={onClose}
       info={<p>早上 7–10 點與傍晚 4–8 點的航班最好賣。</p>}
       footer={<button className="primary grow" onClick={confirm} disabled={!!slot || (!chosen && !leaseType)}>
         {slot ?? `${move ? '換到' : '加開'} ${at(from, cur)} ${from}→${to} 與回程`}
@@ -405,13 +404,13 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
           <button key={o.ac.id} className={`opt${choice === i ? ' pick' : ''}`} disabled={!o.placement} onClick={() => { setChoice(i); setDep(null); }}>
             <b>{o.ac.reg} · {shortType(o.ac.type)}</b>
             {o.placement
-              ? <span className="ins"><IN n="up" v={`${at(o.placement.from, o.placement.dep)} ${o.placement.from}`} label="出發" /><IN n="util" v={`${pct(o.utilBefore)}→${pct(o.utilAfter)}`} label="利用率" /></span>
+              ? <span className="ins"><IN n="up" v={`${at(o.placement.from, o.placement.dep)} ${o.placement.from}`} label="出發" w="出發" /><IN n="util" v={`${pct(o.utilBefore)}→${pct(o.utilAfter)}`} label="利用率" w="利用率" /></span>
               : <small>{o.reason}</small>}
           </button>
         ))}
         <button className={`opt${choice === 'lease' ? ' pick' : ''}`} onClick={() => { setChoice('lease'); setDep(null); }} disabled={!types.length}>
           <b><Icon n="lease" /> 租新飛機</b>
-          {leaseType ? <span className="ins"><span>{shortType(leaseType)}</span><IN n="lease" v={`${money(AIRCRAFT[leaseType].ownershipPerWeek)}/週`} label="租金" /></span> : <small>沒有機型能飛</small>}
+          {leaseType ? <span className="ins"><span>{shortType(leaseType)}</span><IN n="lease" v={`${money(AIRCRAFT[leaseType].ownershipPerWeek)}/週`} label="租金" w="租金" /></span> : <small>沒有機型能飛</small>}
         </button>
       </div>
       {choice === 'lease' && (
@@ -420,10 +419,10 @@ export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }
         </div>
       )}
       <div>
-        <div className="label"><Icon n="up" /> {from}</div>
+        <div className="label">{from} 出發（當地時間）</div>
         <TimeStepper code={from} dep={cur} lo={chosen ? chosen.lo : -Infinity} hi={chosen ? chosen.hi : Infinity} onChange={setDep} />
-        <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '0–24h'}</div>
-        {prefer && <div className="hint" title="建議時間，接得上轉機"><Icon n="transfer" /> ★ {prefer.from} {at(prefer.from, prefer.dep)}</div>}
+        <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '全天可飛'}</div>
+        {prefer && <div className="hint">建議 {prefer.from} {at(prefer.from, prefer.dep)} 出發，接得上轉機</div>}
       </div>
     </Sheet>
   );
@@ -449,13 +448,13 @@ export function GapSheet({ plan, acId, t, onDone, onClose }: {
     .sort((x, y) => Number(served.has(pairKey(station, y.to))) - Number(served.has(pairKey(station, x.to))) || y.airDemand - x.airDemand)
     .slice(0, 10);
   return (
-    <Sheet over title={`${ac.reg} ＋ ⇄`} sub={<IN n="up" v={`${station} ~${at(station, pickTime({ lo: -Infinity, hi: Infinity }, t))}`} label="出發" />} onClose={onClose}>
+    <Sheet over title={`${ac.reg} 加一班來回`} sub={<IN n="up" v={`${station} ~${at(station, pickTime({ lo: -Infinity, hi: Infinity }, t))}`} label="出發" w="出發" />} onClose={onClose}>
       {options.length === 0 && <div className="hint center">這個空檔放不下來回航班</div>}
       <ul className="markets">
         {options.map((m) => (
           <li key={m.to}>
-            <span className="name">{AIRPORT_BY_CODE[m.to].name}<span className="ins"><IN n="clock" v={`${at(station, m.dep)}–${at(station, m.dep + blockMinutes(station, m.to, ac.type) * 2 + AIRCRAFT[ac.type].turnMin)}`} label="出發–回到" /><IN n="pax" v={count(m.airDemand)} label="旅客/週" />{served.has(pairKey(station, m.to)) && <Badge n="check" tone="good" label="已開航" />}</span></span>
-            <button onClick={() => onDone(withAc(plan, insertRoundTrip(ac, k, station, m.to, m.dep)), `${ac.reg} 加開 ${at(station, m.dep)} ${station}→${m.to} 與回程`)} aria-label="加入"><Icon n="plus" /></button>
+            <span className="name">{AIRPORT_BY_CODE[m.to].name}<span className="ins"><IN n="clock" v={`${at(station, m.dep)}–${at(station, m.dep + blockMinutes(station, m.to, ac.type) * 2 + AIRCRAFT[ac.type].turnMin)}`} label="出發–回到" /><IN n="pax" v={count(m.airDemand)} label="旅客/週" u="人/週" />{served.has(pairKey(station, m.to)) && <Badge n="check" tone="good" label="已開航" />}</span></span>
+            <button onClick={() => onDone(withAc(plan, insertRoundTrip(ac, k, station, m.to, m.dep)), `${ac.reg} 加開 ${at(station, m.dep)} ${station}→${m.to} 與回程`)}>加入</button>
           </li>
         ))}
       </ul>

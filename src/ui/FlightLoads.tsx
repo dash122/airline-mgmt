@@ -21,9 +21,8 @@ export const loadLine = (f: FlightResult) =>
 /** A flight's load as icons: travellers/seats, connecting, spill. */
 export function LoadIcons({ f }: { f: FlightResult }) {
   return <span className="ins">
-    <IN n="pax" v={`${count(f.pax)}/${f.seats}`} label="載客/座位" />
-    {f.connectingPax >= 0.5 && <IN n="transfer" v={count(f.connectingPax)} label="轉機" />}
-    {f.spill > 0.5 && <IN n="spill" v={count(f.spill)} label="溢出" tone="warn" />}
+    <IN n="pax" v={`${count(f.pax)}/${f.seats}`} label="載客/座位" w="載客" />
+    {f.spill > 0.5 && <IN n="spill" v={count(f.spill)} label="溢出" w="溢出" tone="warn" />}
   </span>;
 }
 
@@ -52,8 +51,8 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
       每班載客率
     </Head>
     {flights.length > 1 && (full || empty) && <div className="ins">
-      {full > 0 && <Badge n="spill" tone="warn" label={`${full} 班客滿`}>{full}</Badge>}
-      {empty > 0 && <Badge n="seat" tone="bad" label={`${empty} 班不到六成`}>&lt;60% · {empty}</Badge>}
+      {full > 0 && <Badge n="spill" tone="warn">{full} 班客滿</Badge>}
+      {empty > 0 && <Badge n="seat" tone="bad">{empty} 班不到六成</Badge>}
     </div>}
     {[[a, b], [b, a]].map(([from, to]) => {
       const list = order(flights.filter((f) => f.from === from));

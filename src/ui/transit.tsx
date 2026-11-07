@@ -9,7 +9,7 @@ import { pairKey } from '../sim/markets';
 import { MarketShare } from './rivals';
 import { count, pct } from './format';
 import { InfoDot } from './sheets';
-import { Badge, hm, IN, Icon, type IconName } from './viz';
+import { Badge, hm, IN, type IconName } from './viz';
 
 const name = (c: string) => AIRPORT_BY_CODE[c].name;
 /** A share that stays readable when small: 0.4% rather than 0%. */
@@ -62,12 +62,15 @@ export function TransitBadge({ hub, l }: { hub: string; l: Linkage }) {
   let n: IconName = 'check';
   let body: ReactNode = null;
   switch (l.status) {
-    case 'connected': n = l.full ? 'spill' : 'check'; body = l.full ? null : l.wait ? hm(l.wait) : null; break;
-    case 'long': n = l.wait !== null && layoverKind(l.wait) === 'stopover' ? 'bed' : 'clock'; body = <>{hm(l.wait ?? 0)}{dir}</>; break;
-    case 'timing': n = 'cross'; body = dir; break;
-    case 'leg': n = 'lock'; body = l.missing.map((m) => `${hub}⇄${m}`).join(' '); break;
-    case 'nonstop': n = 'plane'; break;
-    default: n = 'detour';
+    case 'connected': n = l.full ? 'spill' : 'check'; body = l.full ? '客滿' : <>接得好{l.wait ? ` ${hm(l.wait)}` : ''}</>; break;
+    case 'long': {
+      const stop = l.wait !== null && layoverKind(l.wait) === 'stopover';
+      n = stop ? 'bed' : 'clock'; body = <>{stop ? '要停留' : '要等'} {hm(l.wait ?? 0)}{dir}</>; break;
+    }
+    case 'timing': n = 'cross'; body = <>接不上{dir}</>; break;
+    case 'leg': n = 'lock'; body = <>還沒飛 {l.missing.map((m) => `${hub}⇄${m}`).join('、')}</>; break;
+    case 'nonstop': n = 'plane'; body = '你已直飛'; break;
+    default: n = 'detour'; body = '繞路太遠';
   }
   return <Badge n={n} tone={why.tone === 'idle' ? 'muted' : why.tone} label={why.text}>{body}</Badge>;
 }
@@ -76,10 +79,10 @@ export function TransitBadge({ hub, l }: { hub: string; l: Linkage }) {
 function FixButton({ hub, l, onOpenPair, onSuggest }: { hub: string; l: Linkage; onOpenPair: OpenPair; onSuggest: Suggest }) {
   if ((l.status === 'long' || l.status === 'timing') && l.suggest) {
     const s = l.suggest;
-    return <button className="chip strong" onClick={() => onSuggest(s.from, s.to, s.local)} aria-label={`排一班 ${hhmm(s.local)} ${s.from} 到 ${s.to}`}><Icon n="plus" /> {hhmm(s.local)} {s.from}→{s.to}</button>;
+    return <button className="chip strong" onClick={() => onSuggest(s.from, s.to, s.local)}>排一班 {hhmm(s.local)} {s.from}→{s.to}</button>;
   }
   if (l.status === 'leg') {
-    return <>{l.missing.map((m) => <button key={m} className="chip strong" onClick={() => onOpenPair(m, hub)} aria-label={`開航 ${hub} ⇄ ${m}`}><Icon n="plus" /> {hub}⇄{m}</button>)}</>;
+    return <>{l.missing.map((m) => <button key={m} className="chip strong" onClick={() => onOpenPair(m, hub)}>開航 {hub}⇄{m}</button>)}</>;
   }
   return null;
 }
@@ -104,22 +107,22 @@ export function TransitRow({ hub, l, net, title = 'pair', onOpenPair, onSuggest 
             : <b>{name(l.d)} {l.d}{l.detourPct >= 0.3 && <> <Badge n="detour" label={`繞路 ${pct(l.detourPct)}`}>{pct(l.detourPct)}</Badge></>}</b>}
         </span>
         {unflown
-          ? <span className="tr-num idle" title="接上後每週可載約">~{count(l.potential)}</span>
-          : <span className="tr-num" title="現在每週載"><Icon n="pax" />{count(l.viaPax)}</span>}
+          ? <span className="tr-num idle"><small>可載約</small>{count(l.potential)}<small>人/週</small></span>
+          : <span className="tr-num">{count(l.viaPax)}<small>人/週</small></span>}
       </div>
       <ReachBar now={l.viaPax} potential={l.potential} />
       <div className="tr-meta">
         <TransitBadge hub={hub} l={l} />
-        <span className="ins">
-          <IN n="market" v={count(l.market)} label="這兩地每週航空旅客" />
-          <IN n="share" v={unflown ? `→${sharePct(reachShare)}` : `${sharePct(share)}${l.potential - l.viaPax >= 1 ? `→${sharePct(reachShare)}` : ''}`} label={unflown ? '接上可占市場' : '你的市占（→ 接好後）'} />
-        </span>
+        {!unflown && l.potential - l.viaPax >= 1 && <small className="muted">接好可多 {count(l.potential - l.viaPax)} 人</small>}
       </div>
       <div className="chips">
         <FixButton hub={hub} l={l} onOpenPair={onOpenPair} onSuggest={onSuggest} />
-        <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={open ? '收起市占' : '市占'}><Icon n={open ? 'cross' : 'share'} /></button>
+        <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '收起' : '市占'}</button>
       </div>
-      {open && <MarketShare a={l.o} b={l.d} result={net?.routes[pairKey(l.o, l.d)]} net={net} title="這兩地的旅客怎麼分" />}
+      {open && <>
+        <small className="tr-share">市場 {count(l.market)} 人/週 · {unflown ? `接上可占 ${sharePct(reachShare)}` : `你占 ${sharePct(share)}${l.potential - l.viaPax >= 1 ? `，接好 ${sharePct(reachShare)}` : ''}`}</small>
+        <MarketShare a={l.o} b={l.d} result={net?.routes[pairKey(l.o, l.d)]} net={net} title="這兩地的旅客怎麼分" />
+      </>}
     </li>
   );
 }
@@ -129,7 +132,18 @@ function More({ list, page, render }: { list: Linkage[]; page: number; render: (
   return (
     <>
       <ul className="trs">{list.slice(0, shown).map(render)}</ul>
-      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + page * 2)}>+{Math.min(page * 2, list.length - shown)} <small>/ {list.length}</small></button>}
+      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + page * 2)}>再顯示 {Math.min(page * 2, list.length - shown)} 個</button>}
+    </>
+  );
+}
+
+/** The first `page` items, and a button for the rest. */
+function ShowSome<T>({ list, page, className, render }: { list: T[]; page: number; className?: string; render: (x: T) => ReactNode }) {
+  const [all, setAll] = useState(false);
+  return (
+    <>
+      <ul className={className}>{(all ? list : list.slice(0, page)).map(render)}</ul>
+      {!all && list.length > page && <button className="secondary" onClick={() => setAll(true)}>再顯示 {list.length - page} 個</button>}
     </>
   );
 }
@@ -138,10 +152,9 @@ function Legend({ hub, extra }: { hub: string; extra?: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <div className="legend-line"><span className="k now">■</span> 現在 <span className="k more">■</span> 接好<InfoDot open={open} onClick={() => setOpen(!open)} /></div>
+      <div className="legend-line"><span className="k now">■</span> 現在載的 <span className="k more">■</span> 接好可多載<InfoDot open={open} onClick={() => setOpen(!open)} /></div>
       {open && <div className="info-note" onClick={() => setOpen(false)}>
-        <p>「接好」是 4 小時內能轉機。<Icon n="share" /> 是你在這兩地所有航空旅客中的占比，<Icon n="market" /> 是這兩地每週的航空旅客。</p>
-        <p><Icon n="check" /> 接得好 · <Icon n="clock" /> 要等很久 · <Icon n="bed" /> 要停留過夜 · <Icon n="cross" /> 班次接不上 · <Icon n="lock" /> 還沒飛那一段 · <Icon n="spill" /> 客滿 · <Icon n="detour" /> 繞路。點徽章看原因。</p>
+        <p>「接好」是 4 小時內能轉機。點「市占」看這兩地的市場大小和你的占比。</p>
         <p>轉機票價約直飛的 {pct(CONNECT_FARE_SHARE)}；等 4 小時以上的旅客少很多，8 小時以上算停留（票價約 {pct(STOPOVER_FARE_SHARE)}，{name(hub)}的停留吸引力約抵 {stopoverAppealHours(hub).toFixed(1)} 小時）。</p>
         <p>轉機比直飛便宜，所以也搶得到直飛的旅客；航程越長，多花的時間越不要緊。</p>
         {extra}
@@ -158,15 +171,10 @@ function FixCard({ hub, f, onSuggest }: { hub: string; f: TimingFix; onSuggest: 
   return (
     <li className="fix">
       <div className="fix-top">
-        <button className="chip strong" onClick={() => onSuggest(s.from, s.to, s.local)} aria-label={`排一班 ${hhmm(s.local)} ${s.from} 到 ${s.to}`}><Icon n="plus" /> {hhmm(s.local)} {s.from}→{s.to}</button>
-        <span className="tr-num good" title="每週約多載">+{count(f.gain)}<Icon n="pax" /></span>
+        <span className="name"><b>{hhmm(s.local)} {s.from} → {s.to}</b><small title={why}>接好 {f.markets.slice(0, 3).map((l) => `${l.o}⇄${l.d}`).join('、')}{f.markets.length > 3 ? ` 等 ${f.markets.length} 個` : ''}</small></span>
+        <span className="tr-num good">+{count(f.gain)}<small>人/週</small></span>
       </div>
-      <div className="ins" title={why}>
-        <IN n="down" v={hhmm(s.arriveLocal)} label={`抵達${hub}`} />
-        {s.before === undefined ? <IN n="transfer" v={hm(wait)} label="轉機等" /> : <IN n="up" v={hhmm(s.before)} label="接上的航班" />}
-        <IN n="clock" v={f.markets[0].wait !== null ? hm(f.markets[0].wait) : '—'} label="現在最快要等" tone="warn" />
-      </div>
-      <div className="code-chips">{f.markets.slice(0, 6).map((l) => <span key={`${l.o}${l.d}`}>{l.o}⇄{l.d}</span>)}{f.markets.length > 6 && <span>+{f.markets.length - 6}</span>}</div>
+      <div className="chips"><button className="chip strong" onClick={() => onSuggest(s.from, s.to, s.local)}>排入這班</button></div>
     </li>
   );
 }
@@ -182,19 +190,17 @@ function HubIdeas({ hub, ideas, onOpenPair }: { hub: string; ideas: SpokeIdea[];
         return (
           <li key={i.to}>
             <div className="idea-top">
-              <span className="name"><b>{name(i.to)} {i.to}</b>{want > i.seats * 1.05 && <Badge n="spill" tone="warn" label="一天一班坐不下，可加班或用大飛機">×{Math.ceil(want / i.seats)}</Badge>}</span>
-              <span className="tr-num" title="每週約">~{count(want)}</span>
-              <button onClick={() => onOpenPair(hub, i.to)} aria-label={`開航 ${hub} ⇄ ${i.to}`}><Icon n="plus" /></button>
+              <span className="name"><b>{name(i.to)} {i.to}</b>{want > i.seats * 1.05 && <Badge n="spill" tone="warn" label="一天一班坐不下，可加班或用大飛機">坐不下</Badge>}</span>
+              <span className="tr-num"><small>約</small>{count(want)}<small>人/週</small></span>
+              <button onClick={() => onOpenPair(hub, i.to)}>開航</button>
             </div>
             <div className="split" role="img" aria-label={`本地 ${count(i.local)}，轉機 ${count(i.via)}，每天一班 ${count(i.seats)} 座`}>
               <i className="nonstop" style={{ width: `${(i.local / top) * 100}%` }} /><i className="via" style={{ width: `${(i.via / top) * 100}%` }} />
               {i.seats > want && <i className="seats" style={{ width: `${((i.seats - want) / top) * 100}%` }} />}
             </div>
             <div className="ins">
-              <span className="in" title={`${hub}⇄${i.to} 本地`}><span className="k nonstop">■</span>{count(i.local)}</span>
-              {i.via >= 1 && <span className="in" title={`在${hub}轉機`}><span className="k via">■</span><Icon n="transfer" />{count(i.via)}</span>}
-              <IN n="long" v={`${count(i.distKm)}km`} label="距離" />
-              {i.markets.length > 0 && <span className="code-chips">{i.markets.slice(0, 4).map((m) => <span key={m.d}>{m.d}</span>)}{i.markets.length > 4 && <span>+{i.markets.length - 4}</span>}</span>}
+              <span className="in"><span className="k nonstop">■</span>本地 {count(i.local)}</span>
+              {i.via >= 1 && <span className="in"><span className="k via">■</span>轉機 {count(i.via)}</span>}
             </div>
           </li>
         );
@@ -209,41 +215,41 @@ export function HubTransitView({ hub, net, transit, ideas, transfer, onOpenPair,
   onOpenPair: OpenPair; onSuggest: Suggest;
 }) {
   const transferPax = transfer.pax;
+  const [ideasShown, setIdeasShown] = useState(3);
   const reach = transit.carried.reduce((s, l) => s + l.potential, 0);
   const gain = transit.fixes.reduce((s, f) => s + f.gain, 0);
   return (
     <>
       <div className="tr-card">
         <div className="tr-card-nums">
-          <div title="現在每週轉機"><b><Icon n="transfer" /> {count(transferPax)}</b></div>
-          <div title="接好可到"><b className="more">▸ {count(Math.max(reach, transferPax))}</b></div>
+          <div><small>現在轉機/週</small><b>{count(transferPax)}</b></div>
+          <div><small>接好可到</small><b className="more">{count(Math.max(reach, transferPax))}</b></div>
         </div>
         <ReachBar now={transferPax} potential={Math.max(reach, transferPax)} />
-        <div className="ins">
-          <IN n="clock" v={count(transfer.long)} label="等 4–8 小時的旅客" />
-          <IN n="bed" v={count(transfer.stopover)} label="停留過夜的旅客" />
-          <IN n="fast" v={`${transfer.mct}m`} label="最短轉機時間" />
-        </div>
       </div>
-      <Legend hub={hub} extra={<p>點地圖上其他機場，看它的「經{hub}轉機」，就知道那裡的旅客經{hub}能去哪裡。</p>} />
+      <Legend hub={hub} extra={<>
+        <p>現在轉機旅客中，等 4–8 小時 {count(transfer.long)} 人，停留過夜 {count(transfer.stopover)} 人。最短轉機時間 {transfer.mct} 分鐘。</p>
+        <p>點地圖上其他機場，看它的「經{hub}轉機」，就知道那裡的旅客經{hub}能去哪裡。</p>
+      </>} />
       {transit.carried.length > 0
         ? <>
           <h4>轉機市場 <small>{transit.carried.length}</small></h4>
           <More list={transit.carried} page={5} render={(l) => <TransitRow key={`${l.o}${l.d}`} hub={hub} l={l} net={net} onOpenPair={onOpenPair} onSuggest={onSuggest} />} />
         </>
-        : <div className="hint center"><Icon n="transfer" /> 0 · 飛兩條以上航線，隔 1–4 小時</div>}
+        : <div className="hint center">還沒有人轉機：從{hub}飛兩條以上航線，抵達和出發隔 1–4 小時</div>}
 
       {transit.fixes.length > 0 && (
         <>
-          <h4>調班表 <Badge n="pax" tone="good" label="每週約多載">+{count(gain)}</Badge></h4>
-          <ul className="trs">{transit.fixes.slice(0, 5).map((f) => <FixCard key={`${f.suggest.from}${f.suggest.to}${f.suggest.local}`} hub={hub} f={f} onSuggest={onSuggest} />)}</ul>
+          <h4>調班表 <Badge tone="good">約 +{count(gain)} 人/週</Badge></h4>
+          <ShowSome list={transit.fixes} page={3} className="trs" render={(f) => <FixCard key={`${f.suggest.from}${f.suggest.to}${f.suggest.local}`} hub={hub} f={f} onSuggest={onSuggest} />} />
         </>
       )}
 
       {ideas.length > 0 && (
         <>
           <h4>開新航線</h4>
-          <HubIdeas hub={hub} ideas={ideas} onOpenPair={onOpenPair} />
+          <HubIdeas hub={hub} ideas={ideas.slice(0, ideasShown)} onOpenPair={onOpenPair} />
+          {ideas.length > ideasShown && <button className="secondary" onClick={() => setIdeasShown(ideas.length)}>再顯示 {ideas.length - ideasShown} 條</button>}
         </>
       )}
     </>
@@ -265,10 +271,10 @@ export function FromHubView({ plan, net, view, onOpenPair, onSuggest, onPickHub 
         <div className="hv-path"><b>{code}</b><i className={view.legFlown ? 'on' : 'off'} /><b className="hv-hub" onClick={onPickHub} role="button">{hub}<small>{role}</small></b><i className={linked.length ? 'on' : 'off'} /><b>世界各地</b></div>
         <div className="ins lg">
           {view.legFlown
-            ? <><IN n="transfer" v={count(view.now)} label={`每週在${hub}轉你的航班`} strong /><IN n="market" v={linked.length} label="接上的地方" /></>
-            : <><IN n="pax" v={`~${count(view.local)}`} label="本地旅客/週" />{view.unlockCount > 0 && <><IN n="transfer" v={`+${count(view.unlock)}`} label="轉機旅客/週" /><IN n="market" v={view.unlockCount} label="接上的地方" /></>}<IN n="seat" v={count(view.seats)} label="每天一班的座位/週" /></>}
+            ? <><IN n="transfer" v={count(view.now)} label={`每週在${hub}轉你的航班`} strong u="人/週" /><IN n="market" v={linked.length} label="接上的地方" w="接上" u="地" /></>
+            : <><IN n="pax" v={`~${count(view.local)}`} label="本地旅客/週" w="本地" />{view.unlockCount > 0 && <><IN n="transfer" v={`+${count(view.unlock)}`} label="轉機旅客/週" w="轉機" /><IN n="market" v={view.unlockCount} label="接上的地方" w="接上" u="地" /></>}<IN n="seat" v={count(view.seats)} label="每天一班的座位/週" w="座位" /></>}
         </div>
-        {!view.legFlown && <button className="primary small" onClick={() => onOpenPair(code, hub)}><Icon n="plus" /> {code} ⇄ {hub}</button>}
+        {!view.legFlown && <button className="primary small" onClick={() => onOpenPair(code, hub)}>開航 {code} ⇄ {hub}</button>}
       </div>
       {view.rows.length > 0 && <Legend hub={hub} extra={!plan.hub && <p>你還沒設轉運站，這裡從基地 {hub} 來看。可在機場的「航線」分頁設轉運站。</p>} />}
       {linked.length > 0 && (
@@ -279,11 +285,11 @@ export function FromHubView({ plan, net, view, onOpenPair, onSuggest, onPickHub 
       )}
       {open.length > 0 && (
         <>
-          <h4><Icon n="lock" /> 再開 {hub} 航線 <small>{open.length}</small></h4>
+          <h4>再開一條{hub}航線可去 <small>{open.length} 個</small></h4>
           <More list={open} page={6} render={row} />
         </>
       )}
-      {view.rows.length === 0 && <div className="hint center"><Icon n="detour" /> 經{hub}繞太遠，直飛較好</div>}
+      {view.rows.length === 0 && <div className="hint center">經{hub}繞路太遠，適合直飛</div>}
     </>
   );
 }

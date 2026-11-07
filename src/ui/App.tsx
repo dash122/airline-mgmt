@@ -380,7 +380,7 @@ function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: str
 
 /** A top-bar number with an icon for its name; the name is the icon's label and the tile's hover title. */
 function Kpi({ icon, label, value }: { icon: IconName; label: string; value: string }) {
-  return <div className="kpi" title={label}><span className="label"><Icon n={icon} label={label} /></span><span className="value">{value}</span></div>;
+  return <div className="kpi"><span className="label"><Icon n={icon} /> {label}</span><span className="value">{value}</span></div>;
 }
 
 function confirmReset() {
@@ -420,16 +420,14 @@ function TopBar({ result, balance, history, theme, onTheme, onReset }: { result:
   return (
     <div className="topbar">
       <div className="kpi main" title="成本回收率（半圈是收支平衡）">
-        <span className="label">回收</span>
+        <span className="label">成本回收</span>
         <span className="kpi-row">
           {result && <Ring value={Math.min(cr, 2) / 2} tone={cr >= 1 ? 'good' : 'bad'} size={18} stroke={3.5} label={`成本回收率 ${pct(cr)}，半圈是收支平衡`} />}
           <span className={`value ${result ? (cr >= 1 ? 'good' : 'bad') : ''}`}>{result ? pct(cr) : '—'}</span>
         </span>
       </div>
       <Kpi icon="pax" label="週旅客" value={result ? count(result.pax) : '—'} />
-      <Kpi icon="seat" label="載客率" value={result ? pct(result.loadFactor) : '—'} />
-      <Kpi icon="util" label="利用率" value={result ? pct(result.avgUtilisation) : '—'} />
-      <div className="kpi" title="累計損益"><span className="label"><Icon n="money" label="累計損益" /></span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span>
+      <div className="kpi"><span className="label"><Icon n="money" /> 累計</span><span className={`value ${balance > 0 ? 'good' : balance < 0 ? 'bad' : ''}`}>{money(balance)}</span>
         <Spark values={trend} width={56} height={12} label="累計損益走勢" /></div>
       <div className="top-actions">
         <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>

@@ -856,3 +856,8 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .fare .price .ico { color: var(--muted); }
 .report .ins, .markets .ins { margin-top: 2px; }
 .hint .ico { vertical-align: -0.15em; }
+.in .in-w { margin-right: 3px; }
+.in .in-u { margin-left: 2px; font-size: .92em; }
+.in .in-v { font-weight: 600; color: var(--text); }
+.in.good .in-v { color: var(--good); } .in.warn .in-v { color: var(--warn); } .in.bad .in-v { color: var(--bad); } .in.accent .in-v { color: var(--accent); }
+.kpi .label { display: inline-flex; align-items: center; gap: 3px; }
