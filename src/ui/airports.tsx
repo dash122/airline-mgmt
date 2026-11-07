@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
-import { modelledAnnualPax } from '../sim/markets';
-import { airportTraffic, hubOf, hubOpportunities, hubTransit, spokes, stations, viaGroup, viewFromHub, type Spoke } from '../sim/airports';
+import { useAirportAnalysis } from './airport-analysis';
+import { hubOf, spokes, stations, viaGroup, type Spoke } from '../sim/airports';
 import { FromHubView, HubTransitView } from './transit';
 import {
   HUB_COST_PER_WEEK, HUB_MCT_CUT, minConnect,
@@ -10,9 +10,10 @@ import {
 } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { Sheet, tone } from './sheets';
-import { airlinesAt } from '../sim/competitors';
 import { AirportCompetition, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
 import { Badge, IN, Icon, Meter } from './viz';
+
+const EMPTY_IDEAS: NonNullable<ReturnType<typeof useAirportAnalysis>>['ideas'] = [];
 
 const lfClass = (lf: number | null) => (lf === null ? 'idle' : lf >= 0.8 ? 'good' : lf >= 0.6 ? 'warn' : 'bad');
 
@@ -75,9 +76,10 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const [tab, setTab] = useState<AirportSection>('routes');
   const persp = hubOf(plan);
   const isPersp = code === persp;
-  const view = useMemo(() => (isPersp ? null : viewFromHub(plan, result, persp, code)), [plan, result, persp, code, isPersp]);
-  const ideas = useMemo(() => (isPersp && tab === 'transfer' ? hubOpportunities(plan, code) : []), [plan, code, isPersp, tab]);
-  const hubT = useMemo(() => (isPersp && tab === 'transfer' ? hubTransit(plan, result, code) : null), [plan, result, code, isPersp, tab]);
+  const analysis = useAirportAnalysis(plan, result, code, tab === 'transfer');
+  const view = analysis?.view ?? null;
+  const ideas = analysis?.ideas ?? EMPTY_IDEAS;
+  const hubT = analysis?.hubT ?? null;
   useEffect(() => {
     if (isPersp) onHint(tab === 'transfer' ? ideas.slice(0, 5).map((i) => [code, i.to]) : null);
     else if (view) {
@@ -99,35 +101,44 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
   const served = used > 0;
-  const carriers = airlinesAt(code);
-  const traffic = useMemo(() => airportTraffic(result, code), [result, code]);
+  const carriers = analysis?.carriers ?? [];
+  const traffic = analysis?.traffic;
   const ourPax = list.reduce((s, x) => s + x.pax, 0);
   const tiles: Tile[] = [
     { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—', sub: list.length ? <IN n="pax" v={short(ourPax)} label="你的旅客/週" u="人/週" /> : undefined },
     { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—', sub: carriers.length ? <IN n="plane" v={short(carriers.reduce((s, c) => s + c.flights, 0))} label="對手班次/週" u="班/週" /> : undefined },
-    { key: 'market', icon: 'market', label: '市場', value: traffic.ours >= 1 ? pct(traffic.ours / Math.max(1, traffic.total)) : '0%', sub: <IN n="pax" v={short(traffic.total)} label="機場旅客/週" u="人/週" /> },
+    { key: 'market', icon: 'market', label: '市場', value: traffic ? pct(traffic.ours / Math.max(1, traffic.total)) : '?', sub: <IN n="pax" v={traffic ? short(traffic.total) : '?'} label="機場旅客/週" u="人/週" /> },
     isPersp
       ? { key: 'transfer', icon: 'transfer', label: '轉機', value: short(transfer?.pax ?? 0), sub: '人/週' }
       : { key: 'transfer', icon: 'transfer', label: `經${persp}`, value: view?.legFlown ? short(view?.now ?? 0) : '—', sub: view?.legFlown ? '人/週' : <IN n="lock" v={persp} label={`還沒飛 ${code}⇄${persp}`} w="未飛" /> },
   ];
   return (
-    <Sheet size="compact" summary={<><span>{list.length} 條航線 · 每週 {used} 班出發</span><button className="primary" onClick={onConnect}>開新航線</button></>} title={`${a.name} ${a.code}`} onClose={onClose} action={action}
+    <Sheet size="full" className="airport-sheet" title={a.name} onClose={onClose} action={action}
       sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
-      info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {(modelledAnnualPax(code) / 1e6).toFixed(1)} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
+      info={<p>腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
+      <div className="airport-hero">
+        <div className="airport-hero-top"><div><span className="airport-eyebrow">AIRPORT PROFILE · {a.country}</span><div className="airport-code">{code}</div><span className="airport-hero-name">{a.name}</span></div><span className="airport-compass" aria-hidden="true">✳</span></div>
+        <div className="airport-hero-stats"><div><strong>{list.length}</strong><span>你的航線</span></div><div><strong>{used}</strong><span>每週出發</span></div><div><strong>{analysis ? (analysis.annualPax / 1e6).toFixed(1) + 'M' : '—'}</strong><span>年旅客估計</span></div></div>
+      </div>
+      <div className="airport-actions"><button className="primary" onClick={onConnect}><span>＋</span> 規劃新航線 <span className="airport-action-arrow">↗</span></button>{served && <button className="secondary" onClick={onShowSchedule}>查看班表</button>}</div>
+      <div className="airport-section-label">探索機場 <span>選擇一個項目查看詳情</span></div>
       <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
+      {!analysis && <div className="hint" role="status">正在載入機場分析…</div>}
 
       {tab === 'routes' && (
         <>
-          {list.length === 0 ? <div className="hint center">還沒有航班</div> : <Radial code={code} list={list} onPick={onOpenRoute} />}
+          {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地 <span aria-hidden="true">→</span></button></div></div>}
+          {list.length > 0 && <h4>你的航線 <small>每週航段損益，不含租金</small></h4>}
           <ul className="markets">
             {list.map((s) => (
-              <li key={s.key} onClick={() => onOpenRoute(s.key)} className="tapli">
+              <li key={s.key} onClick={() => onOpenRoute(s.key)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenRoute(s.key); } }} role="button" tabIndex={0} className="tapli">
                 <span className="name">{AIRPORT_BY_CODE[s.other].name} <small>{s.other} · 每日 {s.flightsPerDay} 班</small>
                   {s.loadFactor !== null && <span className="lf-line"><Meter value={s.loadFactor} tone={tone(s.loadFactor)} label={`載客率 ${pct(s.loadFactor)}`} /><b className={tone(s.loadFactor)}>{pct(s.loadFactor)}</b></span>}</span>
                 {s.profit !== null && <span className={`pill ${s.profit >= 0 ? 'good' : 'bad'}`}>{s.profit >= 0 ? '+' : ''}{money(s.profit)}</span>}
               </li>
             ))}
           </ul>
+          {list.length > 0 && <details className="route-adjust"><summary>查看航線分布</summary><Radial code={code} list={list} onPick={onOpenRoute} /></details>}
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>
               <span className="grow"><b><Icon n="transfer" /> 經{persp}轉機</b>
@@ -137,9 +148,9 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
               <span className="chev">›</span>
             </button>
           )}
-          <button className="primary wide" onClick={onConnect}>＋ 開新航線</button>
-          {served && <button className="secondary" onClick={onShowSchedule}>班表</button>}
           {served && (
+            <details className="route-adjust">
+            <summary>轉運站設定</summary>
             <div className="hubbox">
               <div className="grow">
                 <b><Icon n="hub" /> 轉運站{isHub && <> <Badge n="check" tone="good" label="已啟用" /></>}</b>
@@ -147,6 +158,7 @@ export function AirportSheet({ plan, result, code, onConnect, onOpen, onOpenPair
               </div>
               <button className={isHub ? 'secondary' : 'primary small'} onClick={onToggleHub}>{isHub ? '取消' : '設為轉運站'}</button>
             </div>
+            </details>
           )}
         </>
       )}
@@ -197,13 +209,13 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
         {rows.map((r) => {
           const use = r.departures / r.slotCap;
           return (
-            <li key={r.code} onClick={() => onPick(r.code)}>
+            <li key={r.code} role="button" tabIndex={0} onClick={() => onPick(r.code)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(r.code); } }}>
               <div className="st-top">
                 <span className="name"><span className="st-title">{AIRPORT_BY_CODE[r.code].name} {r.code}{r.code === plan.base && <span className="chip">基地</span>}{r.isHub && <span className="chip">轉運站</span>}</span>
-                  <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" />}</span></span>
-                {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`}>{r.profit >= 0 ? '+' : ''}{money(r.profit)}</span>}
+                  <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="plane" v={r.departures} label="出發班次/週" u="班/週" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" />}</span></span>
+                {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`} title="每週分攤航段損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}<small>／週</small></span>}
               </div>
-              <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : use >= 0.7 ? 'warn' : 'good'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>
+              {use >= 0.7 && <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : 'warn'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>}
               {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" w="時間帶" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}
             </li>
           );

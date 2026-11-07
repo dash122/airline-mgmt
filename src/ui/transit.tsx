@@ -7,6 +7,7 @@ import { viaGroup, type HubTransit, type HubView, type Linkage, type SpokeIdea, 
 import { CONNECT_FARE_SHARE, hhmm, layoverKind, STOPOVER_FARE_SHARE, stopoverAppealHours, type NetworkResult, type Plan } from '../sim/simulate';
 import { pairKey } from '../sim/markets';
 import { MarketShare } from './rivals';
+import { FlightTimes } from './FlightTimes';
 import { count, pct } from './format';
 import { InfoDot } from './sheets';
 import { Badge, hm, IN, type IconName } from './viz';
@@ -110,6 +111,7 @@ export function TransitRow({ hub, l, net, title = 'pair', onOpenPair, onSuggest 
           ? <span className="tr-num idle"><small>可載約</small>{count(l.potential)}<small>人/週</small></span>
           : <span className="tr-num">{count(l.viaPax)}<small>人/週</small></span>}
       </div>
+      <div className="connection-path"><b>{l.slow?.from ?? l.o}</b><span>→</span><b>{hub}</b><span>→</span><b>{l.slow?.to ?? l.d}</b><small>{l.wait !== null ? `轉機 ${hm(l.wait)}` : l.missing.length ? '航段未開航' : l.nonstopFlown ? '已直飛' : '尚無可用轉機'}</small></div>
       <ReachBar now={l.viaPax} potential={l.potential} />
       <div className="tr-meta">
         <TransitBadge hub={hub} l={l} />
@@ -117,9 +119,14 @@ export function TransitRow({ hub, l, net, title = 'pair', onOpenPair, onSuggest 
       </div>
       <div className="chips">
         <FixButton hub={hub} l={l} onOpenPair={onOpenPair} onSuggest={onSuggest} />
-        <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '收起' : '市占'}</button>
+        <button className="chip" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '收起' : '行程與市占'}</button>
       </div>
       {open && <>
+        {l.itinerary && <div className="connection-itinerary"><div className="connection-itinerary-heading">範例行程 <small>{l.itinerary.from} → {l.itinerary.to} · 當地時間</small></div>
+          <FlightTimes from={l.itinerary.from} to={hub} dep={l.itinerary.firstDep} arr={l.itinerary.firstArr} />
+          <div className="connection-layover">{hub} 轉機 · {hm(l.itinerary.secondDep - l.itinerary.firstArr)}</div>
+          <FlightTimes from={hub} to={l.itinerary.to} dep={l.itinerary.secondDep} arr={l.itinerary.secondArr} />
+        </div>}
         <small className="tr-share">市場 {count(l.market)} 人/週 · {unflown ? `接上可占 ${sharePct(reachShare)}` : `你占 ${sharePct(share)}${l.potential - l.viaPax >= 1 ? `，接好 ${sharePct(reachShare)}` : ''}`}</small>
         <MarketShare a={l.o} b={l.d} result={net?.routes[pairKey(l.o, l.d)]} net={net} title="這兩地的旅客怎麼分" />
       </>}

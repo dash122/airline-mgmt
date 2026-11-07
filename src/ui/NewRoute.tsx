@@ -1,3 +1,4 @@
+import { createComputeClient } from './compute-client';
 import { useEffect, useMemo, useState } from 'react';
 import { AIRCRAFT } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
@@ -11,7 +12,7 @@ import {
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { FlightTimes } from './FlightTimes';
-import { at, Sheet, shortType, Stat, tone } from './sheets';
+import { at, Sheet, shortType, tone } from './sheets';
 import { TimeStepper } from './panels';
 import { Badge, hm, IN, Icon, Ring } from './viz';
 
@@ -68,7 +69,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
   const [destinationState, setDestinationState] = useState<{ plan: Plan; from: string; rows: Destination[] } | null>(null);
   useEffect(() => {
     if (field !== 'to') return;
-    const worker = previewWorker ??= new Worker(new URL('./route-preview.worker.ts', import.meta.url), { type: 'module' });
+    const worker = previewWorker ??= createComputeClient('preview');
     const request = ++previewRequest;
     const onMessage = (event: MessageEvent<{ request: number; destinations?: Destination[] }>) => {
       if (event.data.request === request && event.data.destinations) setDestinationState({ plan, from, rows: event.data.destinations });
@@ -106,7 +107,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
         placeholder="搜尋城市、國家或代碼" aria-label="搜尋機場" />
       {field === 'to' && !q.trim() && (
         <div className="chips scroll" role="tablist" aria-label="篩選">
-          {BANDS.map(([k, label]) => <button key={k} role="tab" className={`chip${band === k ? ' strong' : ''}`} onClick={() => setBand(k)}>{label}</button>)}
+          {BANDS.map(([k, label]) => <button key={k} role="tab" aria-selected={band === k} className={`chip${band === k ? ' strong' : ''}`} onClick={() => setBand(k)}>{label}</button>)}
         </div>
       )}
       {field === 'to' && (
@@ -174,7 +175,7 @@ function PlanStep(props: PlanStepProps) {
   const [error, setError] = useState(false);
   useEffect(() => {
     setError(false);
-    const worker = previewWorker ??= new Worker(new URL('./route-preview.worker.ts', import.meta.url), { type: 'module' });
+    const worker = previewWorker ??= createComputeClient('preview');
     const request = ++previewRequest;
     const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; error?: string }>) => {
       if (event.data.request !== request) return;
@@ -209,6 +210,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
   const other = depFrom === from ? to : from;
   const w = chosen ? windowOf(chosen) : { lo: -Infinity, hi: Infinity };
   const dep = chosen ? Math.max(w.lo, Math.min(w.hi, depSet ?? startDep(plan, chosen, from, to))) : 0;
+  const recommended = !!chosen && chosen.id === best?.id && dep === startDep(plan, chosen, from, to);
   const preview = useMemo(() => (chosen ? (dep === startDep(plan, chosen, from, to) ? previews.get(chosen.id)! : previewChoice(plan, result, chosen, from, to, dep)) : null), [plan, result, chosen, from, to, dep, previews]);
   const applied = useMemo(() => (chosen ? applyChoice(plan, chosen, from, to, dep) : null), [plan, chosen, from, to, dep]);
   const trip = useMemo(() => {
@@ -246,7 +248,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
     const s = AIRCRAFT[c.type];
     const ac = c.acId ? plan.fleet.find((x) => x.id === c.acId) : undefined;
     return (
-      <button key={c.id} className={`opt row-opt${chosen?.id === c.id ? ' pick' : ''}`} onClick={() => { setPickId(c.id); setDep(null); }}>
+      <button key={c.id} className={`opt aircraft-option${chosen?.id === c.id ? ' pick' : ''}`} aria-pressed={chosen?.id === c.id} onClick={() => { setPickId(c.id); setDep(null); }}>
         <span className="grow">
           <b>{ac ? `${ac.reg} · ${shortType(c.type)}` : `租 ${shortType(c.type)}`}{best?.id === c.id && <> <Badge n="hub" tone="good" label="建議" /></>}</b>
           <span className="ins">{ac
@@ -272,25 +274,25 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       {ends}
 
       {preview && (
-        <div className="stats">
-          <Stat label="旅客/週" icon="pax" value={count(preview.pax)} />
-          <Stat label="載客率" icon="seat" value={pct(preview.loadFactor)} tone={tone(preview.loadFactor)}
-            viz={<Ring value={preview.loadFactor} tone={tone(preview.loadFactor)} size={22} stroke={4} />} />
-          <Stat label="損益/週" icon="money" value={signed(preview.networkDelta)} tone={preview.networkDelta >= 0 ? 'good' : 'bad'} />
+        <div className="plan-summary">
+          <span>預計全網損益／週</span>
+          <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{signed(preview.networkDelta)}</strong>
+          {preview.networkDelta < 0 && recommended && <span>最佳方案仍預計虧損</span>}
+          <div className="plan-summary-meta"><span><b>{count(preview.pax)}</b> 人／週</span><span><b>{pct(preview.loadFactor)}</b> 載客率</span></div>
         </div>
       )}
       {preview && preview.loadFactor >= 0.97 && <div className="hint warn"><Icon n="spill" /> 幾乎客滿：換大飛機或之後加班</div>}
 
-      {chosen && <div className="hint">建議方案：{chosen.kind === 'lease' ? '租用' : '使用現有飛機'} {shortType(chosen.type)} · {depFrom} 當地 {at(depFrom, dep)} 出發{trip && trip.cycle > 1 ? ` · 每 ${trip.cycle} 天來回` : ' · 每日來回'}。依預計全網週損益選出。</div>}
+      {chosen && <div className="route-selection"><span>{recommended ? '建議方案' : '目前方案'}</span><b>{chosen.kind === 'lease' ? '租用' : '現有'} {shortType(chosen.type)}</b><span className="route-selection-dot">·</span><b>{at(depFrom, dep)}</b><small>{trip && trip.cycle > 1 ? `每 ${trip.cycle} 天來回` : '每日來回'}</small></div>}
       <details className="route-adjust">
-      <summary>調整方案與查看市場詳情</summary>
+      <summary><span>飛機與時間</span><small>調整方案</small></summary>
       <h4>飛機</h4>
       {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
-      <div className="options">
+      <div className="options aircraft-options" aria-label="飛機方案">
         {fleetChoices.map(optRow)}
         {visibleLease.map(optRow)}
       </div>
-      {leaseChoices.length > visibleLease.length && <button className="ghost" onClick={() => setShowAll(true)}>全部 {leaseChoices.length} 種機型</button>}
+      {leaseChoices.length > 2 && <button className="ghost aircraft-toggle" onClick={() => setShowAll(!showAll)} aria-expanded={showAll}>{showAll ? '收合機型' : `全部 ${leaseChoices.length} 種機型`}</button>}
 
       {chosen && (
         <>
@@ -313,6 +315,9 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
           {trip && trip.cycle > 1 && <div className="hint">來回超過一天：每 {trip.cycle} 天飛一趟</div>}
         </>
       )}
+      </details>
+      <details className="route-adjust">
+      <summary><span>市場與預測</span><small>查看詳情</small></summary>
       <h4><Icon n="rival" /> 對手</h4>
       <div className="market-line ins lg">
         <IN n="pax" v={short((m?.airDemand ?? 0) * 2)} label="旅客/週" u="人/週" />

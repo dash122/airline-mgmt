@@ -1,3 +1,4 @@
+import { createComputeClient } from './compute-client';
 import { useEffect, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
@@ -65,7 +66,7 @@ export default function App() {
   const simulationId = useRef(0);
   useEffect(() => {
     if (!plan?.fleet.length) return;
-    const worker = simulationWorker.current ??= new Worker(new URL('./simulation.worker.ts', import.meta.url), { type: 'module' });
+    const worker = simulationWorker.current ??= createComputeClient('simulation');
     const id = ++simulationId.current;
     const onMessage = (event: MessageEvent<{ id: number; result?: NetworkResult; error?: string }>) => {
       if (event.data.id === id && event.data.result) setSimulation({ plan, result: event.data.result });
@@ -410,18 +411,22 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
   return (
     <div className="start">
       <div className="start-card">
+        <div className="start-intro"><div className="start-brand"><span className="brand-mark" aria-hidden="true">✳</span> WAYPOINT <small>AIRLINE MANAGEMENT</small></div><div className="start-kicker">AIRLINE MANAGEMENT</div><h1>經營航線，<br /><em>連接城市。</em></h1><p>選擇基地，規劃航線與航班。</p><div className="start-decoration" aria-hidden="true"><span className="orbit orbit-one" /><span className="orbit orbit-two" /><span className="orbit-plane">✈</span><span className="orbit-caption">ROUTE PLANNING<br />AIRLINE MANAGEMENT</span></div></div>
+        <div className="start-choice"><div className="eyebrow">選擇基地</div>
         <div className="logo">航點<span>Waypoint</span></div>
         <p>開航線、租飛機、排班表，在真實地圖上和其他航空搶旅客。目標：收入大於成本。</p>
         <h2>選擇你的基地</h2>
         <div className="base-grid">
           {BASES.map((c) => (
             <button key={c} onClick={() => onPick(c)}>
+              <span className="base-icon" aria-hidden="true">↗</span>
               <strong>{AIRPORT_BY_CODE[c].name}</strong>
               <span>{c}</span>
             </button>
           ))}
         </div>
         <p className="fine">需求由人口與機場規模推估，僅供遊戲使用。資料來源：OurAirports、GeoNames（CC BY 4.0）、Natural Earth。</p>
+        </div>
       </div>
     </div>
   );
@@ -432,6 +437,7 @@ function TopBar({ result, balance, history, theme, onTheme, onReset }: { result:
   const last = history.at(-1);
   return (
     <div className="topbar">
+      <div className="dashboard-brand"><span className="dashboard-mark" aria-hidden="true">✳</span><span><strong>航點</strong><small>WAYPOINT AIRLINES</small></span></div>
       <div className="kpi main"><span className="label">累計損益</span><span className={`value ${balance >= 0 ? 'good' : 'bad'}`}>{money(balance)}</span></div>
       <div className="kpi" title={last ? `上日已結算 ${money(last.revenue - last.cost)}` : '尚未結算'}><span className="label">預估損益／日</span><span className={`value ${estimate === null ? '' : estimate >= 0 ? 'good' : 'bad'}`}>{estimate === null ? '—' : money(estimate)}</span></div>
       <div className="top-actions">

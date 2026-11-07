@@ -12,7 +12,7 @@ import {
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
-import { arrival, at, DayBar, dayStart, legSegments, routeColor, routeName, Sheet, shortType, tone, UtilBar } from './sheets';
+import { arrival, at, dayStart, legSegments, routeColor, routeName, Sheet, shortType, tone, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
 import { Badge, hm, IN, Icon, Meter, Ring } from './viz';
 
@@ -34,6 +34,9 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length === 0 && (
         <div className="empty-cta">
+          <div className="empty-flight" aria-hidden="true"><span>✈</span></div>
+          <strong>你的航空網絡，從這裡開始</strong>
+          <p>選擇目的地，規劃第一條航線，讓你的機隊起飛。</p>
           <button className="primary wide" onClick={onNew}>＋ 開第一條航線</button>
         </div>
       )}
@@ -50,7 +53,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
                     : <small>{r.types.join('、')}</small>}
                 </span>
               </button>
-              {r.res && <span className={`pill ${p < 0 ? 'bad' : tone(r.res.loadFactor) === 'bad' ? 'warn' : 'good'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>}
+              {r.res && <span className={`pill ${p < 0 ? 'bad' : tone(r.res.loadFactor) === 'bad' ? 'warn' : 'good'}`} title="每週航段損益，不含租金">{p >= 0 ? '+' : ''}{money(p)}<small>／週</small></span>}
               <span className="step">
                 <button onClick={() => onRemoveOne(r.key)} aria-label="減一班來回">−</button>
                 <output>{r.flightsPerDay / 2}</output>
@@ -95,14 +98,14 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
         : <p>點航班調整。每個航班每天飛一次。<b className="daymark">+1</b> 隔天抵達（含時差），<b className="daymark">-1</b> 抵達當地日期比出發早一天。</p>}>
       <div className="seg three" role="tablist" aria-label="班表檢視">
         {([['time', '時間', 'clock'], ['airport', '機場', 'base'], ['aircraft', '飛機', 'plane']] as const).map(([v, label, ic]) => (
-          <button key={v} role="tab" className={view === v ? 'on' : ''} onClick={() => setView(v)}><Icon n={ic} /> {label}</button>
+          <button key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => setView(v)}><Icon n={ic} /> {label}</button>
         ))}
       </div>
       {view !== 'aircraft' && (
         <ScheduleLists plan={plan} result={result} view={view} mode={mode} basis={basis} airport={airport}
           onMode={setMode} onBasis={setBasis} onAirport={setAirport} onPickLeg={onPickLeg} />
       )}
-      {plan.fleet.length === 0 && <div className="hint center">還沒有飛機</div>}
+      {plan.fleet.length === 0 && <div className="hint center">還沒有飛機。租一架飛機後，就能安排航班。</div>}
       {view === 'aircraft' && <div className="gantt">
         <div className="g-row g-hours">
           <span />
@@ -217,15 +220,14 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           const p = r ? r.revenue - r.flyingCost - r.ownershipCost : 0;
           const warn = !ac.legs.length ? '沒有航班' : !info.closed ? '沒回到起點' : !info.fits ? `超過 ${info.cycleDays * 24} 小時` : info.utilisation < 0.3 ? '閒置太久' : '';
           return (
-            <li key={ac.id} onClick={() => onPick(ac.id)}>
+            <li key={ac.id} role="button" tabIndex={0} onClick={() => onPick(ac.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(ac.id); } }}>
               <div className="fleet-top">
                 <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={34} stroke={4} label={`利用率 ${pct(info.utilisation)}`}>
                   <small>{Math.round(info.utilisation * 100)}</small>
                 </Ring>
                 <span className="name">{ac.reg} · {shortType(ac.type)}<span className="ins"><IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行" w="飛" />{warn && <Badge n="warn" tone="warn">{warn}</Badge>}</span></span>
-                {r && <span className={`pill ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>}
+                {r && <span className={`pill ${p >= 0 ? 'good' : 'bad'}`} title="每週損益，含租金">{p >= 0 ? '+' : ''}{money(p)}<small>／週</small></span>}
               </div>
-              <DayBar ac={ac} base={plan.base} compact />
             </li>
           );
         })}

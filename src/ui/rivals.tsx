@@ -48,18 +48,19 @@ export function marketSummary({ rows, ownTurnedAway }: MarketSplit): string {
   return parts.join('');
 }
 
-/** Two blocks over the whole market: travellers flying nonstop and travellers changing planes. */
+/** Show both journey types on the same total-market denominator. */
 function DirectVsTransit({ rows, total }: { rows: ShareRow[]; total: number }) {
   const transit = rows.filter(isTransit).reduce((s, r) => s + r.pax, 0);
   const direct = rows.filter((r) => !isTransit(r)).reduce((s, r) => s + r.pax, 0);
-  if (transit < 1 || direct < 1) return null;
-  return (
-    <div className="dvt">
-      <div style={{ flex: Math.max(direct, total * 0.2) }}><b>直飛</b> {count(direct)}<small>{pct(direct / total)}</small></div>
-      <div style={{ flex: Math.max(transit, total * 0.2) }} className="t"><b>轉機</b> {count(transit)}<small>{pct(transit / total)}</small></div>
-    </div>
-  );
+  return <div className="share-modes" aria-label="旅客搭乘方式">
+    {[{ label: '直飛', pax: direct }, { label: '轉機', pax: transit }].map(({ label, pax }) =>
+      <div className="share-mode" key={label}>
+        <span>{label}</span><strong>{pct(pax / total)}</strong><small>{count(pax)} 人／週</small>
+        <div className="share-mode-track"><i style={{ width: String(100 * pax / total) + '%' }} /></div>
+      </div>)}
+  </div>;
 }
+
 
 /**
  * Who carries the travellers between two airports: your nonstops, your connections, each competitor and other
@@ -76,8 +77,9 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
   const SHOWN = 4;
   const summary = marketSummary(split);
   const segments = rows.map((r) => <div key={r.id} className={isTransit(r) ? 'tr-seg' : undefined} style={{ width: `${100 * r.share}%`, background: rowColor(r) }} />);
-  if (ownTurnedAway >= 1) segments.push(<div key="lost" className="lost" style={{ width: `${(100 * ownTurnedAway) / total}%` }} />);
-  const firstTransit = rows.findIndex(isTransit);
+  const ownPax = rows.filter((r) => r.kind === 'own' || r.kind === 'ownVia').reduce((sum, r) => sum + r.pax, 0);
+  const groups = [{ label: '直飛', rows: rows.filter((r) => !isTransit(r)) }, { label: '轉機', rows: rows.filter(isTransit) }];
+  const hidden = groups.reduce((sum, group) => sum + Math.max(0, group.rows.length - SHOWN), 0);
   return (
     <div className="market-share">
       <Head info={<>
@@ -86,15 +88,20 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         <p>市占看班次、起飛時段、票價和服務；轉機票價較低，也會搶直飛旅客，但等越久分到越少。對手的班表和票價固定。</p>
         {result && result.pax - result.localPax >= 1 && <p>另有每週 {count(result.pax - result.localPax)} 人只在這條航線轉機去別處，算在別的市場。客滿時本地和轉機旅客按比例分座位。</p>}
       </>} right={<small className="muted"><IN n="pax" v={count(total)} label="旅客/週" u="人/週" /></small>}>{title}</Head>
+      <div className="share-overview">
+        <div><span>你的旅客市占</span><strong>{pct(ownPax / total)}</strong><small>{count(ownPax)} 人／週 · 含直飛及轉機</small></div>
+        <div className="share-overview-total"><span>市場旅客</span><strong>{count(total)}</strong><small>人／週 · 雙向</small></div>
+      </div>
       <DirectVsTransit rows={rows} total={total} />
+      <div className="share-breakdown-label"><b>各航空公司分布</b><span>占全部旅客</span></div>
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
       <ul className="share-list">
-        {(all ? rows : rows.slice(0, SHOWN)).map((r, i) => {
+        {groups.map((group) => group.rows.length > 0 && <Fragment key={group.label}>
+          <li className="group">{group.label}</li>
+          {(all ? group.rows : group.rows.slice(0, SHOWN)).map((r) => {
           const lost = result && r.kind === 'rival' ? r.before - r.pax : 0;
           return (
             <Fragment key={r.id}>
-              {i === 0 && firstTransit !== 0 && <li className="group">直飛</li>}
-              {i === firstTransit && <li className="group">轉機</li>}
               <li className={r.kind === 'own' || r.kind === 'ownVia' ? 'own' : undefined}>
                 <i className={isTransit(r) ? 'tr-seg' : undefined} style={{ background: rowColor(r) }} />
                 <span className="name">
@@ -114,16 +121,17 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
               </li>
             </Fragment>
           );
-        })}
+          })}
+        </Fragment>)}
         {ownTurnedAway >= 1 && (
           <li className="lost-row">
             <i />
             <span className="name"><b>想搭你但客滿</b></span>
-            <span className="rival-share">{pct(ownTurnedAway / total)}<small>{count(ownTurnedAway)} 人</small></span>
+            <span className="rival-share"><small>{count(ownTurnedAway)} 人／週<br />未包含在上方市占</small></span>
           </li>
         )}
       </ul>
-      {!all && rows.length > SHOWN && <button className="secondary" onClick={() => setAll(true)}>其他 {rows.length - SHOWN} 家</button>}
+      {hidden > 0 && <button className="secondary share-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? '收起' : `顯示另外 ${hidden} 項`}</button>}
     </div>
   );
 }

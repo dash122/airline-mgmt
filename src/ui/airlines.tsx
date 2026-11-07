@@ -60,8 +60,8 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
       <input className="search" type="search" placeholder="🔍 航空、國家、機場" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜尋航空公司" />
       {!query && (
         <div className="seg two" role="tablist">
-          <button role="tab" className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>交集 {mine.length}</button>
-          <button role="tab" className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>全部 {all.length}</button>
+          <button role="tab" aria-selected={filter === 'mine'} className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>與你重疊 {mine.length}</button>
+          <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>全部 {all.length}</button>
         </div>
       )}
       <div className="chips scroll kind-chips">

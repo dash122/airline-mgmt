@@ -303,7 +303,7 @@ export const MIN_CONNECT_INTL = 55;
 /** Extra minutes needed at the biggest hubs (long walks, many terminals). */
 export const BIG_AIRPORT_EXTRA = 10;
 /** Minutes a transfer hub setting takes off the minimum connection. */
-export const HUB_MCT_CUT = 10;
+export const HUB_MCT_CUT = 15;
 /** What the hub setting costs per week, NT$. */
 export const HUB_COST_PER_WEEK = 1_200_000;
 /** The bother of changing planes, in hours, on top of the wait itself. */
@@ -506,10 +506,13 @@ export function rivalConnections(o: string, d: string): RivalConnection[] {
     if (h === d || H.metro === O.metro || H.metro === D.metro) continue;
     const first = marketBetween(o, h), second = marketBetween(h, d);
     if (!first || !second || first.distKm + second.distKm > m.distKm * RIVAL_CONNECT_DETOUR) continue;
+    // Only a hub carrier can sell this connection. Avoid generating the
+    // onward market's whole timetable when no incoming carrier qualifies.
+    const feeders = services.filter(s => s.airline.kind !== 'low' && s.airline.bases.includes(h));
+    if (!feeders.length) continue;
     const onward = rivalsFrom(h, d);
     if (!onward.length) continue;
-    for (const s1 of services) {
-      if (s1.airline.kind === 'low' || !s1.airline.bases.includes(h)) continue;
+    for (const s1 of feeders) {
       const s2 = onward.find((x) => x.airline.id === s1.airline.id);
       if (!s2) continue;
       const w = connectionWeight(typicalFlightHours(first.distKm) + typicalFlightHours(second.distKm), RIVAL_CONNECT_WAIT_MIN, h, m.distKm);

@@ -380,7 +380,10 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
   const jitter = (i: number, span: number) => hash(`${key}#${i}`) % span;
   if (distKm > LONG_HAUL_KM) {
     const slots: { dep: number; q: number }[] = [];
-    for (let dep = FIRST_DEP; dep <= LAST_DEP; dep += 15) slots.push({ dep, q: departureQuality(dep, arrivalLocal(from, to, dep), distKm) });
+    // Flight duration is independent of the departure slot. Computing it in
+    // every slot repeats eight great-circle samples over 70 times per service.
+    const duration = flightMinutes(from, to, RIVAL_JET_KMH) + to.utcOffset - from.utcOffset;
+    for (let dep = FIRST_DEP; dep <= LAST_DEP; dep += 15) slots.push({ dep, q: departureQuality(dep, wrap(dep + duration), distKm) });
     // Best slots first, at least two hours apart.
     slots.sort((x, y) => y.q - x.q || x.dep - y.dep);
     const out: number[] = [];

@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE, airportMarkerRadius } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
 import { blockMinutes, cycleOf, DAY, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { type GameClock } from './clock';
-import { rivalsAt } from '../sim/competitors';
+import { useAirportAnalysis } from './airport-analysis';
 import { airlineNetwork } from '../sim/networks';
-import { fitView, nearestLongitude, projX, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
+import { fitView, nearestLongitude, projY, toScreen, worldCopies, zoomAt, type View } from './projection';
 
 export type Theme = 'day' | 'night';
 
@@ -33,7 +33,7 @@ interface Props {
 }
 
 const PALETTE = {
-  day: { sea: '#dfe9f0', land: '#f7f5ef', coast: '#c3cdd3', border: '#cfc8b8', label: '#26323a', labelHalo: '#f7f5ef', airport: '#26323a', route: '#2f6fb3', idle: '#8a9aa6', plane: '#14212b', sel: '#e0662b' },
+  day: { sea: '#dcebe8', land: '#f7f6ec', coast: '#b8d0c8', border: '#d6ddd2', label: '#294c48', labelHalo: '#f7f6ec', airport: '#294c48', route: '#267d70', idle: '#90a9a2', plane: '#183d39', sel: '#db8054' },
   night: { sea: '#0c1620', land: '#17232e', coast: '#2b3a47', border: '#33424f', label: '#d6e2ea', labelHalo: '#0c1620', airport: '#d6e2ea', route: '#5fb0ff', idle: '#5d6f7d', plane: '#ffffff', sel: '#ff9a5a' },
 };
 
@@ -43,6 +43,22 @@ const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COL
 
 const ARC_STEPS = 32;
 const HIT_AIRPORT_PX = 22;
+
+// Project geography once. Native paths can be translated/scaled without walking
+// the entire world and calculating Mercator logarithms on every gesture frame.
+let geography: { land: Path2D; borders: Path2D } | null = null;
+function geographyPaths() {
+  if (geography) return geography;
+  const path = (lines: number[][][], closed: boolean) => {
+    const p = new Path2D();
+    for (const line of lines) {
+      line.forEach(([lon, lat], i) => i ? p.lineTo(lon, -projY(lat)) : p.moveTo(lon, -projY(lat)));
+      if (closed) p.closePath();
+    }
+    return p;
+  };
+  return geography = { land: path(geo.land, true), borders: path(geo.borders, false) };
+}
 
 const arcCache = new Map<string, [number, number][]>();
 function arc(a: string, b: string): [number, number][] {
@@ -68,6 +84,9 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
 
 export default function MapCanvas(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const analysis = useAirportAnalysis(props.plan, props.result, props.selection?.kind === 'airport' && !props.hint?.length ? props.selection.id : null);
+  const analysisRef = useRef(analysis);
+  analysisRef.current = analysis;
   const propsRef = useRef(props);
   propsRef.current = props;
   const viewRef = useRef<View | null>(null);
@@ -123,7 +142,7 @@ export default function MapCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.selection?.kind, props.selection?.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current!;
     const mapContext = canvas.getContext('2d')!;
     const aircraftCanvas = aircraftCanvasRef.current!;
@@ -133,12 +152,15 @@ export default function MapCanvas(props: Props) {
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
       // A 5K Retina display has far more pixels than this animated map needs.
       // Keeping its backing store near 1440p cuts map fill and copy work sharply.
       const dpr = Math.min(window.devicePixelRatio || 1, 1.25, 2560 / rect.width, 1440 / rect.height);
       sizeRef.current = { w: rect.width, h: rect.height, dpr };
-      canvas.width = Math.round(rect.width * dpr);
-      canvas.height = Math.round(rect.height * dpr);
+      const width = Math.round(rect.width * dpr), height = Math.round(rect.height * dpr);
+      if (canvas.width === width && canvas.height === height) return;
+      canvas.width = width;
+      canvas.height = height;
       aircraftCanvas.width = canvas.width;
       aircraftCanvas.height = canvas.height;
       if (!viewRef.current) {
@@ -165,34 +187,25 @@ export default function MapCanvas(props: Props) {
       const key = `${w}x${h}@${dpr}:${v.cx.toFixed(4)},${v.cy.toFixed(4)},${v.scale.toFixed(4)}:${propsRef.current.theme}`;
       if (landCache.current?.key === key) return landCache.current.canvas;
       const off = landCache.current?.canvas ?? document.createElement('canvas');
-      off.width = Math.round(w * dpr);
-      off.height = Math.round(h * dpr);
+      const width = Math.round(w * dpr), height = Math.round(h * dpr);
+      if (off.width !== width) off.width = width;
+      if (off.height !== height) off.height = height;
       const c = off.getContext('2d')!;
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.fillStyle = pal.sea;
       c.fillRect(0, 0, w, h);
-      let landOffset = 0;
-      const sx = (lon: number) => w / 2 + (projX(lon) + landOffset - v.cx) * v.scale;
-      const sy = (lat: number) => h / 2 - (projY(lat) - v.cy) * v.scale;
+      const paths = geographyPaths();
       for (const offset of worldCopies(v, w)) {
-      landOffset = offset;
-      c.beginPath();
-      for (const ring of geo.land as number[][][]) {
-        ring.forEach(([lon, lat], i) => (i ? c.lineTo(sx(lon), sy(lat)) : c.moveTo(sx(lon), sy(lat))));
-        c.closePath();
-      }
+      c.setTransform(dpr * v.scale, 0, 0, dpr * v.scale,
+        dpr * (w / 2 + (offset - v.cx) * v.scale), dpr * (h / 2 + v.cy * v.scale));
       c.fillStyle = pal.land;
-      c.fill();
+      c.fill(paths.land);
       c.strokeStyle = pal.coast;
-      c.lineWidth = 0.8;
-      c.stroke();
-      c.beginPath();
-      for (const line of geo.borders as number[][][]) {
-        line.forEach(([lon, lat], i) => (i ? c.lineTo(sx(lon), sy(lat)) : c.moveTo(sx(lon), sy(lat))));
-      }
-      c.setLineDash([3, 3]);
+      c.lineWidth = 0.8 / v.scale;
+      c.stroke(paths.land);
+      c.setLineDash([3 / v.scale, 3 / v.scale]);
       c.strokeStyle = pal.border;
-      c.stroke();
+      c.stroke(paths.borders);
       c.setLineDash([]);
       }
       landCache.current = { key, canvas: off };
@@ -203,6 +216,7 @@ export default function MapCanvas(props: Props) {
     let sceneKey = '';
     let scenePlan: Plan | null = null;
     let sceneResult: NetworkResult | null = null;
+    let sceneAnalysis = analysisRef.current;
     let sceneView: View | null = null;
     let flightPlan: Plan | null = null;
     let flights: { acId: string; cycle: number; dep: number; block: number; points: [number, number][] }[] = [];
@@ -210,23 +224,12 @@ export default function MapCanvas(props: Props) {
     let lastFrame = 0;
     const draw = (time: number) => {
       raf = requestAnimationFrame(draw);
-      // Translate the existing layers while panning instead of rebuilding all
-      // geography and text for every pointer move. Refresh before edges drift far.
-      const currentView = viewRef.current!;
-      if (!document.hidden && mode === 'pan' && moved >= 8 && sceneView && currentView.scale === sceneView.scale) {
-        const dx = (sceneView.cx - currentView.cx) * currentView.scale;
-        const dy = (currentView.cy - sceneView.cy) * currentView.scale;
-        const { w, h } = sizeRef.current;
-        if (Math.abs(dx) < w * 0.2 && Math.abs(dy) < h * 0.2) {
-          const transform = `translate(${dx}px, ${dy}px)`;
-          canvas.style.transform = transform;
-          aircraftCanvas.style.transform = transform;
-          return;
-        }
-      }
-      if (document.hidden || time - lastPaint < 1000 / 30 - 0.5) return;
-      canvas.style.transform = '';
-      aircraftCanvas.style.transform = '';
+      if (document.hidden || !viewRef.current) return;
+      const v0 = viewRef.current!;
+      const viewChanged = !sceneView || v0.cx !== sceneView.cx || v0.cy !== sceneView.cy || v0.scale !== sceneView.scale;
+      // Gestures and automatic nudges follow the display refresh rate. Only
+      // aircraft animation is capped to 30 fps when the camera is stationary.
+      if (!viewChanged && !panTarget.current && !dragRef.current && time - lastPaint < 1000 / 30 - 0.5) return;
       lastPaint = time;
       const p = propsRef.current;
       if (flightPlan !== p.plan) {
@@ -252,7 +255,7 @@ export default function MapCanvas(props: Props) {
       }
       const v = viewRef.current!;
       const key = JSON.stringify([w, h, dpr, v.cx, v.cy, v.scale, p.theme, p.selection, p.connectFrom, p.airline, p.hint, !!dragRef.current]);
-      const rebuild = key !== sceneKey || p.plan !== scenePlan || p.result !== sceneResult || !!dragRef.current;
+      const rebuild = key !== sceneKey || p.plan !== scenePlan || p.result !== sceneResult || analysisRef.current !== sceneAnalysis || !!dragRef.current;
       if (!rebuild && (p.clock.speed === 0 || !p.plan.fleet.some(ac => ac.legs.length))) return;
       ctx = mapContext;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -265,7 +268,7 @@ export default function MapCanvas(props: Props) {
         // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
         const rivalFocus = p.selection?.kind === 'airport' && !p.hint?.length ? p.selection.id : null;
         if (rivalFocus) {
-          for (const r of rivalsAt(rivalFocus)) {
+          for (const r of analysisRef.current?.rivals ?? []) {
             const pts = arc(rivalFocus, r.to).map(([la, lo]) => screen(la, lo));
             const top = r.services.reduce((x, y) => (y.freq > x.freq ? y : x));
             const freq = r.services.reduce((s, x) => s + x.freq, 0);
@@ -438,6 +441,7 @@ export default function MapCanvas(props: Props) {
         sceneKey = key;
         scenePlan = p.plan;
         sceneResult = p.result;
+        sceneAnalysis = analysisRef.current;
         sceneView = { ...v };
       }
       ctx = aircraftContext;
@@ -479,7 +483,6 @@ export default function MapCanvas(props: Props) {
       }
       worldOffset = 0;
     };
-    raf = requestAnimationFrame(draw);
 
     // --- Input ---
     const pointers = new Map<number, { x: number; y: number }>();
@@ -593,6 +596,7 @@ export default function MapCanvas(props: Props) {
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      panTarget.current = null;
       const pt = local(e);
       const { w, h } = sizeRef.current;
       viewRef.current = zoomAt(viewRef.current!, w, h, pt.x, pt.y, Math.exp(-e.deltaY * 0.0015));
@@ -603,6 +607,8 @@ export default function MapCanvas(props: Props) {
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    // Paint land and routes together before React exposes the route UI.
+    draw(performance.now());
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();

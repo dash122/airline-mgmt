@@ -216,7 +216,16 @@ const isInternational = (m: Market) => AIRPORT_BY_CODE[m.a].country !== AIRPORT_
  * `code|i`); the others fit all their markets together (`code`). Shenzhen and Guangzhou carry more passengers than
  * Hong Kong, but almost all of them domestic: fitted together, their international markets came out six times too big.
  */
-const fitKey = (code: string, intl: boolean) => (internationalM(code) !== undefined ? `${code}|${intl ? 'i' : 'd'}` : code);
+// These keys depend only on reference airport data, not on a fit iteration.
+const fitKeys = new Map<string, readonly [string, string]>();
+const fitKey = (code: string, intl: boolean) => {
+  let keys = fitKeys.get(code);
+  if (!keys) {
+    keys = internationalM(code) !== undefined ? [`${code}|d`, `${code}|i`] : [code, code];
+    fitKeys.set(code, keys);
+  }
+  return keys[intl ? 1 : 0];
+};
 /** International annual passengers at an airport, millions: its own figure, else its country's usual share. */
 export function internationalM(code: string): number | undefined {
   const traffic = ANNUAL_TRAFFIC_M[code];
@@ -314,15 +323,16 @@ function buildMarkets(): Map<string, Market> {
   });
   const flyable = raw.map((r) => !(r.group in AIR_TARGETS_M) && hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
     && !(r.ground && r.ground.comfort > 0 && r.ground.hours <= RAIL_ONLY_HOURS));
+  const fitPairs = raw.flatMap((r, n) => flyable[n]
+    ? [{ keys: keyOf[n], air: r.gravity * scale[r.group] }] : []);
   for (let iter = 0; iter < 12; iter++) {
     const sums = new Map<string, number>();
-    raw.forEach((r, n) => {
-      if (!flyable[n]) return;
-      const [ka, kb] = keyOf[n];
-      const air = r.gravity * scale[r.group] * Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)) * PRE_FIT_AIR_SHARE * 104;
+    for (const pair of fitPairs) {
+      const [ka, kb] = pair.keys;
+      const air = pair.air * Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)) * PRE_FIT_AIR_SHARE * 104;
       sums.set(ka, (sums.get(ka) ?? 0) + air);
       sums.set(kb, (sums.get(kb) ?? 0) + air);
-    });
+    }
     for (const [k, millions] of fitTargets) {
       const now = sums.get(k);
       if (!now) continue;
@@ -444,12 +454,14 @@ function buildMarkets(): Map<string, Market> {
     const side = k.split('|')[1];
     return byMetro.get(`${AIRPORT_BY_CODE[c].metro}|${side ?? ''}`) ?? byMetro.get(`${AIRPORT_BY_CODE[c].metro}|`) ?? 1;
   };
+  const airportShrink = new Map(AIRPORTS.map(a => [a.code, [shrinkOf(a.code, false), shrinkOf(a.code, true)] as const]));
   for (const m of out.values()) {
     if (m.rivalFreq > 0 || m.group in AIR_TARGETS_M) continue;
     const intl = isInternational(m);
     // The first fit only ever scales unserved markets down too, as above.
     const up = Math.sqrt((pre.get(fitKey(m.a, intl)) ?? 1) * (pre.get(fitKey(m.b, intl)) ?? 1));
-    m.potential *= Math.pow(shrinkOf(m.a, intl) * shrinkOf(m.b, intl), 0.35) / Math.max(1, up);
+    const side = intl ? 1 : 0;
+    m.potential *= Math.pow(airportShrink.get(m.a)![side] * airportShrink.get(m.b)![side], 0.35) / Math.max(1, up);
   }
   return out;
 }

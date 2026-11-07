@@ -212,6 +212,8 @@ export interface Linkage {
   wait: number | null;
   /** Both legs flown: the direction with the slower connection (the one to fix). */
   slow?: { from: string; to: string };
+  /** Representative scheduled connection in the slower direction, in UTC minutes. */
+  itinerary?: { from: string; to: string; firstDep: number; firstArr: number; secondDep: number; secondArr: number };
   /** A flight to add that would make a quick connection: by default out of the hub, or into it (`before` = the hub departure it feeds). */
   suggest?: { from: string; to: string; local: number; arriveLocal: number; bestWait: number | null; before?: number };
   nonstopFlown: boolean;
@@ -263,7 +265,7 @@ export function estimateViaOneWay(plan: Plan, o: string, hub: string, d: string,
 /** Shortest workable layover at `hub` from a flight arriving from `o` to one leaving for `d`. */
 function bestWait(flights: BoardFlight[], plan: Plan, o: string, hub: string, d: string) {
   const mct = minConnect(hub, o, d, plan.hub);
-  let best: { wait: number; arr: BoardFlight } | null = null;
+  let best: { wait: number; arr: BoardFlight; departure: BoardFlight } | null = null;
   let anyArr: BoardFlight | null = null;
   for (const a of flights) {
     if (a.from !== o || a.to !== hub) continue;
@@ -273,7 +275,7 @@ function bestWait(flights: BoardFlight[], plan: Plan, o: string, hub: string, d:
       const through = f.ac === a.ac && f.index === a.index + 1;
       const wait = mod(f.depUtc - a.arrUtc, DAY);
       if (wait < (through ? 0 : mct)) continue;
-      if (!best || wait < best.wait) best = { wait: through ? 0 : wait, arr: a };
+      if (!best || wait < best.wait) best = { wait: through ? 0 : wait, arr: a, departure: f };
     }
   }
   return { best, arr: best?.arr ?? anyArr, mct };
@@ -321,6 +323,7 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
   let wait: number | null = null;
   let suggest: Linkage['suggest'];
   let slow: Linkage['slow'];
+  let itinerary: Linkage['itinerary'];
   if (nonstopFlown && nonstopPax > 0) status = 'nonstop';
   else if (!ok) status = 'detour';
   else if (missing.length) status = 'leg';
@@ -332,6 +335,11 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
     const worst = (flownBoth.length ? flownBoth : dirs).reduce((p, q) => ((q.best?.wait ?? Infinity) > (p.best?.wait ?? Infinity) ? q : p));
     wait = worst.best ? worst.best.wait : null;
     slow = { from: worst.from, to: worst.to };
+    if (worst.best) {
+      const { arr, departure } = worst.best;
+      const secondDep = arr.arrUtc + mod(departure.depUtc - arr.arrUtc, DAY);
+      itinerary = { from: worst.from, to: worst.to, firstDep: arr.depUtc, firstArr: arr.arrUtc, secondDep, secondArr: secondDep + departure.arrUtc - departure.depUtc };
+    }
     status = wait === null ? 'timing' : layoverKind(wait) === 'quick' ? 'connected' : 'long';
     if (status !== 'connected' && worst.arr) {
       const arriveLocal = localMinutes(hub, worst.arr.arrUtc);
@@ -349,7 +357,7 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
   }
   return {
     o, d, demand, market, potential, full, est, distKm: m.distKm, nonstopPax, viaPax, lost: Math.max(0, Math.max(demand, est) - nonstopPax - viaPax), status, missing,
-    detourPct: legs / m.distKm - 1, wait, suggest, slow, nonstopFlown,
+    detourPct: legs / m.distKm - 1, wait, suggest, slow, itinerary, nonstopFlown,
   };
 }
 
