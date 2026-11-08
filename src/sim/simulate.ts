@@ -820,6 +820,27 @@ export function competitionFor(o: string, d: string): Competition {
 }
 
 /**
+ * Fills the competitor caches a simulation of these airports' network reads first: every competitor service at each
+ * airport, then the competition in each market between them. Yields after each market, so it can run in short slices
+ * in the background; the caches hold the same values whenever they are filled.
+ */
+export function* warmCompetition(codes: readonly string[]): Generator<void, void> {
+  for (const code of codes) {
+    for (const m of marketsAt(code)) {
+      if (m.rivalFreq <= 0) continue;
+      rivalsBetween(m.a, m.b);
+      yield;
+    }
+    rivalsAt(code);
+  }
+  for (const o of codes) for (const d of codes) {
+    if (o === d || !marketBetween(o, d)) continue;
+    competitionFor(o, d);
+    yield;
+  }
+}
+
+/**
  * How one direction of a market splits today, without the player: weekly travellers per competitor service
  * (same order as `competitionFor(o, d).services`), per competitor connection (`.connections`), and on all connections
  * via other airlines together.

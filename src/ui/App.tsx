@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, simulate, toggleHosted, toggleCodeshare, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { marketsReady, prepareMarkets } from '../sim/markets';
+import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, simulate, toggleHosted, toggleCodeshare, utcFromLocal, warmCompetition, type NetworkResult, type Plan } from '../sim/simulate';
 import { CodeshareLink, CodeshareSheet } from './codeshare';
 import { HostedLink, HostedSheet } from './hosted';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
-import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
+import { AircraftSheet, ResultsSheet, RouteSheet, Sheet, routeName } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
 import { AirlineLink, AirlineSheet, AirlinesPanel, type Section as AirlineSection } from './airlines';
@@ -20,6 +21,11 @@ import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type G
 const SAVE_KEY = 'waypoint.plan.v2';
 const GAME_KEY = 'waypoint.game.v1';
 const THEME_KEY = 'waypoint.theme';
+/**
+ * Longest the background build of the demand model holds the main thread at a time: short while the player is only
+ * looking at the map, longer once a view is waiting for it (still short enough for taps and scrolling to go through).
+ */
+const MARKET_SLICE_MS = 8, MARKET_SLICE_WAITING_MS = 40;
 
 function load<T>(key: string): T | null {
   try {
@@ -86,9 +92,12 @@ export default function App() {
   useEffect(() => () => { simulationWorker.current?.terminate(); simulationWorker.current = null; }, []);
   const result = simulation?.plan === plan ? simulation.result : null;
   const selectedRouteKey = selection?.kind === 'route' ? selection.id : undefined;
+  // Whether the world demand model is built (see the background build below), and whether a view is waiting for it.
+  const [marketsBuilt, setMarketsBuilt] = useState(marketsReady);
+  const marketsWanted = useRef(false);
   // Keep route detail metrics in sync with the current itinerary while the worker
   // computes the full network result used by the map and other panels.
-  const liveRouteResult = useMemo(() => plan && selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey) ? simulate(plan) : null, [plan, selectedRouteKey]);
+  const liveRouteResult = useMemo(() => marketsBuilt && plan && selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey) ? simulate(plan) : null, [plan, selectedRouteKey, marketsBuilt]);
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>(null);
@@ -148,6 +157,28 @@ export default function App() {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', vis); window.removeEventListener('pagehide', persist); };
   }, [plan?.base, !!plan?.fleet.length]);
   useEffect(() => { save(THEME_KEY, theme); document.documentElement.dataset.theme = theme; }, [theme]);
+  // Route, airport and airline views need the world demand model, which takes seconds to build on a phone. Build it in
+  // short slices between frames after the app starts, so the first route opened doesn't freeze the screen. A view
+  // opened before it is ready shows a short wait instead, and the slices grow until it is done.
+  useEffect(() => {
+    if (marketsBuilt) return;
+    let timer = setTimeout(function slice() {
+      if (prepareMarkets(marketsWanted.current ? MARKET_SLICE_WAITING_MS : MARKET_SLICE_MS)) setMarketsBuilt(true);
+      else timer = setTimeout(slice, 0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [marketsBuilt]);
+  // Then the competitor schedules around the player's airports, which a route's first simulation needs.
+  const planAirports = plan ? [...new Set([plan.base, ...(plan.hub ? [plan.hub] : []), ...routePairs(plan).flatMap((r) => [r.a, r.b])])].join() : '';
+  useEffect(() => {
+    if (!marketsBuilt || !planAirports) return;
+    const steps = warmCompetition(planAirports.split(','));
+    let timer = setTimeout(function slice() {
+      const end = performance.now() + MARKET_SLICE_MS;
+      while (!steps.next().done) if (performance.now() >= end) { timer = setTimeout(slice, 0); return; }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [marketsBuilt, planAirports]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
@@ -240,6 +271,17 @@ export default function App() {
   // A codeshare sheet opens over whatever sheet it came from (a route, a partner, the routes list). Hide that one
   // while it is open, so only one sheet ever shows; it comes back as it was when the codeshare sheet closes.
   const stacked = overlay?.kind === 'codeshare' || overlay?.kind === 'hosted';
+  // These views read the demand model as they render. Until it is built they wait behind one small sheet.
+  const waiting = marketsBuilt ? null
+    : routeKey && routeExists ? routeName(...(routeKey.split('-') as [string, string]))
+    : airport ? AIRPORT_BY_CODE[airport].name
+    : airlineId ? '航空公司'
+    : newRoute ? '開新航線'
+    : overlay?.kind === 'codeshare' || overlay?.kind === 'hosted' ? '共享航班'
+    : showPanel === 'airlines' ? '航空公司'
+    : showPanel === 'airports' ? '市場'
+    : null;
+  marketsWanted.current = waiting !== null;
 
   return (
     <AirlineLink.Provider value={openAirline}>
@@ -288,7 +330,12 @@ export default function App() {
         </div>
       )}
 
-      {routeKey && routeExists && (
+      {waiting && (
+        <Sheet title={waiting} size={routeKey && routeFull ? 'full' : 'compact'} onClose={() => { if (newRoute || stacked) setOverlay(null); else if (selection) select(null); else openTab(null); }}>
+          <p className="hint" role="status">正在準備全球市場資料…</p>
+        </Sheet>
+      )}
+      {marketsBuilt && routeKey && routeExists && (
         <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => { const full = routeFull; select({ kind: 'route', id: k }); setRouteFull(full); })} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
@@ -306,7 +353,7 @@ export default function App() {
           onAddHere={() => setOverlay({ kind: 'gap', acId: aircraft.id, t: aircraft.legs.length ? aircraft.legs[aircraft.legs.length - 1].dep + 60 : utcMorning(plan.base) })}
           onClose={() => select(null)} />
       )}
-      {airport && (
+      {marketsBuilt && airport && (
         <AirportSheet key={airport} pager={pagerFor(airportOrder, airport, (c) => select({ kind: 'airport', id: c }))} plan={plan} result={result} code={airport}
           onConnect={() => planRoute(airport)}
           onOpen={(to: string) => planRoute(airport, to)}
@@ -327,7 +374,7 @@ export default function App() {
           action={backToAirline}
           onClose={() => select(null)} />
       )}
-      {airlineId && (
+      {marketsBuilt && airlineId && (
         <AirlineSheet key={airlineId} plan={plan} result={result} id={airlineId} focus={airlineRoute} onFocus={setAirlineRoute} initialTab={airlineTab}
           onCodeshare={(key) => toggleShare(airlineId, key)}
           onPickAirport={(code) => fromAirline({ kind: 'airport', id: code })}
@@ -336,7 +383,7 @@ export default function App() {
           back={back ? { label: backLabel(back), go: () => { const b = back; select(b); } } : undefined}
           onClose={() => select(null)} />
       )}
-      {showPanel === 'airlines' && (
+      {marketsBuilt && showPanel === 'airlines' && (
         <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => openTab(null)} />
       )}
       {showPanel === 'routes' && (
@@ -344,7 +391,7 @@ export default function App() {
           onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
-      {showPanel === 'airports' && (
+      {marketsBuilt && showPanel === 'airports' && (
         <AirportsPanel plan={plan} result={result} onPick={(code) => select({ kind: 'airport', id: code })} onClose={() => openTab(null)} />
       )}
       {showPanel === 'schedule' && (
@@ -372,7 +419,7 @@ export default function App() {
           onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
           onClose={() => setOverlay(overlay.kind === 'move' ? { kind: 'edit', acId: overlay.acId, leg: overlay.unit.start } : overlay.returnGap ? { kind: 'gap', ...overlay.returnGap } : null)} />
       )}
-      {newRoute && (
+      {marketsBuilt && newRoute && (
         <NewRouteSheet plan={plan} result={result} state={newRoute}
           onState={(s) => setOverlay({ kind: 'new', ...s })}
           onHint={setTransitHint}
@@ -384,7 +431,7 @@ export default function App() {
           onChoose={(key, prefer) => setOverlay({ kind: 'add', key, prefer, returnGap: { acId: overlay.acId, t: overlay.t } })}
           onClose={() => setOverlay(null)} />
       )}
-      {overlay?.kind === 'codeshare' && (
+      {marketsBuilt && overlay?.kind === 'codeshare' && (
         <CodeshareSheet key={`${overlay.airline}|${overlay.key}`} plan={plan} airline={overlay.airline} routeKey={overlay.key}
           onShare={(share) => {
             const was = hasCodeshare(plan, overlay.airline, overlay.key);
@@ -396,7 +443,7 @@ export default function App() {
           onPartner={() => openAirline(overlay.airline, 'share')}
           onClose={() => setOverlay(null)} />
       )}
-      {overlay?.kind === 'hosted' && (
+      {marketsBuilt && overlay?.kind === 'hosted' && (
         <HostedSheet key={overlay.key} plan={plan} routeKey={overlay.key} airline={overlay.airline}
           onSet={(airline, share) => {
             const was = plan.hosted?.some((h) => h.airline === airline && h.key === overlay.key);

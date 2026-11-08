@@ -170,8 +170,18 @@ export function groundOption(a: Airport, b: Airport, distKm: number): GroundOpti
  */
 export const RAIL_ONLY_HOURS = 2.5;
 
+/** Fewest weekly air travellers for a regular competitor service. */
+const MIN_RIVAL_AIR = MIN_RIVAL_FREQ * SEATS_PER_RIVAL_FLIGHT;
+/**
+ * Whether baseline() surely finds no service: air travel never exceeds the potential, so a potential below a regular
+ * service's minimum always ends in no flights. Most of the world's ~700,000 airport pairs stop here, without the
+ * utility maths or working out the service between the two airports.
+ */
+const tooSmallForService = (potential: number) => potential < MIN_RIVAL_AIR;
+
 function baseline(potential: number, fare: number, distKm: number, ground: GroundOption | undefined, service: { maxPax: number; uplift: number }) {
   if (ground && ground.comfort > 0 && ground.hours <= RAIL_ONLY_HOURS) return { air: 0, freq: 0 };
+  if (tooSmallForService(potential)) return { air: 0, freq: 0 };
   const uGround = ground ? Math.exp(groundUtility(ground)) : 0;
   const uNone = Math.exp(noTravelUtility(fare, distKm));
   let freq = 7;
@@ -180,7 +190,7 @@ function baseline(potential: number, fare: number, distKm: number, ground: Groun
     const uAir = Math.exp(airUtility(fare, distKm, freq));
     air = (potential * uAir) / (uAir + uGround + uNone);
     // Too few travellers for a regular service (a few flights a week on a mid-sized jet).
-    if (air < MIN_RIVAL_FREQ * SEATS_PER_RIVAL_FLIGHT) return { air: 0, freq: 0 };
+    if (air < MIN_RIVAL_AIR) return { air: 0, freq: 0 };
     freq = Math.max(MIN_RIVAL_FREQ, (service.uplift * air) / rivalPaxPerFlight(air, distKm, service.maxPax));
   }
   return { air, freq: Math.round(freq) };
@@ -218,6 +228,7 @@ const isInternational = (m: Market) => AIRPORT_BY_CODE[m.a].country !== AIRPORT_
  */
 // These keys depend only on reference airport data, not on a fit iteration.
 const fitKeys = new Map<string, readonly [string, string]>();
+const AIRPORT_INDEX = new Map(AIRPORTS.map((a, i) => [a.code, i]));
 const fitKey = (code: string, intl: boolean) => {
   let keys = fitKeys.get(code);
   if (!keys) {
@@ -240,7 +251,7 @@ const fitTargets: [string, number][] = Object.entries(ANNUAL_TRAFFIC_M).filter((
   return intl === undefined ? [[code, total * own]] : [[`${code}|i`, intl * own], [`${code}|d`, Math.max(0, total - intl) * own]];
 });
 
-function buildMarkets(): Map<string, Market> {
+function* buildMarkets(): Generator<void, Map<string, Market>> {
   // Outside the calibrated home region an airport's size comes from its real traffic, which already counts how much
   // its people and visitors fly, so the island uplift only applies to population-based sizes. Counting it twice made
   // holiday islands such as Mallorca look like London to travellers from Asia.
@@ -279,34 +290,74 @@ function buildMarkets(): Map<string, Market> {
     const size = total > 0 ? (metroSize.get(a.metro)! * reach[i]) / total : sizes[i];
     return Math.pow(size * longShare(a), MASS_EXPONENT);
   });
-  const raw: { i: number; j: number; distKm: number; gravity: number; group: string; ground?: GroundOption }[] = [];
-  for (let i = 0; i < AIRPORTS.length; i++) {
-    for (let j = i + 1; j < AIRPORTS.length; j++) {
-      const a = AIRPORTS[i], b = AIRPORTS[j];
+  // Every pair of airports, kept in flat arrays (about 700,000 of them): one object per pair cost seconds of
+  // allocation and garbage collection on a phone. Group names and fit keys are numbered once per airport or country.
+  const N = AIRPORTS.length;
+  const maxPairs = (N * (N - 1)) / 2;
+  const pairI = new Uint16Array(maxPairs), pairJ = new Uint16Array(maxPairs);
+  const pairDist = new Float64Array(maxPairs), pairGravity = new Float64Array(maxPairs);
+  const pairGroup = new Uint16Array(maxPairs);
+  const pairGround: (GroundOption | undefined)[] = [];
+  const groupNames: string[] = [];
+  const groupIds = new Map<string, number>();
+  const groupIdOf = (a: Airport, b: Airport) => {
+    const k = a.country < b.country ? `${a.country}|${b.country}` : `${b.country}|${a.country}`;
+    let id = groupIds.get(k);
+    if (id === undefined) { groupIds.set(k, (id = groupNames.length)); groupNames.push(groupOf(a, b)); }
+    return id;
+  };
+  // groundOption() finds nothing unless both ends share a landmass, one end is an island (a ferry), or one is in the
+  // Pearl River Delta (bridges and rail across the border).
+  const land = AIRPORTS.map(landOf), island = AIRPORTS.map(isIsland), prd = AIRPORTS.map((a) => a.landmass === 'prd');
+  let P = 0;
+  for (let i = 0; i < N; i++) {
+    const a = AIRPORTS[i];
+    for (let j = i + 1; j < N; j++) {
+      const b = AIRPORTS[j];
       if (a.metro === b.metro) continue;
       const distKm = distanceKm(a.lat, a.lon, b.lat, b.lon);
       if (distKm < MIN_MARKET_KM) continue;
-      const [mi, mj] = distKm > LONG_HAUL_KM ? [longMass[i], longMass[j]] : [mass[i], mass[j]];
-      const gravity = (distKm > LONG_HAUL_KM ? LONG_HAUL_TIES : 1) * (mi * mj) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
-      raw.push({ i, j, distKm, gravity, group: groupOf(a, b), ground: groundOption(a, b, distKm) });
+      const long = distKm > LONG_HAUL_KM;
+      const mi = long ? longMass[i] : mass[i], mj = long ? longMass[j] : mass[j];
+      pairI[P] = i; pairJ[P] = j; pairDist[P] = distKm;
+      pairGravity[P] = (long ? LONG_HAUL_TIES : 1) * (mi * mj) / Math.pow(gravityKm(distKm) / 100, DISTANCE_EXPONENT);
+      pairGroup[P] = groupIdOf(a, b);
+      if (land[i] === land[j] || island[i] !== island[j] || prd[i] || prd[j]) {
+        const g = groundOption(a, b, distKm);
+        if (g) pairGround[P] = g;
+      }
+      P++;
     }
+    yield;
   }
+  const competitor = new Uint8Array(P);
+  for (let n = 0; n < P; n++) {
+    competitor[n] = hasCompetitorRoute(AIRPORTS[pairI[n]], AIRPORTS[pairJ[n]]) ? 1 : 0;
+    if (n % CHUNK === 0) yield;
+  }
+  const calibratedGroup = groupNames.map((g) => g in AIR_TARGETS_M);
   // Calibrate one scale per group so modelled air travel matches the group's target.
   const scale: Record<string, number> = {};
   const totalGravity: Record<string, number> = {};
-  for (const r of raw) totalGravity[r.group] = (totalGravity[r.group] ?? 0) + r.gravity;
+  for (let n = 0; n < P; n++) { const g = groupNames[pairGroup[n]]; totalGravity[g] = (totalGravity[g] ?? 0) + pairGravity[n]; }
   const targetWeekly = (g: string) => ((AIR_TARGETS_M[g] ?? 0.1) * 1e6) / 52 / 2;
   for (const g of Object.keys(totalGravity)) scale[g] = (targetWeekly(g) * 3) / totalGravity[g];
   // Calibration only uses regional pairs, not the entire global market collection.
-  const calibrated = raw.filter(r => r.group in AIR_TARGETS_M && hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j]))
-    .map(r => ({ ...r, fare: refFare(r.distKm) }));
+  const calibrated: { group: string; gravity: number; distKm: number; ground?: GroundOption; fare: number; service: ReturnType<typeof serviceBetween> }[] = [];
+  for (let n = 0; n < P; n++) {
+    if (!calibratedGroup[pairGroup[n]] || !competitor[n]) continue;
+    calibrated.push({ group: groupNames[pairGroup[n]], gravity: pairGravity[n], distKm: pairDist[n], ground: pairGround[n], fare: refFare(pairDist[n]),
+      service: serviceBetween(AIRPORTS[pairI[n]], AIRPORTS[pairJ[n]], pairDist[n]) });
+    if (n % CHUNK === 0) yield;
+  }
   for (let iter = 0; iter < 30; iter++) {
     const air: Record<string, number> = {};
     for (const r of calibrated) {
-      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground, serviceBetween(AIRPORTS[r.i], AIRPORTS[r.j], r.distKm));
+      const b = baseline(r.gravity * scale[r.group], r.fare, r.distKm, r.ground, r.service);
       air[r.group] = (air[r.group] ?? 0) + b.air;
     }
     for (const g of Object.keys(scale).filter(g => g in AIR_TARGETS_M)) scale[g] *= Math.pow(targetWeekly(g) / Math.max(air[g] ?? 0, 1), 0.7);
+    yield;
   }
 
   // Uncalibrated global markets inherit the regional reference gravity scale.
@@ -316,50 +367,74 @@ function buildMarkets(): Map<string, Market> {
   // so without it few of Johannesburg's markets were big enough for a regular flight, and all of its traffic was then
   // fitted onto those few (Johannesburg-Hong Kong as busy as Hong Kong-Bangkok). Every market counts here with a
   // rough air share, served or not.
-  const pre = new Map<string, number>();
-  const keyOf = raw.map((r) => {
-    const intl = AIRPORTS[r.i].country !== AIRPORTS[r.j].country;
-    return [fitKey(AIRPORTS[r.i].code, intl), fitKey(AIRPORTS[r.j].code, intl)] as const;
-  });
-  const flyable = raw.map((r) => !(r.group in AIR_TARGETS_M) && hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
-    && !(r.ground && r.ground.comfort > 0 && r.ground.hours <= RAIL_ONLY_HOURS));
-  const fitPairs = raw.flatMap((r, n) => flyable[n]
-    ? [{ keys: keyOf[n], air: r.gravity * scale[r.group] }] : []);
+  // Fit keys as numbers: fitKeyIds[i] holds airport i's domestic and international key.
+  const fitKeyNames: string[] = [];
+  const fitKeyIndex = new Map<string, number>();
+  const fitKeyId = (k: string) => {
+    let id = fitKeyIndex.get(k);
+    if (id === undefined) { fitKeyIndex.set(k, (id = fitKeyNames.length)); fitKeyNames.push(k); }
+    return id;
+  };
+  const fitKeyIds = AIRPORTS.map((a) => [fitKeyId(fitKey(a.code, false)), fitKeyId(fitKey(a.code, true))] as const);
+  const keyIdOf = (code: string, intl: boolean) => fitKeyIds[AIRPORT_INDEX.get(code)!][intl ? 1 : 0];
+  const targets = fitTargets.map(([k, millions]) => ({ id: fitKeyId(k), millions, big: (ANNUAL_TRAFFIC_M[k.split('|')[0]] ?? 0) >= PRE_FIT_BIG_M }));
+  const K = fitKeyNames.length;
+  const pairKa = new Uint16Array(P), pairKb = new Uint16Array(P);
+  for (let n = 0; n < P; n++) {
+    const i = pairI[n], j = pairJ[n];
+    const intl = AIRPORTS[i].country !== AIRPORTS[j].country ? 1 : 0;
+    pairKa[n] = fitKeyIds[i][intl]; pairKb[n] = fitKeyIds[j][intl];
+    if (n % CHUNK === 0) yield;
+  }
+  // A key never fitted keeps a factor of 1.
+  const pre = new Float64Array(K).fill(1);
+  const fitPairs: number[] = [];
+  for (let n = 0; n < P; n++) {
+    const ground = pairGround[n];
+    if (!calibratedGroup[pairGroup[n]] && competitor[n] && !(ground && ground.comfort > 0 && ground.hours <= RAIL_ONLY_HOURS)) fitPairs.push(n);
+  }
+  const fitAir = new Float64Array(fitPairs.length);
+  fitPairs.forEach((n, x) => { fitAir[x] = pairGravity[n] * scale[groupNames[pairGroup[n]]]; });
+  const sums = new Float64Array(K);
   for (let iter = 0; iter < 12; iter++) {
-    const sums = new Map<string, number>();
-    for (const pair of fitPairs) {
-      const [ka, kb] = pair.keys;
-      const air = pair.air * Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)) * PRE_FIT_AIR_SHARE * 104;
-      sums.set(ka, (sums.get(ka) ?? 0) + air);
-      sums.set(kb, (sums.get(kb) ?? 0) + air);
+    sums.fill(0);
+    for (let x = 0; x < fitPairs.length; x++) {
+      const ka = pairKa[fitPairs[x]], kb = pairKb[fitPairs[x]];
+      const air = fitAir[x] * Math.sqrt(pre[ka] * pre[kb]) * PRE_FIT_AIR_SHARE * 104;
+      sums[ka] += air;
+      sums[kb] += air;
+      if (x % CHUNK === 0) yield;
     }
-    for (const [k, millions] of fitTargets) {
-      const now = sums.get(k);
+    for (const t of targets) {
+      const now = sums[t.id];
       if (!now) continue;
-      const f = (pre.get(k) ?? 1) * Math.sqrt((millions * 1e6) / now);
-      pre.set(k, Math.min((ANNUAL_TRAFFIC_M[k.split('|')[0]] ?? 0) >= PRE_FIT_BIG_M ? PRE_FIT_MAX : PRE_FIT_MAX_SMALL, Math.max(PRE_FIT_MIN, f)));
+      const f = pre[t.id] * Math.sqrt((t.millions * 1e6) / now);
+      pre[t.id] = Math.min(t.big ? PRE_FIT_MAX : PRE_FIT_MAX_SMALL, Math.max(PRE_FIT_MIN, f));
     }
   }
   const out = new Map<string, Market>();
-  raw.forEach((r, n) => {
-    const [ka, kb] = keyOf[n];
-    const potential = r.gravity * scale[r.group] * (r.group in AIR_TARGETS_M ? 1 : Math.sqrt((pre.get(ka) ?? 1) * (pre.get(kb) ?? 1)));
-    const fare = refFare(r.distKm);
-    const b = hasCompetitorRoute(AIRPORTS[r.i], AIRPORTS[r.j])
-      ? baseline(potential, fare, r.distKm, r.ground, serviceBetween(AIRPORTS[r.i], AIRPORTS[r.j], r.distKm))
+  const scaleOf = groupNames.map((g) => scale[g]);
+  for (let n = 0; n < P; n++) {
+    const i = pairI[n], j = pairJ[n], g = pairGroup[n], distKm = pairDist[n], ground = pairGround[n];
+    const potential = pairGravity[n] * scaleOf[g] * (calibratedGroup[g] ? 1 : Math.sqrt(pre[pairKa[n]] * pre[pairKb[n]]));
+    const fare = refFare(distKm);
+    const b = competitor[n] && !tooSmallForService(potential)
+      ? baseline(potential, fare, distKm, ground, serviceBetween(AIRPORTS[i], AIRPORTS[j], distKm))
       : { air: 0, freq: 0 };
-    out.set(pairKey(AIRPORTS[r.i].code, AIRPORTS[r.j].code), {
-      a: AIRPORTS[r.i].code,
-      b: AIRPORTS[r.j].code,
-      distKm: r.distKm,
-      group: r.group,
+    const a = AIRPORTS[i].code, c = AIRPORTS[j].code;
+    out.set(a < c ? `${a}-${c}` : `${c}-${a}`, {
+      a,
+      b: c,
+      distKm,
+      group: groupNames[g],
       potential,
       airDemand: b.air,
       refFare: fare,
       rivalFreq: b.freq,
-      ground: r.ground,
+      ground,
     });
-  });
+    if (n % CHUNK === 0) yield;
+  }
   // Simulated destination budgets keep potential demand separate from nonstop service.
   // Long-haul routes (over LONG_HAUL_KM) have their own budget. They carry fewer travellers than a hub's short-haul
   // routes, so in one shared budget the short-haul ones took every slot.
@@ -392,40 +467,44 @@ function buildMarkets(): Map<string, Market> {
   // Scaling potential too ensures player demand and competitor service agree.
   // Each airport's combined fit factor over all iterations: every retained market's potential ends up multiplied by
   // (fit[a] * fit[b]) ** 0.35.
-  const fit: Record<string, number> = {};
+  const fit = new Float64Array(K).fill(1);
+  const retainedFixed = retained.map((m) => m.group in AIR_TARGETS_M);
+  const retainedKa = retained.map((m) => keyIdOf(m.a, isInternational(m)));
+  const retainedKb = retained.map((m) => keyIdOf(m.b, isInternational(m)));
+  const retainedService = retained.map((m) => serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
+  const totals = new Float64Array(K), fixed = new Float64Array(K), factors = new Float64Array(K);
   for (let iter = 0; iter < 40; iter++) {
-    const totals: Record<string, number> = {};
-    const fixed: Record<string, number> = {};
-    for (const m of retained) for (const code of [m.a, m.b]) {
-      const bucket = m.group in AIR_TARGETS_M ? fixed : totals;
-      const k = fitKey(code, isInternational(m));
-      bucket[k] = (bucket[k] ?? 0) + m.airDemand * 104;
+    totals.fill(0); fixed.fill(0); factors.fill(1);
+    for (let x = 0; x < retained.length; x++) {
+      const bucket = retainedFixed[x] ? fixed : totals, m = retained[x];
+      bucket[retainedKa[x]] += m.airDemand * 104;
+      bucket[retainedKb[x]] += m.airDemand * 104;
     }
-    const factors: Record<string, number> = {};
-    for (const [k, millions] of fitTargets) {
-      const want = Math.max(0.1, (millions * 1e6 - (fixed[k] ?? 0)) / Math.max(1, totals[k] ?? 0));
+    for (const t of targets) {
+      const want = Math.max(0.1, (t.millions * 1e6 - fixed[t.id]) / Math.max(1, totals[t.id]));
       // Never more than MAX_FIT_UP above raw gravity overall: an airport whose other markets went to bigger airports
       // would otherwise pile all its traffic onto the few routes it kept (Zagreb's 3 million all on Frankfurt).
-      const cap = (ANNUAL_TRAFFIC_M[k.split('|')[0]] ?? 0) >= PRE_FIT_BIG_M ? MAX_FIT_UP : MAX_FIT_UP_SMALL;
-      factors[k] = Math.min(want, cap / (fit[k] ?? 1));
-      fit[k] = (fit[k] ?? 1) * factors[k];
+      const cap = t.big ? MAX_FIT_UP : MAX_FIT_UP_SMALL;
+      factors[t.id] = Math.min(want, cap / fit[t.id]);
+      fit[t.id] = fit[t.id] * factors[t.id];
     }
-    for (const m of retained) {
-      if (m.group in AIR_TARGETS_M) continue;
-      const intl = isInternational(m);
-      m.potential *= Math.pow((factors[fitKey(m.a, intl)] ?? 1) * (factors[fitKey(m.b, intl)] ?? 1), 0.35);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
+    for (let x = 0; x < retained.length; x++) {
+      if (retainedFixed[x]) continue;
+      const m = retained[x];
+      m.potential *= Math.pow(factors[retainedKa[x]] * factors[retainedKb[x]], 0.35);
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, retainedService[x]);
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }
+    yield;
   }
   for (let iter = 0; iter < 20; iter++) {
     const totals: Record<string, number> = {};
     for (const m of retained) totals[m.group] = (totals[m.group] ?? 0) + m.airDemand;
-    for (const m of retained) {
-      if (!(m.group in AIR_TARGETS_M)) continue;
+    for (const [x, m] of retained.entries()) {
+      if (!retainedFixed[x]) continue;
       m.potential *= Math.pow(targetWeekly(m.group) / Math.max(totals[m.group], 1), 0.7);
-      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, serviceBetween(AIRPORT_BY_CODE[m.a], AIRPORT_BY_CODE[m.b], m.distKm));
+      const b = baseline(m.potential, m.refFare, m.distKm, m.ground, retainedService[x]);
       m.airDemand = b.air;
       m.rivalFreq = b.freq;
     }
@@ -438,7 +517,7 @@ function buildMarkets(): Map<string, Market> {
   for (const m of retained) {
     if (m.group in AIR_TARGETS_M) continue;
     const intl = isInternational(m);
-    for (const c of [m.a, m.b]) { const k = fitKey(c, intl); shrink[k] = Math.min(1, Math.max(MIN_UNSERVED_FIT, fit[k] ?? 1)); }
+    for (const c of [m.a, m.b]) { const k = fitKey(c, intl); shrink[k] = Math.min(1, Math.max(MIN_UNSERVED_FIT, fit[fitKeyIndex.get(k)!])); }
   }
   // An airport with no fitted market of its own (Osaka Itami flies no international routes) follows the other
   // airports of its city, so its unserved markets don't outgrow the served ones next door.
@@ -455,11 +534,13 @@ function buildMarkets(): Map<string, Market> {
     return byMetro.get(`${AIRPORT_BY_CODE[c].metro}|${side ?? ''}`) ?? byMetro.get(`${AIRPORT_BY_CODE[c].metro}|`) ?? 1;
   };
   const airportShrink = new Map(AIRPORTS.map(a => [a.code, [shrinkOf(a.code, false), shrinkOf(a.code, true)] as const]));
+  let n = 0;
   for (const m of out.values()) {
+    if (++n % CHUNK === 0) yield;
     if (m.rivalFreq > 0 || m.group in AIR_TARGETS_M) continue;
     const intl = isInternational(m);
     // The first fit only ever scales unserved markets down too, as above.
-    const up = Math.sqrt((pre.get(fitKey(m.a, intl)) ?? 1) * (pre.get(fitKey(m.b, intl)) ?? 1));
+    const up = Math.sqrt(pre[keyIdOf(m.a, intl)] * pre[keyIdOf(m.b, intl)]);
     const side = intl ? 1 : 0;
     m.potential *= Math.pow(airportShrink.get(m.a)![side] * airportShrink.get(m.b)![side], 0.35) / Math.max(1, up);
   }
@@ -480,22 +561,60 @@ const MAX_FIT_UP = 4, MAX_FIT_UP_SMALL = 2;
 /** Lowest airport fit factor carried over to its unserved markets. */
 const MIN_UNSERVED_FIT = 0.01;
 
-let cache: Map<string, Market> | null = null;
-const airportMarkets = new Map<string, Market[]>();
-const annualPax = new Map<string, number>();
-export function markets(): Map<string, Market> {
-  if (!cache) {
-    cache = buildMarkets();
-    for (const m of cache.values()) {
-      for (const code of [m.a, m.b]) {
-        let list = airportMarkets.get(code);
-        if (!list) airportMarkets.set(code, list = []);
-        list.push(m);
-        annualPax.set(code, (annualPax.get(code) ?? 0) + 104 * m.airDemand);
-      }
-    }
+/** Pairs of airports handled between pauses while the demand model is built in the background. */
+const CHUNK = 16384;
+
+interface MarketTable { all: Map<string, Market>; byAirport: Map<string, Market[]>; annualPax: Map<string, number> }
+
+/** The demand model and its per-airport indexes, built in steps that pause now and then (see prepareMarkets). */
+function* buildTable(): Generator<void, MarketTable> {
+  const all = yield* buildMarkets();
+  const byAirport = new Map<string, Market[]>();
+  const annualPax = new Map<string, number>();
+  const index = (code: string, m: Market) => {
+    let list = byAirport.get(code);
+    if (!list) byAirport.set(code, list = []);
+    list.push(m);
+    annualPax.set(code, (annualPax.get(code) ?? 0) + 104 * m.airDemand);
+  };
+  let n = 0;
+  for (const m of all.values()) {
+    index(m.a, m); index(m.b, m);
+    if (++n % CHUNK === 0) yield;
   }
-  return cache;
+  return { all, byAirport, annualPax };
+}
+
+let table: MarketTable | null = null;
+let building: Generator<void, MarketTable> | null = null;
+
+/**
+ * Builds the demand model a step at a time for about `budgetMs`, then returns whether it is ready. The model covers
+ * every pair of the world's airports (about 700,000) and takes seconds on a phone, so the app builds it in short
+ * slices while idle rather than all at once on the first tap that needs it. Any earlier need finishes the rest at once.
+ * The steps are the same either way, so the markets are identical.
+ */
+export function prepareMarkets(budgetMs: number): boolean {
+  if (table) return true;
+  building ??= buildTable();
+  const end = performance.now() + budgetMs;
+  for (;;) {
+    const step = building.next();
+    if (step.done) { table = step.value; building = null; return true; }
+    if (performance.now() >= end) return false;
+  }
+}
+
+/** Whether the demand model is built, so the views that need it open without a wait. */
+export const marketsReady = () => table !== null;
+
+function marketTable(): MarketTable {
+  if (!table) prepareMarkets(Infinity);
+  return table!;
+}
+
+export function markets(): Map<string, Market> {
+  return marketTable().all;
 }
 
 export function marketBetween(a: string, b: string): Market | undefined {
@@ -504,8 +623,7 @@ export function marketBetween(a: string, b: string): Market | undefined {
 
 /** Modelled annual travellers starting or ending their trip at an airport today (both directions). */
 export function modelledLocalPax(code: string): number {
-  markets();
-  return annualPax.get(code) ?? 0;
+  return marketTable().annualPax.get(code) ?? 0;
 }
 
 /** Modelled annual terminal passengers at an airport today: its own travellers plus those changing planes there. */
@@ -515,6 +633,5 @@ export function modelledAnnualPax(code: string): number {
 
 /** Markets touching an airport, indexed once when the demand model is built. */
 export function marketsAt(code: string): readonly Market[] {
-  markets();
-  return airportMarkets.get(code) ?? [];
+  return marketTable().byAirport.get(code) ?? [];
 }

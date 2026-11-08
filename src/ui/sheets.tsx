@@ -1,4 +1,4 @@
-import { useContext, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
@@ -220,6 +220,16 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 type RouteTab = 'fare' | 'flights' | 'market' | 'times';
 
+/**
+ * False on a sheet's first paint, true from the next task on. The fare curve and the ± previews re-simulate the whole
+ * network many times over, so the sheet shows first and fills them in right after, instead of opening late.
+ */
+function usePainted() {
+  const [painted, setPainted] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setPainted(true), 0); return () => clearTimeout(t); }, []);
+  return painted;
+}
+
 export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net, size = 'compact', pager }: {
   plan: Plan; routeKey: string; result?: RouteResult; net?: NetworkResult | null; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
   onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode; size?: SheetSize; pager?: Pager;
@@ -232,7 +242,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const fareMult = plan.fares[routeKey] ?? 1;
   const setFare = (x: number) => onFare(clampFare(x));
   // Try every fare step on this route. Uses the whole network's profit, since connecting travellers pay part of it too.
-  const curve = useMemo(() => (flights.length ? fareCurve(plan, routeKey) : []), [plan, routeKey, flights.length]);
+  const painted = usePainted();
+  const curve = useMemo(() => (painted && flights.length ? fareCurve(plan, routeKey) : []), [painted, plan, routeKey, flights.length]);
   const best = bestFare(curve);
   const now = curve.find((p) => Math.abs(p.mult - fareMult) < 0.01);
   const betterFare = best && now && best !== now && best.profit - now.profit > 1 ? best : null;
@@ -269,13 +280,13 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     : { ...advice, acts: advice.acts.filter((x) => x.icon !== 'fare') };
   // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
   const freqWhatIf = useMemo(() => {
-    if (!net) return null;
+    if (!net || !painted) return null;
     const base = net.revenue - net.cost;
     const more = addRoundTrip(plan, a, b);
     const fewer = removeOneRoundTrip(plan, routeKey, localMinutes);
     const delta = (p: Plan) => { const r = simulate(p); return r.revenue - r.cost - base; };
     return { add: 'error' in more ? null : delta(more.plan), remove: fewer ? delta(fewer) : null };
-  }, [plan, net, a, b, routeKey]);
+  }, [painted, plan, net, a, b, routeKey]);
   const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場'], ['times', '時刻']];
   return (
     <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
@@ -320,7 +331,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'fare' && <>
-        {curve.length > 2 && now && best
+        {!painted && flights.length > 0 ? <div className="fare-control pending" aria-busy="true" />
+          : curve.length > 2 && now && best
           ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
               info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
           : <div className="fare route-fare"><div className="grow"><div className="label">單程票價</div><div className="price">NT${count(fareNow)} <small>市場價 {pct(fareMult)}</small></div></div></div>}
