@@ -302,6 +302,13 @@ interface PairContext {
   /** Ends flown with your own aircraft (flownSet also has codeshare ends). */
   ownSet: Set<string>;
   flows: TransferFlow[];
+  /** Airport pairs (either direction) flown with your own aircraft. */
+  ownPairs: Set<string>;
+  /** Flights a week per direction (`from>to`), codeshares included. */
+  flightsByDir: Map<string, number>;
+  /** Transfer travellers per unordered airport pair, and per direction (`from>to`), summed in the order of `flows`. */
+  flowsByPair: Map<string, number>;
+  flowsByDir: Map<string, number>;
 }
 
 function pairContext(plan: Plan, result: NetworkResult | null, hub: string): PairContext {
@@ -313,7 +320,21 @@ function pairContext(plan: Plan, result: NetworkResult | null, hub: string): Pai
     flownSet.add(end);
     if (!f.partner) ownSet.add(end);
   }
-  return { plan, result, hub, flights, flownSet, ownSet, flows: result?.transfers[hub]?.flows ?? [] };
+  const flows = result?.transfers[hub]?.flows ?? [];
+  // Lookups built once per context: the scans below run for every candidate market, so they must not walk the lists.
+  const ownPairs = new Set<string>(), flightsByDir = new Map<string, number>();
+  for (const f of flights) {
+    const dir = `${f.from}>${f.to}`;
+    flightsByDir.set(dir, (flightsByDir.get(dir) ?? 0) + 1);
+    if (!f.partner) ownPairs.add(pairKey(f.from, f.to));
+  }
+  const flowsByPair = new Map<string, number>(), flowsByDir = new Map<string, number>();
+  for (const f of flows) {
+    const pk = pairKey(f.from, f.to), dir = `${f.from}>${f.to}`;
+    flowsByPair.set(pk, (flowsByPair.get(pk) ?? 0) + f.pax);
+    flowsByDir.set(dir, (flowsByDir.get(dir) ?? 0) + f.pax);
+  }
+  return { plan, result, hub, flights, flownSet, ownSet, flows, ownPairs, flightsByDir, flowsByPair, flowsByDir };
 }
 
 /** How the market o-d stands for travel through the hub. Null when it is not a market at all. */
@@ -324,9 +345,9 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
   if (!m) return null;
   const demand = m.airDemand * 2;
   const legs = km(o, hub) + km(hub, d);
-  const nonstopFlown = c.flights.some((f) => !f.partner && pairKey(f.from, f.to) === pairKey(o, d));
+  const nonstopFlown = c.ownPairs.has(pairKey(o, d));
   const nonstopPax = result?.routes[pairKey(o, d)]?.localPax ?? 0;
-  const viaPax = c.flows.filter((f) => (f.from === o && f.to === d) || (f.from === d && f.to === o)).reduce((s, f) => s + f.pax, 0);
+  const viaPax = c.flowsByPair.get(pairKey(o, d)) ?? 0;
   // Two codeshare legs don't make a trip: one of them has to be your own flight.
   const missing = [o, d].filter((x) => !c.flownSet.has(x));
   if (!missing.length && !c.ownSet.has(o) && !c.ownSet.has(d)) missing.push(d);
@@ -334,8 +355,8 @@ function classify(c: PairContext, o: string, d: string): Linkage | null {
   const est = ok ? estimateVia(plan, o, hub, d) : 0;
   // What quick connections could carry: per direction, the flights you fly on its two legs (at least one a day), and
   // never less than that direction carries now.
-  const perDay = (a: string, b: string) => c.flights.filter((f) => f.from === a && f.to === b).length;
-  const viaDir = (a: string, b: string) => c.flows.filter((f) => f.from === a && f.to === b).reduce((s, f) => s + f.pax, 0);
+  const perDay = (a: string, b: string) => c.flightsByDir.get(`${a}>${b}`) ?? 0;
+  const viaDir = (a: string, b: string) => c.flowsByDir.get(`${a}>${b}`) ?? 0;
   const reach = (a: string, b: string) => Math.max(viaDir(a, b), estimateViaOneWay(plan, a, hub, b, missing.length ? 1 : Math.max(1, Math.min(perDay(a, hub), perDay(hub, b)))));
   const potential = ok ? reach(o, d) + reach(d, o) : viaPax;
   const full = !missing.length && [pairKey(o, hub), pairKey(hub, d)].some((k) => (result?.routes[k]?.loadFactor ?? 0) >= FULL_LF);
@@ -440,7 +461,7 @@ export function hubOpportunities(plan: Plan, hub: string, limit = 6): SpokeIdea[
     if (!defaultAircraft(hub, x)) continue;
     const markets: SpokeIdea['markets'] = [];
     for (const y of flown) {
-      if (c.flights.some((f) => !f.partner && pairKey(f.from, f.to) === pairKey(x, y))) continue;
+      if (c.ownPairs.has(pairKey(x, y))) continue;
       const est = estimateVia(plan, x, hub, y);
       if (est >= 1) markets.push({ d: y, est });
     }
