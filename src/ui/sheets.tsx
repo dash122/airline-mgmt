@@ -4,12 +4,14 @@ import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { rivalsBetween } from '../sim/competitors';
 
-import { removeOneRoundTrip, units } from '../sim/schedule';
-import { bestFare, clampFare, fareCurve, FARE_STEP } from '../sim/fares';
+import { units } from '../sim/schedule';
+import { bestFare, clampFare, FARE_STEP, type FarePoint } from '../sim/fares';
+import type { RouteWhatIf } from '../sim/route-whatif';
+import { useWorkerAnswer } from './worker-answer';
 import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
-  addRoundTrip, blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
-  simulate, type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
+  blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
+  type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { frequencyLabel, routeHealth } from './route-health';
@@ -22,7 +24,6 @@ import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
 import { FlightLoads, LoadPill } from './FlightLoads';
 import { Badge, IN, Icon, ProfitBar, Ring, Stack, type IconName } from './viz';
-import type { FarePoint } from '../sim/fares';
 
 /** "A320neo" rather than "Airbus A320neo". */
 export const shortType = (t: AircraftModel) => AIRCRAFT[t].name.replace(/^(Airbus|Boeing|Embraer|ATR|De Havilland|Bombardier) /, '');
@@ -296,7 +297,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const setFare = (x: number) => onFare(clampFare(x));
   // Try every fare step on this route. Uses the whole network's profit, since connecting travellers pay part of it too.
   const painted = usePainted();
-  const curve = useMemo(() => (painted && flights.length ? fareCurve(plan, routeKey) : []), [painted, plan, routeKey, flights.length]);
+  // Worked out on the calculation worker; the last curve stays until the new one arrives.
+  const curveAnswer = useWorkerAnswer<FarePoint[]>(plan, painted && flights.length > 0, 'fare-curve', { routeKey });
+  const curve = curveAnswer?.value ?? [];
   const best = bestFare(curve);
   const now = curve.find((p) => Math.abs(p.mult - fareMult) < 0.01);
   const betterFare = best && now && best !== now && best.profit - now.profit > 1 ? best : null;
@@ -332,14 +335,8 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     : health.key === 'ok' ? null
     : { ...advice, acts: advice.acts.filter((x) => x.icon !== 'fare') };
   // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
-  const freqWhatIf = useMemo(() => {
-    if (!net || !painted) return null;
-    const base = net.revenue - net.cost;
-    const more = addRoundTrip(plan, a, b);
-    const fewer = removeOneRoundTrip(plan, routeKey, localMinutes);
-    const delta = (p: Plan) => { const r = simulate(p); return r.revenue - r.cost - base; };
-    return { add: 'error' in more ? null : delta(more.plan), remove: fewer ? delta(fewer) : null };
-  }, [painted, plan, net, a, b, routeKey]);
+  const whatIf = useWorkerAnswer<RouteWhatIf>(plan, painted && !!net, 'what-if', { a, b, routeKey });
+  const freqWhatIf = whatIf?.value ?? null;
   const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場'], ['times', '時刻']];
   return (
     <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
@@ -385,7 +382,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'fare' && <>
-        {!painted && flights.length > 0 ? <div className="fare-control pending" aria-busy="true" />
+        {flights.length > 0 && !curveAnswer ? <div className="fare-control pending" aria-busy="true" />
           : curve.length > 2 && now && best
           ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
               info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
