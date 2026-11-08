@@ -2146,3 +2146,30 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
   .airline-card:hover { padding-inline: 0; }
   .directory-search, .search, .directory-toolbar select { background: var(--group); }
 }
+
+/* ---------- Direct manipulation (2026-11-08) ----------
+   Change things by touching the numbers: drag the fare curve, swipe route rows, drag flights.
+   While a finger is down the readout shows what would happen; nothing applies until release. */
+.fare-control { display: flex; flex-direction: column; gap: 8px; }
+.fare-read { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.fare-price { display: flex; flex-direction: column; min-width: 0; }
+.fare-price small { color: var(--muted); font-size: var(--fs-2xs); display: inline-flex; align-items: center; gap: 4px; }
+.fare-price b { font-size: var(--fs-2xl); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.fare-price .good { color: var(--good); font-weight: 700; }
+.fare-deltas { display: grid; grid-template-columns: auto auto auto; gap: 2px 12px; text-align: right; }
+.fare-deltas span { display: flex; flex-direction: column; }
+.fare-deltas small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
+.fare-deltas b { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fare-deltas b.good { color: var(--good); } .fare-deltas b.bad { color: var(--bad); } .fare-deltas b.warn { color: var(--warn); }
+.fare-control .fare-curve svg { height: 112px; outline: none; }
+.fare-control .fare-curve svg:focus-visible { box-shadow: 0 0 0 2px var(--accent-line); border-radius: var(--r-sm); }
+.fare-control .fare-curve .was { fill: var(--panel); stroke: var(--muted); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.fare-control.scrubbing .fare-curve .now { fill: var(--sel); }
+.fare-control.scrubbing .fare-price b { color: var(--sel); }
+.fare-best { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.fare-best b.good { color: var(--good); }
+.freq-pm button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; gap: 2px; }
+.freq-pm button small { font-size: var(--fs-3xs); font-weight: 700; white-space: nowrap; }
+.freq-pm button small.good { color: var(--good); } .freq-pm button small.bad { color: var(--bad); }
+.route-freq .freq-pm button { width: auto; min-width: 64px; padding: 0 10px; height: 48px; }
+.route-freq .freq-pm button:last-child small, .route-freq .freq-pm button:last-child small.good, .route-freq .freq-pm button:last-child small.bad { color: inherit; opacity: .92; }
