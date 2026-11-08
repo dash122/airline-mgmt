@@ -8,6 +8,7 @@ import { count, pct } from './format';
 import { useAirlineLink } from './airlines';
 import { Head } from './sheets';
 import { IN } from './viz';
+import { ConnectionFlow } from './ConnectionFlow';
 
 /** An airline's name; taps open its profile wherever the app provides one. */
 export function AirlineName({ airline }: { airline: Airline }) {
@@ -74,7 +75,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
   // The biggest few carriers first; the long tail waits behind one tap.
   const [all, setAll] = useState(false);
   if (total < 1) return null;
-  const SHOWN = 4;
+  const SHOWN = 3;
   const summary = marketSummary(split);
   const segments = rows.map((r) => <div key={r.id} className={isTransit(r) ? 'tr-seg' : undefined} style={{ width: `${100 * r.share}%`, background: rowColor(r) }} />);
   const ownPax = rows.filter((r) => r.kind === 'own' || r.kind === 'ownVia').reduce((sum, r) => sum + r.pax, 0);
@@ -94,6 +95,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
       </div>
       <p className="market-insight">{summary}</p>
       <DirectVsTransit rows={rows} total={total} />
+      {result && net && <ConnectionFlow a={a} b={b} net={net} />}
       <div className="share-breakdown-label"><b>航空公司市占分布</b><span>占全部旅客</span></div>
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
       <ul className="share-list">

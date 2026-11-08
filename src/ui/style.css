@@ -1443,6 +1443,24 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .market-share .share-list li.group { padding: 11px 0 4px; color: var(--muted); font-size: var(--fs-2xs); font-weight: 800; border: 0; }
 .market-share .lost-row { margin-top: 8px; padding: 10px; border: 1px dashed var(--line); border-radius: var(--r-sm); }
 .market-share .share-more { width: 100%; margin-top: 10px; }
+/* Connection flow: how connecting travellers get onto this route. */
+.conn-flow { margin: 4px 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.conn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; font-size: var(--fs-xs); }
+.conn-head span { color: var(--muted); font-size: var(--fs-3xs); font-variant-numeric: tabular-nums; }
+.conn-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.conn-svg .conn-label { font-size: 12px; font-weight: 650; fill: var(--text); }
+.conn-svg .conn-sub { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.conn-legend { display: flex; gap: 12px; margin-top: 4px; color: var(--muted); font-size: var(--fs-3xs); }
+.conn-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.conn-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.conn-share { display: grid; gap: 5px; margin-top: 10px; color: var(--muted); font-size: var(--fs-2xs); }
+.conn-share b { color: var(--text); font-variant-numeric: tabular-nums; }
+.conn-share-bar { height: 6px; overflow: hidden; border-radius: 3px; background: var(--line); }
+.conn-share-bar i { display: block; height: 100%; background: var(--accent); }
+/* Carrier rows: one compact line of detail instead of a tall two-line block. */
+.market-share .share-list li { padding: 6px 0; gap: 6px; }
+.market-share .share-list .name { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 2px; }
+.market-share .share-list .name .ins { display: flex; flex-wrap: wrap; gap: 2px 8px; }
 
 
 /* A quieter information hierarchy across the workspace. */
