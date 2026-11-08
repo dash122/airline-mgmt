@@ -186,13 +186,12 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
       <li key={`${r.ac.id}-${r.index}-${r.at}`} className="tap" onClick={() => onPickLeg(r.ac.id, r.index)}>
         <span className="t">{hhmm(r.time)}{mode === 'arr' && mark && <sup className="daymark" title="出發在前一天">{mark}</sup>}</span>
         <span className="name">
-          {r.from} → {r.to}
-          <small>
+          <b>{r.from} → {r.to}</b>
+          <small className="ins inline">
             {mode === 'dep'
               ? <span className="in" title="抵達"><Icon n="down" />{hhmm(r.other)}{mark && <sup className="daymark" title={r.shift > 0 ? '隔天抵達' : '前一天抵達'}>{mark}</sup>}</span>
               : <span className="in" title={`出發${r.shift > 0 ? '（前一天）' : r.shift < 0 ? '（後一天）' : ''}`}><Icon n="up" />{hhmm(r.other)}{r.shift !== 0 ? <sup className="daymark">{r.shift > 0 ? '-1' : '+1'}</sup> : null}</span>}
-            {' '}<span className="ins inline"><IN n="plane" v={dur(r.durMin)} label="飛行" w="飛" />{zone}<span>{r.ac.reg}</span></span>
-            {fr && <><br /><LoadIcons f={fr} /></>}
+            <IN n="plane" v={dur(r.durMin)} label="飛行" w="飛" />{zone}<span>{r.ac.reg}</span>
           </small>
         </span>
         {fr && <LoadPill f={fr} />}
