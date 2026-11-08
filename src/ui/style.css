@@ -23,8 +23,8 @@
    status colour = soft tint background + strong text, never colour alone (keep the word). */
 :root {
   /* Brand */
-  --accent: #14646f;          /* petrol: primary actions, your airline, active tab */
-  --accent-strong: #0f4f59;
+  --accent: #0d6c78;          /* petrol: primary actions, your airline, active tab */
+  --accent-strong: #0a5560;
   --accent-text: #ffffff;     /* text on a solid accent fill */
   --brand-ink: #0f3d45;       /* deep panels: start screen, airport hero */
   --brand-ink-2: #155a63;
@@ -33,21 +33,21 @@
   --sel: #d8693c;             /* coral: selection on the map, arrivals, rivals' highlight */
 
   /* Status */
-  --good: #2f8a4e;
-  --warn: #b5791a;
-  --bad: #c4473a;
+  --good: #248a3d;
+  --warn: #b25f00;
+  --bad: #d70015;
 
   /* Neutrals */
-  --bg: #f1f4f3;              /* page and sunken wells */
-  --panel: rgba(255, 255, 255, .97); /* raised surfaces: header, sheets, cards */
-  --surface-2: #eef2f1;       /* tiles, segmented tracks, quiet buttons */
+  --bg: #f2f2f7;              /* page and sunken wells */
+  --panel: rgba(255, 255, 255, .98); /* raised surfaces: header, sheets, cards */
+  --surface-2: #ececf1;       /* tiles, segmented tracks, quiet buttons */
   --thumb: #ffffff;           /* the selected thumb of a segmented control */
-  --line: #dde5e3;
-  --line-strong: #c6d2d0;
-  --text: #13292e;
-  --muted: #5f7479;
-  --cost-fly: #8a9ba0;
-  --cost-lease: #bac6c9;
+  --line: #e3e3e8;
+  --line-strong: #c7c7cc;
+  --text: #1c1c1e;
+  --muted: #6e6e73;
+  --cost-fly: #8e8e93;
+  --cost-lease: #c7c7cc;
 
   /* Derived pairs (soft background + strong text) */
   --accent-tint: color-mix(in srgb, var(--accent) 5%, var(--panel));
@@ -105,25 +105,25 @@
   -webkit-tap-highlight-color: transparent;
 }
 :root[data-theme='night'] {
-  --accent: #5fc0cc;
-  --accent-strong: #86d3dc;
-  --accent-text: #08292e;
+  --accent: #5ac8d6;
+  --accent-strong: #8adbe5;
+  --accent-text: #04262b;
   --brand-ink: #0f3239;
   --brand-ink-2: #164751;
   --sel: #f2915f;
-  --good: #5cc27f;
-  --warn: #e3b04b;
-  --bad: #f07a6b;
-  --bg: #0c171a;
-  --panel: rgba(21, 35, 39, .97);
-  --surface-2: #1b2c31;
-  --thumb: #2b4248;
-  --line: #2a3f45;
-  --line-strong: #3a5259;
-  --text: #e3eef0;
-  --muted: #93a9ae;
-  --cost-fly: #6f858b;
-  --cost-lease: #45595f;
+  --good: #30d158;
+  --warn: #ff9f0a;
+  --bad: #ff6961;
+  --bg: #000000;
+  --panel: rgba(28, 28, 30, .98);
+  --surface-2: #2c2c2e;
+  --thumb: #636366;
+  --line: #38383a;
+  --line-strong: #48484a;
+  --text: #f5f5f7;
+  --muted: #98989d;
+  --cost-fly: #8e8e93;
+  --cost-lease: #48484a;
   --accent-soft: color-mix(in srgb, var(--accent) 18%, var(--panel));
   --good-soft: color-mix(in srgb, var(--good) 18%, var(--panel));
   --warn-soft: color-mix(in srgb, var(--warn) 18%, var(--panel));
@@ -2342,3 +2342,109 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
 .cs-sources small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cs-sources b { font-variant-numeric: tabular-nums; }
 .hosted-note { margin: 0 0 8px; }
+
+/* ---------- Apple-style language (2026-11-08) ----------
+   One system, closer to iOS: neutral system greys (tokens at the top), one tint colour, no borders on
+   controls, grouped white lists on a grey background, plain tinted text for header actions, and one
+   capsule style for every filter chip. Numbers stay large; labels stay short and grey. */
+:root { --hairline: 1px; --fill: color-mix(in srgb, #787880 16%, transparent); --fill-2: color-mix(in srgb, #787880 10%, transparent); }
+:root[data-theme='night'] { --fill: color-mix(in srgb, #787880 32%, transparent); --fill-2: color-mix(in srgb, #787880 22%, transparent); }
+@media (min-resolution: 2dppx) { :root { --hairline: .5px; } }
+body { -webkit-font-smoothing: antialiased; }
+b, strong, .value, .price { font-variant-numeric: tabular-nums; }
+
+/* Chips: one borderless capsule. Off = grey fill, on = tint fill with tint text. */
+.chip, button.chip, .filter-chip, .chips .chip, .directory-chips .chip, .airport-route-filters .chip, .route-tools .chip, .route-competitor-chips .chip {
+  border: 0; border-radius: var(--r-pill); background: var(--fill-2); color: var(--text); font-weight: 500; box-shadow: none; }
+.chip.strong, .chip.on, .chip[aria-pressed='true'], .dir-bar .filter-chip.on, .cs-partners .chip.on,
+.chips .chip.strong, .route-tools .chip.strong { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: none; }
+.chip.best { background: var(--good-soft); color: var(--good-ink); }
+
+/* Info "i": a quiet glyph, not a bordered button. */
+.info-dot { border: 0; background: var(--fill-2); color: var(--muted); border-radius: 50%; font-weight: 600; }
+.info-dot.on { background: var(--accent); color: var(--accent-text); }
+
+/* Status advice: a tinted card, no side bar. */
+.route-advice, .route-advice.full, .route-advice.empty, .route-advice.loss { border: 0; box-shadow: none; }
+
+@media (max-width: 819px) {
+  :root { --r-md: 12px; --group: var(--panel); --seg-track: var(--fill-2); }
+  :root[data-theme='night'] { --group: #1c1c1e; }
+  .sheet, .sheet-foot { background: var(--bg); }
+  :root[data-theme='night'] .sheet, :root[data-theme='night'] .sheet-foot { background: #000; }
+
+  /* Header actions are tinted text, like a navigation bar button. */
+  .sheet-head button.primary, .sheet-head .primary.small { background: none; color: var(--accent); box-shadow: none; border: 0;
+    min-height: 32px; padding: 0 6px; font-size: var(--fs-md); font-weight: 600; }
+  .sheet-head h3, .airport-sheet .sheet-head h3 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+  .sheet-head .sub { color: var(--muted); }
+  .close { background: var(--fill-2); color: var(--muted); font-weight: 700; }
+
+  /* Section headers: small grey text sitting on the grey background. */
+  .sheet h4 { margin: 6px 4px 0; font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0; color: var(--muted); text-transform: none; }
+
+  /* Stat strips: one white group split by hairlines, not separate boxes. */
+  .route-kpis, .airport-glance { gap: 0; background: var(--group); border-radius: var(--r-md); overflow: hidden; }
+  .route-kpis button, .airport-glance > div { background: transparent; border: 0; border-radius: 0; box-shadow: none; position: relative; }
+  .route-kpis button + button::before, .airport-glance > div + div::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; border-left: var(--hairline) solid var(--line-strong); }
+  .route-kpis button.on { background: var(--accent-tint); }
+  .airport-glance > div { padding: 9px 10px; }
+  .airport-glance b, .route-kpis b { font-weight: 700; }
+
+  .ap-tiles.five { gap: 0; background: var(--group); border-radius: var(--r-md); overflow: hidden; }
+  .ap-tiles.five button { position: relative; border: 0; border-radius: 0; background: transparent; }
+  .ap-tiles.five button + button::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; border-left: var(--hairline) solid var(--line-strong); }
+  .ap-tiles.five button.on { background: var(--accent-soft); }
+  .ap-tiles.five button.on .label { color: var(--accent); }
+
+  /* Lists: hairline separators. */
+  .route-row + .route-row::before { border-top-width: var(--hairline); border-color: var(--line-strong); }
+  .stations > li, .airline-list > *, .competitor-list > li, .vs-list > li, .al-routes > li, .dep-board > li, .trs > li,
+  .markets li, .report li, .fleet li, .timetable li { border-bottom-width: var(--hairline); border-bottom-color: var(--line-strong); }
+
+  /* Search fields: iOS search bar. */
+  .directory-search, .search { background: var(--fill-2); border: 0; border-radius: 10px; }
+
+  /* Buttons: filled = the one main action; everything else tinted, no outlines. */
+  button.secondary, button.ghost, .route-advice-acts button + button { background: var(--accent-soft); color: var(--accent); border: 0; }
+  .route-advice-acts button { border-radius: var(--r-pill); min-height: 36px; }
+  .fare-best { border: 0; background: var(--good-soft); color: var(--good-ink); border-radius: 12px; }
+  .route-freq .pm button:first-child { background: var(--fill-2); color: var(--text); border: 0; }
+
+  /* Airport sections: the same segmented control as the route sheet. */
+  .airport-sheet .ap-tiles { gap: 2px; padding: 2px; margin: 0; border-radius: 9px; background: var(--seg-track); }
+  .airport-sheet .ap-tiles button { min-height: 34px; padding: 0 6px; border-radius: 7px; flex: 1 1 0; justify-content: center; }
+  .airport-sheet .ap-tiles button.on { background: var(--thumb); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+  .airport-sheet .ap-tiles .label, .airport-sheet .ap-tiles button.on .label { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
+  .airport-sheet .ap-tiles .ap-tab-count { font-size: var(--fs-2xs); }
+  .airport-sheet .ap-tiles-wrap, .airport-sheet .sheet-body > .ap-tiles { position: sticky; top: -6px; z-index: 2; }
+
+  /* Docked sub-tabs and tab bar: hairline on top only. */
+  .tabbar, .subnav { border-top: var(--hairline) solid var(--line-strong); }
+  .sheet-foot { border-top: var(--hairline) solid var(--line-strong); }
+
+  /* Header: smaller grey labels, bolder numbers. */
+  .hud .kpi .label { font-size: var(--fs-2xs); font-weight: 500; color: var(--muted); }
+  .hud .kpi .value { font-weight: 700; }
+  :root[data-theme='night'] .hud { background: color-mix(in srgb, #1c1c1e 80%, transparent); }
+  :root[data-theme='night'] .tabbar, :root[data-theme='night'] .subnav { background: color-mix(in srgb, #121212 84%, transparent); }
+
+  /* Start: a large title over one grouped list of bases. */
+  .start { background: var(--bg); }
+  .start-card { background: var(--bg); box-shadow: none; }
+  .start-intro { min-height: 0; padding: 56px 20px 8px; background: none; color: var(--text); }
+  .start-brand { color: var(--muted); font-size: var(--fs-xs); }
+  .start-brand small, .start-decoration, .start-intro p, .start-choice > p:not(.fine) { display: none; }
+  .start-intro h1 { margin: 10px 0 0; font-size: 34px; line-height: 1.25; letter-spacing: -.02em; color: var(--text); font-weight: 700; }
+  .start-intro h1 em { color: var(--accent); }
+  .start-choice { padding: 16px; background: none; }
+  .start-choice h2 { margin: 8px 4px 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .start-choice .base-grid { margin-top: 0; display: flex; flex-direction: column; gap: 0; background: var(--group); border-radius: var(--r-md); overflow: hidden; }
+  .base-grid button { position: relative; min-height: 48px; padding: 0 16px; border: 0; border-radius: 0; background: transparent; gap: 8px; }
+  .base-grid button + button::before { content: ''; position: absolute; left: 16px; right: 0; top: 0; border-top: var(--hairline) solid var(--line-strong); }
+  .base-grid button::after { content: '›'; color: var(--line-strong); font-size: var(--fs-xl); margin-left: 4px; }
+  .base-grid button .base-icon { display: none; }
+  .base-grid button strong { font-weight: 500; font-size: var(--fs-md); }
+  .base-grid button:hover { transform: none; }
+  .start-choice .fine { margin: 10px 4px 0; font-size: var(--fs-2xs); }
+}

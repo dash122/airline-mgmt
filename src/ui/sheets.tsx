@@ -260,6 +260,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     : health.key === 'empty' ? { text: '座位比旅客多很多', acts: [...(daily > 1 ? [{ label: '減一班', icon: 'seat' as IconName, run: onRemoveOne }] : []), { label: '降價 5%', icon: 'down', run: () => setFare(fareMult - FARE_STEP) }] }
     : betterFare ? { text: '還有更賺的票價', acts: [{ label: `改成 NT$${count((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare', run: () => setFare(betterFare.mult) }] }
     : { text: '載客和損益都不錯', acts: [] };
+  // The fare curve below already offers the best fare (with its gain), so don't say it twice.
+  const fareOnScreen = tab === 'fare' && curve.length > 2 && !!betterFare;
+  const shownAdvice = !advice || !fareOnScreen ? advice
+    : health.key === 'ok' ? null
+    : { ...advice, acts: advice.acts.filter((x) => x.icon !== 'fare') };
   // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
   const freqWhatIf = useMemo(() => {
     if (!net) return null;
@@ -287,10 +292,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <button onClick={onAdd} aria-label={`加一班來回${freqWhatIf?.add != null ? `，週損益 ${signed(freqWhatIf.add)}` : ''}`}>＋{freqWhatIf?.add != null && <small className={freqWhatIf.add >= 0 ? 'good' : 'bad'}>{signed(freqWhatIf.add)}</small>}</button>
         </span>
       </div>}>
-      {advice && (
+      {shownAdvice && (
         <div className={`route-advice ${health.key}`}>
-          <div className="route-advice-head"><Badge n={health.icon} tone={health.tone}>{health.label}</Badge><span>{advice.text}</span></div>
-          {advice.acts.length > 0 && <div className="route-advice-acts">{advice.acts.map((x) => <button key={x.label} onClick={x.run}><Icon n={x.icon} /> {x.label}</button>)}</div>}
+          <div className="route-advice-head"><Badge n={health.icon} tone={health.tone}>{health.label}</Badge><span>{shownAdvice.text}</span></div>
+          {shownAdvice.acts.length > 0 && <div className="route-advice-acts">{shownAdvice.acts.map((x) => <button key={x.label} onClick={x.run}><Icon n={x.icon} /> {x.label}</button>)}</div>}
         </div>
       )}
       {result && <div className="route-kpis">
