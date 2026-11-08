@@ -2885,3 +2885,15 @@ button.danger.solid, .confirm button.danger.solid {
 .ms-turned span { color: var(--muted); font-size: var(--fs-2xs); }
 .ms .share-more { width: 100%; }
 .ms .share-more-details { background: var(--panel); border: 1px solid var(--line); }
+
+/* ---------- Compact aircraft picker ---------- */
+.ac-picker { gap: 8px; }
+.ac-tabs { padding: 2px; }
+.ac-tab { flex: 1 1 0; padding: 6px 4px; font-size: var(--fs-xs); }
+.ac-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 188px; overflow-y: auto; overscroll-behavior: contain; padding: 1px; }
+.ac-tile { flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; min-height: 0; height: 36px; padding: 0 10px; }
+.ac-tile-main { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.ac-tile-main .ac-dot { align-self: center; flex: none; }
+.ac-tile-main small { flex: none; font-size: var(--fs-3xs); color: var(--muted); }
+.ac-tile strong { margin: 0; font-size: var(--fs-xs); }
+.ac-detail { color: var(--muted); font-size: var(--fs-2xs); padding: 0 2px; }
