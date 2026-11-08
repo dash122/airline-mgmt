@@ -49,28 +49,41 @@ export function routeColor(key: string) {
 
 export type SheetSize = 'compact' | 'half' | 'full';
 
-export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className }: {
+/** Step through a list of things (your routes, your airports) without going back to the list. */
+export type Pager = { label: string; prev?: () => void; next?: () => void };
+
+export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className, pager }: {
   title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode; summary?: ReactNode; className?: string;
+  /** Swipe the top of the sheet sideways (or use the arrows) to move to the previous or next item. */
+  pager?: Pager;
 }) {
   const [s, setS] = useState<SheetSize>(size);
   const [showInfo, setShowInfo] = useState(false);
   // Drag the top of a sheet: up to expand, down to shrink, down from the smallest size to close.
-  const drag = useRef<{ y: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; moved: boolean; axis: 'x' | 'y' | null } | null>(null);
   const [pull, setPull] = useState(0);
+  const [slide, setSlide] = useState(0);
   const onDown = (e: RPointerEvent) => {
     if ((e.target as HTMLElement).closest('button:not(.grab), a, input, select, summary')) return;
-    drag.current = { y: e.clientY, moved: false };
+    drag.current = { x: e.clientX, y: e.clientY, moved: false, axis: null };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: RPointerEvent) => {
     const d = drag.current; if (!d) return;
-    const dy = e.clientY - d.y;
-    if (Math.abs(dy) > 6) d.moved = true;
-    setPull(Math.max(0, dy));
+    const dy = e.clientY - d.y, dx = e.clientX - d.x;
+    if (!d.axis && Math.hypot(dx, dy) > 6) { d.moved = true; d.axis = pager && Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y'; }
+    if (d.axis === 'x') setSlide((dx < 0 && pager?.next) || (dx > 0 && pager?.prev) ? dx : dx / 4);
+    else if (d.axis === 'y') setPull(Math.max(0, dy));
   };
   const onUp = (e: RPointerEvent) => {
-    const d = drag.current; drag.current = null; setPull(0);
+    const d = drag.current; drag.current = null; setPull(0); setSlide(0);
     if (!d || !d.moved) return;
+    if (d.axis === 'x') {
+      const dx = e.clientX - d.x;
+      if (dx < -60) pager?.next?.();
+      else if (dx > 60) pager?.prev?.();
+      return;
+    }
     const dy = e.clientY - d.y;
     if (Math.abs(dy) < 36) return;
     if (dy < 0) setS(s === 'compact' ? 'half' : 'full');
@@ -84,7 +97,8 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
       {over && <div className="scrim" onClick={onClose} />}
       <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
         style={pull ? { transform: `translateY(${pull}px)`, transition: 'none' } : undefined}>
-        <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); }}>
+        <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
+          style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
         <div className="sheet-head">
           <div className="grow">
@@ -92,6 +106,11 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
             {sub && <div className="sub">{sub}</div>}
           </div>
           {action}
+          {pager && (pager.prev || pager.next) && <span className="pager" role="group" aria-label="上一個或下一個">
+            <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個">‹</button>
+            <small>{pager.label}</small>
+            <button onClick={pager.next} disabled={!pager.next} aria-label="下一個">›</button>
+          </span>}
           <button className="close" onClick={onClose} aria-label="關閉">✕</button>
         </div>
         </div>
@@ -198,9 +217,9 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 type RouteTab = 'fare' | 'flights' | 'market' | 'times';
 
-export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net, size = 'compact' }: {
+export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net, size = 'compact', pager }: {
   plan: Plan; routeKey: string; result?: RouteResult; net?: NetworkResult | null; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
-  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode; size?: SheetSize;
+  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode; size?: SheetSize; pager?: Pager;
 }) {
   const [a, b] = routeKey.split('-');
   const airlineLink = useContext(AirlineLink);
@@ -254,7 +273,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   }, [plan, net, a, b, routeKey]);
   const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場'], ['times', '時刻']];
   return (
-    <Sheet size={size} className="route-sheet" summary={<div className="route-preview-summary">
+    <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
       <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
       <div className="route-preview-meta"><b>{frequencyLabel(daily)}</b><span>{result ? `${Math.round(result.pax).toLocaleString()} / ${Math.round(result.seats).toLocaleString()} 人／週` : '正在更新旅客數'}</span></div>
       <div className="route-preview-profit"><span>每週航段損益</span><b className={result && profit < 0 ? 'bad' : 'good'}>{result ? money(profit) : '—'}</b></div>

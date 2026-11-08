@@ -208,6 +208,15 @@ export default function App() {
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   const showPanel = !selection && !newRoute && panel;
+  /** Previous / next item in a list, for swiping across route and airport sheets. */
+  const pagerFor = (list: string[], id: string, go: (id: string) => void) => {
+    const i = list.indexOf(id);
+    if (i < 0 || list.length < 2) return undefined;
+    return { label: `${i + 1}/${list.length}`, prev: i > 0 ? () => go(list[i - 1]) : undefined, next: i < list.length - 1 ? () => go(list[i + 1]) : undefined };
+  };
+  const routeOrder = routePairs(plan).map((r) => r.key);
+  const airportOrder = [...new Set(routePairs(plan).flatMap((r) => [r.a, r.b]))]
+    .sort((x, y) => (x === plan.base ? -1 : y === plan.base ? 1 : x === plan.hub ? -1 : y === plan.hub ? 1 : AIRPORT_BY_CODE[x].name.localeCompare(AIRPORT_BY_CODE[y].name)));
   const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'airports' || panel === 'airlines');
 
   return (
@@ -256,7 +265,7 @@ export default function App() {
       )}
 
       {routeKey && routeExists && (
-        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
+        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => { const full = routeFull; select({ kind: 'route', id: k }); setRouteFull(full); })} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}
@@ -274,7 +283,7 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {airport && (
-        <AirportSheet key={airport} plan={plan} result={result} code={airport}
+        <AirportSheet key={airport} pager={pagerFor(airportOrder, airport, (c) => select({ kind: 'airport', id: c }))} plan={plan} result={result} code={airport}
           onConnect={() => planRoute(airport)}
           onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
