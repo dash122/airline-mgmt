@@ -11,6 +11,8 @@ import {
 import type { AirlineNetwork } from '../sim/networks';
 import { airlineName, hhmm, localMinutes, simulate, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
 import { createComputeClient } from './compute-client';
+import type { DayRecord } from './clock';
+import { CodeshareDash } from './codeshare-dash';
 import { HostedHub } from './hosted';
 import { count, money, pct } from './format';
 import { Head, routeName, Sheet } from './sheets';
@@ -64,13 +66,14 @@ function useActive(plan: Plan) {
 }
 
 /** The 航線 tab's 共享 view: what you share, then the best new ones across all partners. */
-export function CodeshareHub({ plan, onOpen, onShare, onPartners, onOpenHosted, onHost }: {
-  plan: Plan; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
+export function CodeshareHub({ plan, history, onOpen, onShare, onPartners, onOpenHosted, onHost }: {
+  plan: Plan; history: DayRecord[]; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
   onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void;
 }) {
   const [dir, setDir] = useState<'out' | 'in'>('out');
   return (
     <>
+      <CodeshareDash plan={plan} history={history} onOpen={onOpen} onOpenHosted={onOpenHosted} />
       <div className="seg two cs-dir-seg" role="tablist" aria-label="共享方向">
         <button role="tab" aria-selected={dir === 'out'} className={dir === 'out' ? 'on' : ''} onClick={() => setDir('out')}>你賣夥伴航線{plan.codeshares?.length ? ` ${plan.codeshares.length}` : ''}</button>
         <button role="tab" aria-selected={dir === 'in'} className={dir === 'in' ? 'on' : ''} onClick={() => setDir('in')}>夥伴賣你航線{plan.hosted?.length ? ` ${plan.hosted.length}` : ''}</button>

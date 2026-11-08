@@ -37,6 +37,9 @@ export interface DayRecord {
   revenue: number;
   cost: number;
   pax: number;
+  /** Codeshare net a day (both directions, fees out) and travellers a day. */
+  cs?: number;
+  csPax?: number;
 }
 
 export interface GameState {

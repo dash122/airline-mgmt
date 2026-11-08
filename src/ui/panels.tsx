@@ -1,4 +1,5 @@
 import { CodeshareHub } from './codeshare';
+import type { DayRecord } from './clock';
 import { ScheduleBoard, shiftText } from './ScheduleBoard';
 import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
@@ -28,8 +29,8 @@ type RouteSort = 'need' | 'profit' | 'load' | 'share';
 const SORTS: [RouteSort, string][] = [['need', '建議'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']];
 export type RoutesView = 'own' | 'share';
 
-export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
-  plan: Plan; result: NetworkResult | null; view: RoutesView; onView: (v: RoutesView) => void;
+export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
+  plan: Plan; result: NetworkResult | null; history: DayRecord[]; view: RoutesView; onView: (v: RoutesView) => void;
   onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
   onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
   onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void; onClose: () => void;
@@ -76,7 +77,7 @@ export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, 
           <button role="tab" aria-selected={view === 'share'} className={view === 'share' ? 'on' : ''} onClick={() => onView('share')}><Icon n="link" /> 代碼共享{shared ? ` ${shared}` : ''}</button>
         </div>
       )}
-      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} onOpenHosted={onOpenHosted} onHost={onHost} />}
+      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} history={history} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} onOpenHosted={onOpenHosted} onHost={onHost} />}
       {view === 'own' && <>
       {rows.length === 0 && (
         <div className="empty-cta">
