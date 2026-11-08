@@ -466,7 +466,7 @@ export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | nu
 
 /** Same ideas hook as the hub, limited to partner routes that start or end at this route's airports. Worked out only when opened. */
 function useNearIdeas(plan: Plan, near: string[], enabled: boolean) {
-  const [state, setState] = useState<{ plan: Plan; key: string; ideas: CodeshareIdea[] } | null>(null);
+  const [state, setState] = useState<{ plan: Plan; key: string; ideas: CodeshareIdea[]; done: boolean } | null>(null);
   const worker = useRef<Worker | null>(null);
   const seq = useRef(0);
   const key = near.join('|');
@@ -474,14 +474,15 @@ function useNearIdeas(plan: Plan, near: string[], enabled: boolean) {
     if (!enabled || !plan.fleet.length) return;
     const w = worker.current ??= createComputeClient('codeshare');
     const id = ++seq.current;
-    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[] }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, key, ideas: e.data.ideas }); };
+    // The worker sends partial lists while it searches; only the last one is the answer.
+    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[]; partial?: boolean }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, key, ideas: e.data.ideas, done: !e.data.partial }); };
     w.addEventListener('message', onMessage);
     w.postMessage({ id, plan, near: key.split('|') });
     return () => w.removeEventListener('message', onMessage);
   }, [plan, key, enabled]);
   useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
   return state && state.plan === plan && state.key === key
-    ? state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null)
+    ? { ideas: state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null), done: state.done }
     : null;
 }
 
@@ -489,16 +490,18 @@ function useNearIdeas(plan: Plan, near: string[], enabled: boolean) {
 export function RouteExtensions({ plan, a, b }: { plan: Plan; a: string; b: string }) {
   const open = useContext(CodeshareLink);
   const [on, setOn] = useState(false);
-  const ideas = useNearIdeas(plan, [a, b], on);
+  const result = useNearIdeas(plan, [a, b], on);
+  const ideas = result?.ideas;
+  const done = !!result?.done;
   return (
     <div className="ext">
       <button className="ext-toggle" aria-expanded={on} onClick={() => setOn((v) => !v)}>
         <span><Icon n="link" /> 延伸這條航線</span>
-        <small>{ideas ? `${ideas.length} 條可接` : '夥伴的航線'}</small>
+        <small>{done && ideas ? `${ideas.length} 條可接` : ideas?.length ? '比較中…' : '夥伴的航線'}</small>
         <span className="chev" aria-hidden="true">›</span>
       </button>
-      {on && !ideas && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較夥伴航線</div>}
-      {on && ideas && ideas.length === 0 && <div className="hint center">這兩端接不上夥伴的航線</div>}
+      {on && !done && !ideas?.length && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較夥伴航線</div>}
+      {on && done && ideas && ideas.length === 0 && <div className="hint center">這兩端接不上夥伴的航線</div>}
       {on && ideas && ideas.length > 0 && (
         <ul className="ext-list">
           {ideas.slice(0, 5).map((i) => {
