@@ -2748,3 +2748,70 @@ button.danger.solid, .confirm button.danger.solid {
 .share-more-details[open] > summary::after { transform: rotate(90deg); }
 .share-more-details > :not(summary) { padding-bottom: 12px; }
 .ext .hint.center { margin: 0; padding: 12px 14px; border: 0; border-radius: var(--r-md); background: var(--group, var(--panel)); }
+
+/* ---------- Visual hierarchy and rhythm (consolidated pass; this block wins over the ones above it) ----------
+   Type roles   title 20–22/700 · row title 16/600 · value 16/700 · body 14 · secondary 13 muted · meta 12 muted.
+   Rhythm       4 / 8 / 12 / 16. Blocks sit 12 apart; a section label adds 8 above it and sits close to its group.
+   Surfaces     one grouped card = --group, --r-md, no border or shadow; rows inside are separated by hairlines.
+   Colour       status colour only on the number that decides the row (profit, load bar). Everything else is text or muted.
+   Meta lines   words and numbers, no icons, unless the icon is the only label. */
+:root { --gap-block: 12px; --gap-inner: 8px; --row-min: 48px; }
+
+@media (max-width: 819px) {
+  /* Rhythm */
+  .sheet-body, .airport-sheet .sheet-body { gap: var(--gap-block); padding: 4px 16px 16px; }
+  .sheet h4 { margin: 8px 4px -4px; font-weight: 600; }
+  .routes-view { margin: 0; }
+  .routes-view button { min-height: 32px; }
+  .swipe-hint { margin: 0; }
+
+  /* Meta lines: quiet words, medium numbers, no icons where a word or unit already says what it is. */
+  .ins { gap: 2px 12px; font-size: var(--fs-xs); }
+  .ins .in .ico { display: none; }
+  .ins .in:not(:has(.in-w, .in-u)) .ico { display: inline-block; }
+  .in .in-v { font-weight: 500; }
+
+  /* Rows: title 16/600, the deciding number 16/700, one muted line under the title. */
+  .route-row-main { padding: 10px 8px 10px 12px; }
+  .route-row-top strong, .st-top .st-title, .fleet-top .name { font-size: var(--fs-md); font-weight: 600; }
+  .route-row-profit, .fleet-top .pill, .st-top .pill { font-size: var(--fs-md); font-weight: 700; }
+  .fleet-top .name .ins, .st-top .name .ins { font-weight: 400; }
+  .markets li, .report li, .fleet li, .stations li, .timetable li { padding-top: 8px; padding-bottom: 8px; }
+
+  /* Profit reads the same everywhere: coloured number, muted unit. No pill. */
+  .fleet-top .pill, .st-top .pill { margin-left: auto; padding: 0; border-radius: 0; background: none; white-space: nowrap; }
+  .fleet-top .pill.good, .st-top .pill.good { color: var(--good); }
+  .fleet-top .pill.bad, .st-top .pill.bad { color: var(--bad); }
+  .fleet-top .pill small, .st-top .pill small, .route-row-profit small { color: var(--muted); font-size: var(--fs-2xs); font-weight: 500; }
+
+  /* Route rows: the status badge goes to the end, so the load bars line up down the list; only warn or bad load is coloured. */
+  .route-row-meta .badge { order: 3; margin-left: auto; }
+  .route-row-load b.good { color: var(--text); }
+  .route-row-load b { font-weight: 600; }
+
+  /* One summary line instead of three stat blocks. */
+  .routes-summary { justify-content: space-between; align-items: baseline; gap: 4px 12px; padding: 0 4px; }
+  .routes-summary > span { gap: 6px; }
+  .routes-summary b { font-size: var(--fs-lg); font-weight: 700; }
+  .routes-summary-meta { color: var(--muted); font-size: var(--fs-xs); }
+  .routes-summary-meta b { font-size: var(--fs-xs); font-weight: 600; }
+
+  /* One solid button per screen. The action repeated on every row is tinted, like a "Get" button. */
+  .cs-ideas { border: 0; }
+  .cs-ideas > li > button.small { min-width: 0; min-height: 32px; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); box-shadow: none; font-size: var(--fs-sm); font-weight: 600; }
+  .cs-ideas > li > button.small.secondary { background: var(--fill-2); color: var(--muted); }
+  .cs-gain { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; column-gap: 2px; row-gap: 3px; width: 88px; white-space: nowrap; }
+  .cs-gain b { font-size: var(--fs-md); font-weight: 700; }
+  .cs-gain small { color: var(--muted); font-size: var(--fs-2xs); margin: 0; }
+  .cs-gain > :last-child:not(small):not(b) { flex-basis: 100%; }
+
+  /* Two segmented levels: the tab switcher is the strong one; a second control inside a page is shorter and lighter. */
+  .seg.switcher button { min-height: 36px; font-weight: 600; }
+  .sheet-body > .seg:not(.route-tabs) button { min-height: 28px; font-size: var(--fs-sm); font-weight: 500; }
+  .sheet-body > .seg:not(.route-tabs) button.on { font-weight: 600; }
+
+  /* A control nested under another segmented control reads as filter chips, so there is one segmented level per screen. */
+  .cs-dir-seg { display: flex; gap: 6px; padding: 0; border-radius: 0; background: none; }
+  .cs-dir-seg button { flex: 0 0 auto; min-height: 32px; padding: 0 14px; border-radius: var(--r-pill); background: var(--fill-2); color: var(--text); box-shadow: none; font-size: var(--fs-sm); font-weight: 500; }
+  .cs-dir-seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+}

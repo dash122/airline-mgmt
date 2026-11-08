@@ -245,6 +245,14 @@ export function HostedNote({ net, routeKey }: { net: NetworkResult | null | unde
   const open = useContext(HostedLink);
   const list = Object.values(net?.hosted ?? {}).filter((h) => h.key === routeKey).sort((x, y) => y.pax - x.pax);
   if (!open) return null;
+  // Nobody sells this route yet: one quiet row, the same as "extend this route" below it.
+  if (!list.length) return (
+    <button className="ext-toggle" onClick={() => open(routeKey)}>
+      <span><Icon n="link" /> 讓夥伴賣這條</span>
+      <small>夥伴</small>
+      <span className="chev" aria-hidden="true">›</span>
+    </button>
+  );
   return (
     <div className="chips scroll hosted-note">
       {list.map((h) => (
@@ -252,7 +260,7 @@ export function HostedNote({ net, routeKey }: { net: NetworkResult | null | unde
           <i className="dash" style={{ borderColor: colorOf(h.airline) }} />{airlineName(h.airline)} 賣 · {count(h.pax)} 人
         </button>
       ))}
-      <button className="chip" onClick={() => open(routeKey)}><Icon n="link" /> {list.length ? '其他夥伴' : '讓夥伴賣這條'}</button>
+      <button className="chip" onClick={() => open(routeKey)}><Icon n="link" /> 其他夥伴</button>
     </div>
   );
 }
