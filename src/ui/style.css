@@ -2075,6 +2075,8 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
   .sheet { border-radius: var(--r-lg) var(--r-lg) 0 0; }
   .sheet.full, .airport-sheet.full { top: calc(env(safe-area-inset-top) + var(--hud-top) + var(--hud-h) + 6px); }
   .sheet.half { max-height: 58%; }
+  /* The home sheet keeps one height at every tab, so the section switcher stays where the thumb left it. */
+  .sheet.nav-root.half { height: 58%; }
   .grab { position: absolute; z-index: 1; top: 0; left: 50%; width: 96px; min-height: 0; height: 18px; padding: 6px 0 0; transform: translateX(-50%); }
   .grab span { width: 36px; height: 4px; }
   .sheet-head, .airport-sheet .sheet-head { padding: 16px 8px 8px 16px; gap: 6px; }
@@ -2826,3 +2828,5 @@ button.danger.solid, .confirm button.danger.solid {
   .cs-dir-seg button { flex: 0 0 auto; min-height: 32px; padding: 0 14px; border-radius: var(--r-pill); background: var(--fill-2); color: var(--text); box-shadow: none; font-size: var(--fs-sm); font-weight: 500; }
   .cs-dir-seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 }
+/* Partner tools close the route sheet instead of crowding the numbers above the tabs. */
+.route-partners { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }

@@ -355,7 +355,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <button onClick={onAdd} aria-label={`加一班來回${freqWhatIf?.add != null ? `，週損益 ${signed(freqWhatIf.add)}` : ''}`}>＋{freqWhatIf?.add != null && <small className={freqWhatIf.add >= 0 ? 'good' : 'bad'}>{signed(freqWhatIf.add)}</small>}</button>
         </span>
       </div>}>
-      {shownAdvice && (
+      {shownAdvice && !(health.key === 'ok' && shownAdvice.acts.length === 0) && (
         <div className={`route-advice ${health.key}`}>
           <div className="route-advice-head"><Badge n={health.icon} tone={health.tone}>{health.label}</Badge><span>{shownAdvice.text}</span></div>
           {shownAdvice.acts.length > 0 && <div className="route-advice-acts">{shownAdvice.acts.map((x) => <button key={x.label} onClick={x.run}><Icon n={x.icon} /> {x.label}</button>)}</div>}
@@ -376,8 +376,6 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
       {result && <FedByNote net={net} routeKey={routeKey} routePax={result.pax} />}
-      {result && <HostedNote net={net} routeKey={routeKey} />}
-      {result && <RouteExtensions plan={plan} a={a} b={b} />}
       <div className="seg route-tabs" role="tablist" aria-label="航線內容">
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
@@ -405,6 +403,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
             {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>
         </div>}
       </>}
+      {result && <div className="route-partners"><HostedNote net={net} routeKey={routeKey} /><RouteExtensions plan={plan} a={a} b={b} /></div>}
     </Sheet>
   );
 }
@@ -449,8 +448,8 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
         </div>
         <div className="fare-deltas" aria-live="polite">
           <span><small>{changed ? '週損益變化' : '網路週損益'}</small><b className={!changed ? '' : dProfit >= 0 ? 'good' : 'bad'}>{changed ? signed(dProfit) : money(now.profit)}</b></span>
-          <span><small>載客率</small><b className={tone(shown.loadFactor)}>{changed ? `${pct(now.loadFactor)}→${pct(shown.loadFactor)}` : pct(shown.loadFactor)}</b></span>
-          <span><small>溢出</small><b>{short(shown.spill)}</b></span>
+          {changed && <span><small>載客率</small><b className={tone(shown.loadFactor)}>{`${pct(now.loadFactor)}→${pct(shown.loadFactor)}`}</b></span>}
+          {changed && <span><small>溢出</small><b>{short(shown.spill)}</b></span>}
         </div>
       </div>
       {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
