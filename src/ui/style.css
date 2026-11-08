@@ -2631,3 +2631,17 @@ button:active { transition: transform .08s; }
 .cs-alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .cs-alerts button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 10px; text-align: left; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card, transparent); color: inherit; font: inherit; }
 .cs-alerts small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-xs); }
+
+/* Button colours, one look per role. This block comes last, so it wins over the older layers above.
+   Destructive actions (stop, cancel a flight or a share) are always a red tint with dark red text and a red line.
+   Earlier rules had left "取消共享" as red text on the teal-tinted secondary fill, which read as green. */
+button.danger, button.secondary.danger, .cs-foot button.danger, .cs-acts button.danger {
+  background: var(--bad-soft); color: var(--bad-ink); border: 1px solid var(--bad-line); box-shadow: none;
+}
+button.danger:not(:disabled):hover, button.secondary.danger:not(:disabled):hover {
+  background: color-mix(in srgb, var(--bad) 20%, var(--panel)); border-color: var(--bad-line); color: var(--bad-ink);
+}
+/* The confirm step of a destructive action is solid red, so it reads as the final, irreversible tap. */
+button.danger.solid, .confirm button.danger.solid {
+  background: var(--bad); color: var(--accent-text); border: 1px solid transparent;
+}

@@ -1,5 +1,5 @@
 import { createComputeClient } from './compute-client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
@@ -106,7 +106,10 @@ export default function App() {
   const marketsWanted = useRef(false);
   // Keep route detail metrics in sync with the current itinerary while the worker
   // computes the full network result used by the map and other panels.
-  const liveRouteResult = useMemo(() => marketsBuilt && plan && selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey) ? simulate(plan) : null, [plan, selectedRouteKey, marketsBuilt]);
+  // The simulation runs synchronously on the main thread, so it is driven by a deferred copy of the plan: a tap
+  // commits and paints its feedback first, and the route metrics catch up in the next render.
+  const deferredPlan = useDeferredValue(plan);
+  const liveRouteResult = useMemo(() => marketsBuilt && deferredPlan && selectedRouteKey && routePairs(deferredPlan).some((r) => r.key === selectedRouteKey) ? simulate(deferredPlan) : null, [deferredPlan, selectedRouteKey, marketsBuilt]);
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>('routes');
