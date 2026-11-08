@@ -86,16 +86,19 @@ export function stayHomeUtility(refFare: number, distKm: number): number {
   return airUtility(refFare, distKm, 7) - NO_TRAVEL_GAP;
 }
 
-/** How attractive a departure time is to travellers (local minutes after midnight). */
+/**
+ * How attractive a departure time is to travellers (local minutes after midnight). Night departures are the least
+ * popular but not unsellable: red-eyes still fill for travellers who want to arrive early or save a hotel night.
+ */
 export function timeOfDayQuality(localMin: number): number {
   const h = localMin / 60;
-  if (h < 6) return 0.15;
+  if (h < 6) return 0.4;
   if (h < 7) return 0.8;
   if (h < 10) return 1.35;
   if (h < 16) return 0.85;
   if (h < 20) return 1.3;
   if (h < 22) return 0.75;
-  return 0.25;
+  return 0.45;
 }
 
 /** Flights longer than this (km) are long-haul: travellers like to leave late, sleep on board and land in the morning. */
@@ -109,6 +112,6 @@ export const LONG_HAUL_TIMES_KM = 4500;
 export function departureQuality(depLocal: number, arrLocal: number, distKm: number): number {
   if (distKm <= LONG_HAUL_TIMES_KM) return timeOfDayQuality(depLocal);
   const h = depLocal / 60, a = arrLocal / 60;
-  const dep = h < 2 ? 0.9 : h < 6 ? 0.2 : h < 10 ? 1.2 : h < 16 ? 0.9 : h < 20 ? 1.1 : 1.35;
-  return dep * (a >= 0.5 && a < 5 ? 0.5 : 1);
+  const dep = h < 2 ? 0.95 : h < 6 ? 0.5 : h < 10 ? 1.2 : h < 16 ? 0.9 : h < 20 ? 1.1 : 1.35;
+  return dep * (a >= 0.5 && a < 5 ? 0.7 : 1);
 }
