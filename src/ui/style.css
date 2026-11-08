@@ -2147,6 +2147,115 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
   .directory-search, .search, .directory-toolbar select { background: var(--group); }
 }
 
+/* ---------- Direct manipulation (2026-11-08) ----------
+   Change things by touching the numbers: drag the fare curve, swipe route rows, drag flights.
+   While a finger is down the readout shows what would happen; nothing applies until release. */
+.fare-control { display: flex; flex-direction: column; gap: 8px; }
+.fare-read { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.fare-price { display: flex; flex-direction: column; min-width: 0; }
+.fare-price small { color: var(--muted); font-size: var(--fs-2xs); display: inline-flex; align-items: center; gap: 4px; }
+.fare-price b { font-size: var(--fs-2xl); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.fare-price .good { color: var(--good); font-weight: 700; }
+.fare-deltas { display: grid; grid-template-columns: auto auto auto; gap: 2px 12px; text-align: right; }
+.fare-deltas span { display: flex; flex-direction: column; }
+.fare-deltas small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
+.fare-deltas b { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fare-deltas b.good { color: var(--good); } .fare-deltas b.bad { color: var(--bad); } .fare-deltas b.warn { color: var(--warn); }
+.fare-control .fare-curve svg { height: 112px; outline: none; }
+.fare-control .fare-curve svg:focus-visible { box-shadow: 0 0 0 2px var(--accent-line); border-radius: var(--r-sm); }
+.fare-control .fare-curve .was { fill: var(--panel); stroke: var(--muted); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.fare-control.scrubbing .fare-curve .now { fill: var(--sel); }
+.fare-control.scrubbing .fare-price b { color: var(--sel); }
+.fare-best { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.fare-best b.good { color: var(--good); }
+.freq-pm button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; gap: 2px; }
+.freq-pm button small { font-size: var(--fs-3xs); font-weight: 700; white-space: nowrap; }
+.freq-pm button small.good { color: var(--good); } .freq-pm button small.bad { color: var(--bad); }
+.route-freq .freq-pm button { width: auto; min-width: 64px; padding: 0 10px; height: 48px; }
+.route-freq .freq-pm button:last-child small, .route-freq .freq-pm button:last-child small.good, .route-freq .freq-pm button:last-child small.bad { color: var(--accent-text) !important; opacity: .92; }
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sr-only:focus { position: static !important; width: auto; height: auto; margin: 4px; clip: auto; }
+
+/* Route rows: swipe right = add a round trip, left = remove one. */
+.route-row { position: relative; }
+.route-row-main { position: relative; z-index: 1; background: var(--group, var(--panel)); touch-action: pan-y; transition: transform .22s cubic-bezier(.2, .8, .2, 1); user-select: none; -webkit-user-select: none; }
+.route-row-under { position: absolute; inset: 0; display: none; align-items: center; justify-content: space-between; padding: 0 18px; font-size: var(--fs-sm); font-weight: 700; }
+.route-row.swiping .route-row-under { display: flex; }
+.route-row-under.add { background: var(--accent-soft); color: var(--accent); }
+.route-row-under.remove { background: var(--bad-soft); color: var(--bad-ink); }
+.route-row-under.add .u-remove, .route-row-under.remove .u-add { visibility: hidden; }
+.route-row-under span { display: inline-flex; align-items: center; gap: 4px; transition: transform .15s; }
+.route-row.armed .route-row-under.add { background: var(--accent); color: var(--accent-text); }
+.route-row.armed .route-row-under.remove { background: var(--bad); color: #fff; }
+.route-row.armed .route-row-under span { transform: scale(1.08); }
+.route-row-name small { color: var(--muted); font-weight: 500; font-size: var(--fs-xs); margin-left: 6px; }
+
+/* Route list: grouped under each hub, sorted by a chip row. */
+.route-tools { display: flex; align-items: center; gap: 6px; }
+.route-tools .chip { min-height: 36px; }
+.route-tools .sep { width: 1px; align-self: stretch; margin: 6px 2px; background: var(--line-strong); flex: none; }
+.route-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 6px 4px 0; }
+.route-group-head h4 { margin: 0 !important; display: flex; align-items: center; gap: 6px; }
+.route-group-head b { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.route-group-head b.good { color: var(--good); } .route-group-head b.bad { color: var(--bad); }
+.swipe-hint { color: var(--muted); font-size: var(--fs-2xs); text-align: center; margin: -2px 0 0; }
+
+/* Schedule board: one column per aircraft, time runs down. Press and hold a flight to drag it. */
+.board { display: flex; flex-direction: column; gap: 4px; overflow-x: auto; padding-bottom: 8px; }
+.board-head, .board-grid { display: grid; grid-template-columns: 30px repeat(var(--cols, 3), minmax(84px, 1fr)); gap: 6px; min-width: 0; }
+.board-head { position: sticky; top: 0; z-index: 3; padding: 6px 0; background: var(--bg); }
+.board-who { display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; }
+.board-who b { font-size: var(--fs-sm); }
+.board-who small { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.board-who small.bad { color: var(--bad); }
+.board-grid { position: relative; }
+.board-hours { position: relative; }
+.board-hours span { position: absolute; right: 2px; transform: translateY(-50%); font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.board-hours span:first-child { transform: none; }
+.board-col { position: relative; border-radius: var(--r-sm); cursor: copy; min-width: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--muted) 10%, transparent) 6px 7px), var(--group, var(--panel)); }
+.board-line { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--muted) 18%, transparent); pointer-events: none; }
+.board-line.major { border-top-color: color-mix(in srgb, var(--muted) 35%, transparent); }
+.board-blk { position: absolute; left: 3px; right: 3px; border-radius: 6px; color: #fff; padding: 3px 5px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 0;
+  overflow: hidden; text-align: left; line-height: 1.2; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: box-shadow .15s, transform .15s; }
+.board-blk b { font-size: var(--fs-2xs); font-weight: 700; white-space: nowrap; }
+.board-blk small { font-size: var(--fs-2xs); opacity: .85; font-variant-numeric: tabular-nums; }
+.board-blk.sel { outline: 2.5px solid var(--text); outline-offset: 1px; z-index: 1; }
+.board-blk.lifted { z-index: 2; transform: scale(1.04); box-shadow: 0 6px 16px rgba(0, 0, 0, .25); overflow: visible; }
+.board-blk.clash { outline: 2.5px solid var(--bad); outline-offset: 1px; box-shadow: 0 0 0 6px var(--bad-soft), 0 6px 16px rgba(0, 0, 0, .25); }
+.board-tip { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); background: var(--text); color: var(--panel); border-radius: var(--r-pill); padding: 2px 8px; font-size: var(--fs-2xs); font-weight: 700; white-space: nowrap; }
+.board-blk.clash .board-tip { background: var(--bad); color: #fff; }
+.board-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad); pointer-events: none; z-index: 0; opacity: .8; }
+.board-blk { z-index: 1; }
+
+/* The money in the header opens the finance report. */
+.money-btn { display: flex; align-items: stretch; gap: inherit; flex: 1 1 auto; min-width: 0; padding: 0; background: none; border: 0; text-align: left; color: inherit; border-radius: var(--r-sm); cursor: pointer; }
+.money-btn:disabled { cursor: default; opacity: 1; }
+.money-btn .money-chev { color: var(--accent); font-weight: 700; }
+.money-btn.on .money-chev { display: inline-block; transform: rotate(90deg); }
+@media (max-width: 819px) {
+  .hud .money-btn { grid-column: 1 / 3; grid-row: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; position: relative; }
+  .hud .money-btn .kpi { grid-area: auto !important; }
+  .hud .money-btn::after { content: ''; position: absolute; inset: -6px -4px; }
+}
+
+/* Airline directory: results first; one chip row, the rest behind 篩選. */
+.dir-bar { align-items: center; }
+.dir-bar .sep { width: 1px; height: 22px; background: var(--line-strong); flex: none; margin: 0 2px; }
+.dir-bar .chip { min-height: 36px; display: inline-flex; align-items: center; gap: 4px; }
+.dir-bar .filter-chip.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.dir-filters { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; border-radius: var(--r-md); background: var(--group, var(--panel)); }
+.dir-filters .directory-filter-label { margin: 4px 0 0; }
+.chips.wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips.wrap .chip { min-height: 36px; }
+.dir-filters .secondary { margin-top: 6px; }
+
+/* Previous / next in route and airport sheets (also: swipe the sheet top sideways). */
+.pager { display: inline-flex; align-items: center; gap: 0; flex: none; border-radius: var(--r-pill); background: var(--seg-track, var(--surface-2)); }
+.pager button { width: 34px; height: 34px; border-radius: var(--r-pill); font-size: var(--fs-lg); font-weight: 700; color: var(--accent); position: relative; }
+.pager button::after { content: ''; position: absolute; inset: -5px -2px; }
+.pager button:disabled { color: var(--line-strong); }
+.pager small { font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 26px; text-align: center; }
 /* ---------- Codeshare hub and sheet ---------- */
 .routes-view { margin: 0 0 10px; }
 .routes-view button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; }
