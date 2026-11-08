@@ -15,7 +15,7 @@ export function AirlineName({ airline }: { airline: Airline }) {
   const open = useAirlineLink();
   const body = <><i style={{ background: airline.color }} />{airline.name}<em>{KIND_NAMES[airline.kind]}</em></>;
   if (!open || airline.id === 'other') return <span className="airline">{body}</span>;
-  return <button className="airline link" onClick={(e) => { e.stopPropagation(); open(airline.id); }} aria-label={`看${airline.name}的航線網`}>{body}<span className="chev">›</span></button>;
+  return <button className="airline link" onClick={(e) => { e.stopPropagation(); open(airline.id); }} aria-label={`看${airline.name}的航線網`}>{body}<span className="chev" aria-hidden="true" /></button>;
 }
 
 const OWN_COLOR = 'var(--accent)';

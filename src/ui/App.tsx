@@ -593,7 +593,7 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
             <button onClick={() => { close(); onReport(); }} disabled={!result}>
               <span className="grow">報表</span>
               <span className="island-val">{last ? <>上日 <b className={toneOf(last.revenue - last.cost)}>{money(last.revenue - last.cost)}</b></> : '尚未結算'}</span>
-              <span className="chev" aria-hidden="true">›</span>
+              <span className="chev" aria-hidden="true" />
             </button>
             <button onClick={() => { onTheme(); }}><span className="grow">{theme === 'day' ? '夜間模式' : '日間模式'}</span></button>
             <button className="danger-text" onClick={() => { close(); onReset(); }}><span className="grow">重新開始</span></button>

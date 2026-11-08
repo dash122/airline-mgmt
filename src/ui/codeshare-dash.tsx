@@ -78,7 +78,7 @@ export function CodeshareDash({ plan, history, onOpen, onOpenHosted }: {
               <button onClick={a.open}>
                 <Badge n={a.tone === 'accent' ? 'spill' : 'warn'} tone={a.tone}>{a.text}</Badge>
                 <small>{a.sub}</small>
-                <span className="chev" aria-hidden="true">›</span>
+                <span className="chev" aria-hidden="true" />
               </button>
             </li>
           ))}

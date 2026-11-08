@@ -93,7 +93,7 @@ export function RouteRow({ name, sub, swatch, figures, daily, onOpen, onAdd, onR
             <small className="route-row-sub">{frequencyLabel(daily)}{sub ? ` · ${sub}` : ''}</small>
           </span>
         </span>
-        <span className="chev" aria-hidden="true">›</span>
+        <span className="chev" aria-hidden="true" />
       </button>
       {canAdd && <button className="sr-only" onClick={onAdd}>{name} 加一班來回</button>}
       {canRemove && <button className="sr-only" onClick={onRemove}>{name} 減一班來回</button>}

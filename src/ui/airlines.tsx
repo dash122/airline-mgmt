@@ -113,7 +113,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
             <span className="airline-card-title"><b>{net.airline.name}</b><em>{KIND_NAMES[net.airline.kind]}</em></span>
             <small>{countryName(net.airline.country)} <span>·</span> 樞紐 {hubCodes(net) || '—'}</small>
             <span className="airline-card-stats"><span><b>{short(net.flights)}</b> 班/週</span><span><b>{net.routes.length}</b> 條航線</span>{partnerCount(net.airline.id) > 0 ? <i className="partner"><Icon n="link" /> 共享 {partnerCount(net.airline.id)} 條</i> : routes.length > 0 ? <i>{routes.length} 條同線</i> : airports.length > 0 ? <i>{airports.length} 個同機場</i> : null}</span>
-          </span><span className="chev" aria-hidden="true">›</span>
+          </span><span className="chev" aria-hidden="true" />
         </button>))}</div>
       {!list.length && <div className="directory-empty"><span>⌕</span><b>{query ? '找不到符合的航空公司' : '這個篩選沒有航空公司'}</b><small>試試其他地區、類型或搜尋字詞。</small><button className="secondary" onClick={() => { setQ(''); setContinent('all'); setKind('any'); }}>清除篩選</button></div>}
     </Sheet>
@@ -297,7 +297,7 @@ function Hubs({ net, onPickAirport, onShowRoutes }: { net: AirlineNetwork; onPic
           );
         })}
       </ul>
-      {others > 0 && <div className="hint">另飛 {count(others)} 個機場 · {net.pointToPoint ? '這幾個' : '樞紐'}占 {pct(hubFlights / net.flights)} 班次 <button className="link-btn" onClick={onShowRoutes}>全部航線 ›</button></div>}
+      {others > 0 && <div className="hint">另飛 {count(others)} 個機場 · {net.pointToPoint ? '這幾個' : '樞紐'}占 {pct(hubFlights / net.flights)} 班次 <button className="link-btn" onClick={onShowRoutes}>全部航線<span className="chev inline" aria-hidden="true" /></button></div>}
       <h4>飛到的國家</h4>
       <div className="chips">
         {countryCounts(net).map(([c, n]) => <span key={c} className="chip">{countryName(c)} <small>{n}</small></span>)}

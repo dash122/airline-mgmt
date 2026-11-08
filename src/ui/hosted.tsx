@@ -85,7 +85,7 @@ export function HostedHub({ plan, onOpen, onShare }: { plan: Plan; onOpen: (key:
                         <small className="route-row-sub">{airlineName(a.airline)} 賣 · {pct(s?.share ?? CODESHARE_SEAT_SHARE)} 座位</small>
                       </span>
                     </span>
-                    <span className="chev" aria-hidden="true">›</span>
+                    <span className="chev" aria-hidden="true" />
                   </button>
                 </li>
               );
@@ -141,7 +141,7 @@ export function HostedSheet({ plan, routeKey, airline: initial, onSet, onStop, o
   }
   return (
     <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><span className="in">夥伴賣你的航線</span></span>} onClose={onClose} info={<HostedTerms />}
-      action={<button className="secondary small" onClick={onOpenRoute}>航線 ›</button>}>
+      action={<button className="secondary small" onClick={onOpenRoute}>航線<span className="chev inline" aria-hidden="true" /></button>}>
       {options.length === 0 && <div className="hint center">兩端都沒有夥伴的航班接得上</div>}
       {chips.length > 0 && (
         <div className="chips scroll cs-partners" role="radiogroup" aria-label="夥伴">
@@ -176,7 +176,7 @@ function HostedDetail({ plan, routeKey, airline, onSet, onStop, onPartner }: {
   return (
     <>
       <div className="cs-partner-line">
-        <button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: colorOf(airline) }} /><b>{airlineName(airline)}</b> ›</button>
+        <button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: colorOf(airline) }} /><b>{airlineName(airline)}</b><span className="chev inline" aria-hidden="true" /></button>
         {active ? <Badge n="link" tone="good">在賣 {pct(share)}</Badge> : <Badge n="link">還沒開放</Badge>}
       </div>
       <MoneySteps imp={{ ...imp, feedRevenue: imp.revenue }} feedLabel="夥伴旅客票價" feeLabel="處理費" />
@@ -250,7 +250,7 @@ export function HostedNote({ net, routeKey }: { net: NetworkResult | null | unde
     <button className="ext-toggle" onClick={() => open(routeKey)}>
       <span><Icon n="link" /> 讓夥伴賣這條</span>
       <small>夥伴</small>
-      <span className="chev" aria-hidden="true">›</span>
+      <span className="chev" aria-hidden="true" />
     </button>
   );
   return (

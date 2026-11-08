@@ -153,7 +153,7 @@ function ActiveRow({ airline, routeKey, imp, onOpen }: { airline: string; routeK
             <small className="route-row-sub">{airlineName(airline)} · {pct(s?.share ?? CODESHARE_SEAT_SHARE)} 座位</small>
           </span>
         </span>
-        <span className="chev" aria-hidden="true">›</span>
+        <span className="chev" aria-hidden="true" />
       </button>
     </li>
   );
@@ -253,7 +253,7 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
   const imp = useMemo(() => codeshareImpact(plan, airline, routeKey, undefined, share), [plan, airline, routeKey, share]);
   const [a, b] = routeKey.split('-');
   const color = colorOf(airline);
-  const sub = <span className="ins"><button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: color }} /><b>{airlineName(airline)}</b> ›</button>{imp && <IN n="plane" v={count(imp.stats.flights / 2)} label="夥伴班次（每個方向）" u="班/週" />}</span>;
+  const sub = <span className="ins"><button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: color }} /><b>{airlineName(airline)}</b><span className="chev inline" aria-hidden="true" /></button>{imp && <IN n="plane" v={count(imp.stats.flights / 2)} label="夥伴班次（每個方向）" u="班/週" />}</span>;
   if (!imp) {
     return (
       <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={sub} onClose={onClose}
@@ -322,7 +322,7 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
                       {r.displacedPax >= 1 ? <Badge n="warn" tone="warn">擠掉 {count(r.displacedPax)}</Badge> : <Badge n="check" tone="good">補空位</Badge>}
                     </span>
                   </span>
-                  <span className="chev" aria-hidden="true">›</span>
+                  <span className="chev" aria-hidden="true" />
                 </button></li>
               );
             })}
@@ -498,7 +498,7 @@ export function RouteExtensions({ plan, a, b }: { plan: Plan; a: string; b: stri
       <button className="ext-toggle" aria-expanded={on} onClick={() => setOn((v) => !v)}>
         <span><Icon n="link" /> 延伸這條航線</span>
         <small>{done && ideas ? `${ideas.length} 條可接` : ideas?.length ? '比較中…' : '夥伴的航線'}</small>
-        <span className="chev" aria-hidden="true">›</span>
+        <span className="chev" aria-hidden="true" />
       </button>
       {on && !done && !ideas?.length && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較夥伴航線</div>}
       {on && done && ideas && ideas.length === 0 && <div className="hint center">這兩端接不上夥伴的航線</div>}
@@ -516,7 +516,7 @@ export function RouteExtensions({ plan, a, b }: { plan: Plan; a: string; b: stri
                     <small>{airlineName(i.airline)} · 在 {hub} 接上</small>
                   </span>
                   <span className="ext-gain good">{signed(i.gain)}<small>/週</small></span>
-                  <span className="chev" aria-hidden="true">›</span>
+                  <span className="chev" aria-hidden="true" />
                 </button>
               </li>
             );

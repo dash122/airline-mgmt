@@ -271,7 +271,7 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, on
       <ul className="competitor-list">
         {(allCarriers ? carriers : carriers.slice(0, 8)).map((c) => (
           <li key={c.airline.id} className={`carrier${c.airline.bases.includes(code) ? ' airport-carrier-hub' : ''}`}>
-            <span className="name">{onPickAirline ? <button className="airline link" onClick={() => onPickAirline(c.airline.id)} aria-label={`查看 ${c.airline.name} 航空公司資料`}><i style={{ background: c.airline.color }} />{c.airline.name}<span className="chev">›</span></button> : <AirlineName airline={c.airline} />}
+            <span className="name">{onPickAirline ? <button className="airline link" onClick={() => onPickAirline(c.airline.id)} aria-label={`查看 ${c.airline.name} 航空公司資料`}><i style={{ background: c.airline.color }} />{c.airline.name}<span className="chev" aria-hidden="true" /></button> : <AirlineName airline={c.airline} />}
               <small className="airport-carrier-meta">{countryName(c.airline.country)} · {c.airline.bases[0] === code ? '主要樞紐' : c.airline.bases.includes(code) ? '基地' : `樞紐：${c.airline.bases[0]}`}</small>
               <span className="carrier-bar"><i style={{ width: `${(100 * c.flights) / topFlights}%`, background: c.airline.color }} /></span></span>
             {c.airline.bases[0] === code ? <Badge n="hub" tone="accent" label="主要樞紐" /> : c.airline.bases.includes(code) ? <Badge n="base" tone="muted" label="基地" /> : null}
@@ -334,7 +334,7 @@ function PotentialRow({ m, from, plan, result, onOpen, onOpenRoute }: { m: Marke
           {!m.flown && m.seats > 0 && <IN n="plane" v={`約 ${count(m.estimate)}`} label="每日一班估計旅客／週" w="估計" u="人／週" />}
         </span></span>
         <span className="rival-share">{m.flown ? pct(split.rows.find((x) => x.kind === 'own')?.share ?? 0) : '—'}<small>{m.flown ? '你的市占' : '未開航'}</small></span>
-        <span className="potential-chevron" aria-hidden="true">›</span>
+        <span className="chev potential-chevron" aria-hidden="true" />
       </button>
       {!open && <div className="airport-row-summary">
         <div className="airport-row-summary-track" role="img" aria-label={`直飛 ${pct(directPax / Math.max(1, split.total))}，轉機 ${pct(transitPax / Math.max(1, split.total))}`}>

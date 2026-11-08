@@ -142,7 +142,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
                 <button onClick={() => onChoose(c)}>
                   <span className="name"><b>{name(c)} <em>{c}</em></b>
                     <small>{countryName(AIRPORT_BY_CODE[c])}{c === plan.base && <> <Icon n="base" label="基地" /></>}{c === plan.hub && <> <Icon n="hub" label="轉運站" /></>}</small></span>
-                  <span className="chev">›</span>
+                  <span className="chev" aria-hidden="true" />
                 </button>
               </li>
             ))}

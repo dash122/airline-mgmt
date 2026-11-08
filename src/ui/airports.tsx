@@ -137,7 +137,7 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
 
       {tab === 'routes' && (
         <>
-          {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地 <span aria-hidden="true">→</span></button></div></div>}
+          {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地<span className="chev inline" aria-hidden="true" /></button></div></div>}
           <ul className="route-rows">
             {list.map((s) => {
               const res = result?.routes[s.key];
@@ -146,7 +146,7 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
                 onOpen={() => onOpenRoute(s.key)} onAdd={onAddFlight && (() => onAddFlight(s.key))} onRemove={onRemoveFlight && (() => onRemoveFlight(s.key))} />;
             })}
           </ul>
-          {served && <button className="link-btn airport-schedule-link" onClick={onShowSchedule}><Icon n="calendar" /> 在班表看這裡的航班 ›</button>}
+          {served && <button className="link-btn airport-schedule-link" onClick={onShowSchedule}><Icon n="calendar" /> 在班表看這裡的航班<span className="chev inline" aria-hidden="true" /></button>}
           {list.length > 0 && <details className="route-adjust"><summary>查看航線分布</summary><Radial code={code} list={list} onPick={onOpenRoute} /></details>}
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>
@@ -154,7 +154,7 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
                 <span className="ins">{view.legFlown
                   ? <><IN n="pax" v={count(view.now)} label="每週轉機旅客" u="人/週" /><IN n="market" v={view.rows.filter((r) => viaGroup(r) === 'flown').length} label="接上的地方" /></>
                   : <><IN n="lock" v={`${code}⇄${persp}`} label="還沒飛" w="未飛" /><IN n="market" v={`+${view.unlockCount}`} label="開航後可接上的地方" w="可接" u="地" /></>}</span></span>
-              <span className="chev">›</span>
+              <span className="chev" aria-hidden="true" />
             </button>
           )}
           {served && (
