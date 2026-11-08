@@ -1116,7 +1116,10 @@ input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .kpi .label { display: inline-flex; align-items: center; gap: 3px; }
 
 /* A quieter, consistent visual language for the map and its controls. */
-button, input, select { transition: background-color .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease; }
+/* Motion: one easing and three durations. Only transform and opacity animate (compositor-only, no layout). */
+button, input, select { transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
+/* Press feedback: buttons sink slightly under the finger; rows tint instead of scaling. */
+button.primary:not(:disabled):active, button.secondary:not(:disabled):active, .chip:not(:disabled):active, .base-grid button:active, .airline-card:active, .potential-toggle:active, .route-row-main:active, .ext-toggle:active, .cs-routes .name:active { background-color: var(--accent-tint); }
 button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
 @media (hover: hover) {
   button:not(:disabled):hover { filter: brightness(.96); }
@@ -2563,7 +2566,7 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
    One sheet over the map: the home sheet carries the 航線 / 機隊 / 市場 switcher and sits at three heights
    (title only, half, full); routes, airports, aircraft and airlines push over it with ‹ back. No tab bar.
    The header is one floating status pill. No backdrop blur anywhere here: it repaints badly on iPhone Safari. */
-:root { --tabbar: 0px; --subnav-h: 0px; --hud-h: 44px; --ease-ios: cubic-bezier(.32, .72, 0, 1); }
+:root { --tabbar: 0px; --subnav-h: 0px; --hud-h: 44px; --ease-ios: cubic-bezier(.32, .72, 0, 1); --ease-out: cubic-bezier(.2, .8, .2, 1); --dur-fast: .14s; --dur: .22s; --dur-slow: .34s; }
 .app.has-subnav { --subnav-h: 0px; }
 @media (max-width: 819px) {
   :root { --tabbar: 0px; --hud-h: 44px; }
@@ -2649,10 +2652,9 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
 @keyframes nav-push { from { transform: translateX(100%); } }
 @keyframes nav-back { from { transform: translateX(-24%); opacity: .4; } }
 @keyframes nav-rise { from { transform: translateY(36%); opacity: 0; } }
-button:active { transition: transform .08s; }
-.island-main:active, .island-play:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) {
   .app .sheet, .island, .island-note, .island-card, .pull-menu { animation: none !important; transition: none !important; }
+  button:active { transform: none !important; }
 }
 
 /* Room for the grab handle above the switcher and the back button. */
