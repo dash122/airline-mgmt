@@ -195,7 +195,7 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
           </small>
         </span>
         {fr && <LoadPill f={fr} />}
-        <span className="chev">›</span>
+        <span className="chev" aria-hidden="true" />
       </li>
     );
   };
@@ -225,7 +225,7 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
           <button className="group-head" onClick={() => setCollapsed({ ...collapsed, [g.code]: !collapsed[g.code] })} aria-expanded={!collapsed[g.code]}>
             <span className="grow">{AIRPORT_BY_CODE[g.code].name} {g.code}{basis === 'local' && g.code !== plan.base && <small className="tz" title={`比${plan.base}${zoneDiffHours(plan.base, g.code) >= 0 ? '快' : '慢'}`}> <Icon n="clock" />{zoneDiffHours(plan.base, g.code) >= 0 ? '+' : ''}{zoneDiffHours(plan.base, g.code)}h</small>}</span>
             <small><IN n={mode === 'dep' ? 'up' : 'down'} v={`${g.rows.length}/日`} label={mode === 'dep' ? '出發班次/日' : '抵達班次/日'} w={mode === 'dep' ? '出發' : '抵達'} /></small>
-            <span className="chev">{collapsed[g.code] ? '▸' : '▾'}</span>
+            <span className={`chev${collapsed[g.code] ? '' : ' open'}`} aria-hidden="true" />
           </button>
           {!collapsed[g.code] && <ul className="timetable">{g.rows.map(rowsOf)}</ul>}
         </div>

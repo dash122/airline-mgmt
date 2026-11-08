@@ -144,11 +144,11 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
         {nav?.switcher && <div className="sheet-switcher">{nav.switcher}</div>}
-        {nav?.back && <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="nav-back-chev" aria-hidden="true" />{nav.back.label}</button>}
+        {nav?.back && <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="chev back" aria-hidden="true" />{nav.back.label}</button>}
         <div className="sheet-head">
           <div className="grow">
             <h3>{menu
-              ? <button className="title-menu" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-haspopup="menu">{title}<span className="title-menu-chev" aria-hidden="true" /></button>
+              ? <button className="title-menu" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-haspopup="menu">{title}<span className="chev" aria-hidden="true" /></button>
               : title}{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</h3>
             {sub && <div className="sub">{sub}</div>}
             {menu && menuOpen && <>
@@ -164,9 +164,9 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           </div>
           {action}
           {pager && (pager.prev || pager.next) && <span className="pager" role="group" aria-label="上一個或下一個">
-            <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個">‹</button>
+            <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個"><span className="chev back" aria-hidden="true" /></button>
             <small>{pager.label}</small>
-            <button onClick={pager.next} disabled={!pager.next} aria-label="下一個">›</button>
+            <button onClick={pager.next} disabled={!pager.next} aria-label="下一個"><span className="chev" aria-hidden="true" /></button>
           </span>}
           {!nav?.switcher && !nav?.back && <button className="close" onClick={onClose} aria-label="關閉">✕</button>}
         </div>
@@ -401,7 +401,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
         {routeCompetitors.length > 0 && airlineLink && <div className="route-competitors-entry">
           <span>{routeCompetitors.length} 家航空公司經營這條航線</span>
-          <div className="route-competitor-chips">{routeCompetitors.slice(0, 4).map((airline) => <button key={airline.id} className="chip" onClick={() => airlineLink(airline.id)}><i style={{ background: airline.color }} />{airline.name} <span aria-hidden="true">›</span></button>)}
+          <div className="route-competitor-chips">{routeCompetitors.slice(0, 4).map((airline) => <button key={airline.id} className="chip" onClick={() => airlineLink(airline.id)}><i style={{ background: airline.color }} />{airline.name}<span className="chev inline" aria-hidden="true" /></button>)}
             {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>
         </div>}
       </>}
@@ -567,7 +567,7 @@ export function AircraftSheet({ plan, ac, result, onChange, onRemove, onClose, o
                 <small>{AIRPORT_BY_CODE[l.to].name} · <span>{u.count === 2 ? '回到' : '抵達'} {u.count === 2 ? arrivalAt(ac.legs[last].from, ac.legs[last].dep, l.from, arrival(ac, last)) : arrivalAt(l.from, l.dep, l.to, arrival(ac, last))}</span></small>
               </span>
               {result && <span className="loads" aria-label="載客率">{Array.from({ length: u.count }, (_, k) => result.flights[u.start + k]).filter(Boolean).map((f) => <LoadPill key={f.key} f={f} />)}</span>}
-              <span className="chev">›</span>
+              <span className="chev" aria-hidden="true" />
             </li>
           );
         })}
