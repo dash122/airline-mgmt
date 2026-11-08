@@ -4,7 +4,6 @@ import { AIRCRAFT, CLASS_NAMES, CLASS_ORDER, type AircraftClass } from '../data/
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { marketSplit } from '../sim/share';
-import { rivalsBetween } from '../sim/competitors';
 import { slotProblem } from '../sim/schedule';
 import {
   applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
@@ -300,15 +299,6 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
   }, [applied, chosen, depFrom, other, dep]);
   const owned = chosen?.acId ? plan.fleet.find((x) => x.id === chosen.acId) : undefined;
   const slot = slotProblem(plan, from, to);
-  const rivals = useMemo(() => {
-    const by = new Map<string, { name: string; color: string; freq: number }>();
-    for (const s of rivalsBetween(from, to)) {
-      const e = by.get(s.airline.id) ?? { name: s.airline.name, color: s.airline.color, freq: 0 };
-      e.freq += s.freq;
-      by.set(s.airline.id, e);
-    }
-    return [...by.values()].sort((x, y) => y.freq - x.freq);
-  }, [from, to]);
   const previewMarket = useMemo(() => marketSplit(from, to), [from, to]);
 
   const confirm = () => {
@@ -375,23 +365,8 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
         </>
       )}
       </details>
-      <details className="route-adjust">
-      <summary><span>市場</span><small>查看</small></summary>
-      <div className="market-line ins lg">
-        <IN n="pax" v={short((m?.airDemand ?? 0) * 2)} label="旅客/週" u="人/週" />
-        {rivals.length > 0
-          ? <><IN n="rival" v={rivals.length} label="家" u="家" /><IN n="plane" v={count(rivals.reduce((s, r) => s + r.freq, 0))} label="班/週" /></>
-          : <Badge n="hub" tone="good" label="沒人直飛，你會是唯一一家" />}
-      </div>
-      {rivals.length > 0 && (
-        <div className="competition">
-          {rivals.slice(0, 5).map((r) => <span key={r.name}><i className="dot" style={{ background: r.color }} />{r.name} {r.freq} 班</span>)}
-          {rivals.length > 5 && <span>另 {rivals.length - 5} 家</span>}
-        </div>
-      )}
-      <MarketShare a={from} b={to} split={previewMarket} title="目前行程與市場占有率" />
+      <MarketShare a={from} b={to} split={previewMarket} title="市場" />
       {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · {price(m.ground.fare)}</div>}
-      </details>
     </Sheet>
   );
 }
