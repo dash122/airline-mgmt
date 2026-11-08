@@ -145,7 +145,10 @@ export default function App() {
         for (let d = Math.max(lastDay, today - 7); d < today; d++) {
           last = { revenue: (r?.revenue ?? 0) / 7, cost: (r?.cost ?? 0) / 7 };
           balance += last.revenue - last.cost;
-          history.push({ day: d, ...last, pax: (r?.pax ?? 0) / 7 });
+          const out = Object.values(r?.codeshares ?? {}), inn = Object.values(r?.hosted ?? {});
+          const cs = out.reduce((s, c) => s + c.feedRevenue, 0) + inn.reduce((s, h) => s + h.revenue, 0) - (r?.codeshareCost ?? 0);
+          const csPax = out.reduce((s, c) => s + c.pax, 0) + inn.reduce((s, h) => s + h.pax, 0);
+          history.push({ day: d, ...last, pax: (r?.pax ?? 0) / 7, cs: cs / 7, csPax: csPax / 7 });
         }
         if (r) setToast(`第 ${today - 1} 天結算：${last.revenue >= last.cost ? '+' : ''}${money(last.revenue - last.cost)}`);
         return { version: 1, utcMin: now, balance, history: history.slice(-HISTORY_DAYS) };
@@ -424,7 +427,7 @@ export default function App() {
         <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'routes' && (
-        <RoutesPanel plan={plan} result={result} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
+        <RoutesPanel plan={plan} result={result} history={game?.history ?? []} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => setDetent('compact')} />
       )}

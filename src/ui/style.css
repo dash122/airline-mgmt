@@ -2620,3 +2620,14 @@ button:active { transition: transform .08s; }
 @media (max-width: 819px) {
   .airport-sheet .sheet-body > .ap-tiles { background: linear-gradient(var(--seg-track), var(--seg-track)), var(--bg); box-shadow: 0 0 0 8px var(--bg); }
 }
+
+/* Codeshare dashboard */
+.cs-dash { display: flex; flex-direction: column; gap: 8px; margin: 0 0 10px; }
+.cs-dash .routes-summary b { font-size: var(--fs-md); }
+.cs-dash-use b { display: flex; align-items: center; gap: 6px; }
+.cs-dash-trend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cs-dash-trend > span { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; padding: 6px 10px; border-radius: var(--r-md); border: 1px solid var(--line); }
+.cs-dash-trend small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
+.cs-alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cs-alerts button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 10px; text-align: left; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card, transparent); color: inherit; font: inherit; }
+.cs-alerts small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-xs); }
