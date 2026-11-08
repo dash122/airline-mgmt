@@ -19,6 +19,8 @@ export interface CodeshareOption {
 
 /** Most routes of one partner that are tried, busiest first. */
 const MAX_OPTIONS = 60;
+/** A search from one route's ends tries only each partner's busiest few routes there, so it stays quick on a phone. */
+const NEAR_OPTIONS = 16;
 
 const profit = (r: NetworkResult) => r.revenue - r.cost;
 
@@ -39,13 +41,14 @@ export function codeshareOptions(plan: Plan, airlineId: string, now?: NetworkRes
 }
 
 /** The same search one route at a time, so a caller can yield between simulations (each one is a full week). */
-export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: NetworkResult): Generator<void, CodeshareOption[], void> {
+export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: NetworkResult, only?: Set<string>): Generator<void, CodeshareOption[], void> {
   const net = airlineNetwork(airlineId);
   if (!net || !canCodeshare(net.airline) || !plan.fleet.length) return [];
-  const mine = playerAirports(plan);
+  // `only`: restrict candidates to routes touching these airports (a search from one route's ends).
+  const mine = only ?? playerAirports(plan);
   const routes = net.routes.filter((r) => mine.has(r.a) || mine.has(r.b) || hasCodeshare(plan, airlineId, r.key))
     .sort((x, y) => Number(hasCodeshare(plan, airlineId, y.key)) - Number(hasCodeshare(plan, airlineId, x.key)) || y.freq - x.freq)
-    .slice(0, MAX_OPTIONS);
+    .slice(0, only ? NEAR_OPTIONS : MAX_OPTIONS);
   // Most partners fly none of your airports: nothing to compare, so no simulation at all.
   if (!routes.length) return [];
   now ??= simulate(plan);
@@ -168,9 +171,12 @@ export function codeshareIdeas(plan: Plan, limit = 12, near?: string[]): Codesha
 export function* codeshareIdeaSteps(plan: Plan, limit = 12, near?: string[], out: CodeshareIdea[] = []): Generator<void, CodeshareIdea[], void> {
   if (!plan.fleet.length) return [];
   const now = simulate(plan);
+  const only = near ? new Set(near) : undefined;
   for (const a of airlines()) {
     if (!canCodeshare(a)) continue;
-    const options = yield* codeshareOptionSteps(plan, a.id, now);
+    // A search from one route's ends only needs partners that fly those airports.
+    if (only && !airlineNetwork(a.id)?.routes.some((r) => only.has(r.a) || only.has(r.b))) continue;
+    const options = yield* codeshareOptionSteps(plan, a.id, now, only);
     for (const o of options) {
       if (o.active || o.gain <= 0) continue;
       if (near && !near.some((c) => o.route.a === c || o.route.b === c)) continue;
