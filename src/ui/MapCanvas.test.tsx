@@ -92,19 +92,23 @@ it('reuses map labels between frames and refreshes them after visual changes', (
     listeners.get('pointerdown')(pointer);
     listeners.get('pointermove')({ ...pointer, clientX: 350 });
     const beforeDrag = measureText.mock.calls.length;
-    frame(performance.now() + 240);
+    const imagesBeforeDrag = drawImage.mock.calls.length;
+    const t0 = performance.now();
+    frame(t0 + 240);
     expect(canvas.style.transform).toBe('');
-    expect(measureText.mock.calls.length).toBeGreaterThan(beforeDrag);
+    // While the camera moves the cached scene is only blitted: no relabelling.
+    expect(measureText.mock.calls.length).toBe(beforeDrag);
+    expect(drawImage.mock.calls.length).toBeGreaterThan(imagesBeforeDrag);
     const screen = (window as unknown as { __wpScreen: (code: string) => number[] }).__wpScreen;
     const afterFirstMove = screen('TPE')[0];
     listeners.get('pointermove')({ ...pointer, clientX: 360 });
     // A second move must advance by its delta, without transform feedback.
     expect(screen('TPE')[0] - afterFirstMove).toBeCloseTo(10);
-    const beforeFastFrame = measureText.mock.calls.length;
-    frame(performance.now() + 256);
-    expect(measureText.mock.calls.length).toBeGreaterThan(beforeFastFrame);
+    frame(t0 + 256);
+    expect(measureText.mock.calls.length).toBe(beforeDrag);
     listeners.get('pointerup')({ ...pointer, clientX: 350 });
-    frame(performance.now() + 280);
+    // Once the camera settles, the crisp scene is rebuilt.
+    frame(t0 + 500);
     expect(canvas.style.transform).toBe('');
     expect(measureText.mock.calls.length).toBeGreaterThan(beforeDrag);
   } finally {
