@@ -6,9 +6,12 @@ import { Badge, IN } from './viz';
 
 export const lfTone = (lf: number) => (lf >= 0.8 ? 'good' : lf < 0.6 ? 'bad' : 'warn');
 
+/** Full means the seats are actually gone; spill alone can also come from rationing elsewhere. */
+export const isFull = (f: FlightResult) => f.spill > 0.5 && f.loadFactor >= 0.97;
+
 /** A flight's load factor as a small coloured pill, with 客滿 when it turned travellers away. */
 export function LoadPill({ f }: { f: FlightResult }) {
-  const full = f.spill > 0.5;
+  const full = isFull(f);
   return <span className={`pill ${full ? 'warn' : lfTone(f.loadFactor)}`} title={`載客 ${count(f.pax)} / ${f.seats} 座`}>
     {full ? '客滿' : pct(f.loadFactor)}
   </span>;
@@ -40,7 +43,7 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
   const order = (list: FlightResult[]) => [...list].sort((x, y) => sort === 'lf'
     ? y.loadFactor - x.loadFactor || y.spill - x.spill
     : localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
-  const full = flights.filter((f) => f.spill > 0.5).length;
+  const full = flights.filter(isFull).length;
   const empty = flights.filter((f) => f.loadFactor < 0.6).length;
   return <section className="flight-loads" aria-label="每班載客率">
     <Head info={<p>當地出發時間。損益是每次出發的票價收入減飛行成本，不含租金。客滿的時段可加班或換大飛機；空的時段可移到熱門時間或取消。點航班可調整。</p>}
