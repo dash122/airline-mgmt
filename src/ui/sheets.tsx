@@ -96,9 +96,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
   return (
     <>
       {over && <div className="scrim" onClick={onClose} />}
-      {/* Keyed by size: iOS Safari can leave the old size painted on screen when a sheet grows or shrinks
-          (a compact route sheet stuck over the expanded one), so each size gets a fresh element. */}
-      <div key={s} className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
+      <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
         style={pull ? { transform: `translateY(${pull}px)`, transition: 'none' } : undefined}>
         <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
           style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
