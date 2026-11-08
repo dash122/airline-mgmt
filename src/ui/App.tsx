@@ -237,12 +237,15 @@ export default function App() {
   const airportOrder = [...new Set(routePairs(plan).flatMap((r) => [r.a, r.b]))]
     .sort((x, y) => (x === plan.base ? -1 : y === plan.base ? 1 : x === plan.hub ? -1 : y === plan.hub ? 1 : AIRPORT_BY_CODE[x].name.localeCompare(AIRPORT_BY_CODE[y].name)));
   const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'airports' || panel === 'airlines');
+  // A codeshare sheet opens over whatever sheet it came from (a route, a partner, the routes list). Hide that one
+  // while it is open, so only one sheet ever shows; it comes back as it was when the codeshare sheet closes.
+  const stacked = overlay?.kind === 'codeshare' || overlay?.kind === 'hosted';
 
   return (
     <AirlineLink.Provider value={openAirline}>
     <CodeshareLink.Provider value={openCodeshare}>
     <HostedLink.Provider value={openHosted}>
-    <div className={`app${hasSubnav ? ' has-subnav' : ''}`}>
+    <div className={`app${hasSubnav ? ' has-subnav' : ''}${stacked ? ' sheet-stacked' : ''}`}>
       <MapCanvas
         plan={plan}
         result={result}
