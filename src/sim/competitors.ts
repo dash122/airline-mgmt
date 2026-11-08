@@ -23,6 +23,8 @@ export interface Airline {
   fareMult: number;
   /** How much travellers value its product, in NT$ per trip (service, seats, lounges, reliability). */
   quality: number;
+  /** The aircraft types it operates: its own mix of makers and sizes, so rivals differ in what they fly. */
+  fleet: AircraftModel[];
 }
 
 /** One airline's service in one direction of a market. */
@@ -47,6 +49,30 @@ const KIND_SETTINGS: Record<AirlineKind, { fareMult: number; quality: number; fl
   low: { fareMult: 0.78, quality: -500, fleet: ['A20N', 'A21N', 'A333'], maxKm: 4500 },
   regional: { fareMult: 1, quality: 0, fleet: ['ATR72', 'Q400', 'E190'], maxKm: 1200 },
 };
+
+/**
+ * An airline's own fleet, picked by a hash of its id. Real airlines standardise on one maker's family (an A320 or a
+ * 737 operator, an Airbus or Boeing widebody one) and fill the gaps with a smaller jet, so the mix differs between
+ * airlines. A flagship A380 goes to a few big-hub full-service airlines whose main hub has the runway for it.
+ */
+function houseFleet(id: string, kind: AirlineKind, bases: string[]): AircraftModel[] {
+  const pick = <T,>(tag: string, xs: T[]) => xs[hash(`${id}${tag}`) % xs.length];
+  const airbus = hash(`${id}narrow`) % 2 === 0;
+  switch (kind) {
+    case 'full': {
+      const narrow: AircraftModel[] = airbus ? ['A20N', 'A21N'] : ['B738', 'B38M'];
+      if (hash(`${id}small`) % 2 === 0) narrow.unshift('BCS3');
+      const wide: AircraftModel[] = pick('wide', [['A339', 'A359', 'A35K'], ['B789', 'B78X', 'B77W'], ['A333', 'A359', 'B77W'], ['B772', 'B789', 'B779'], ['A333', 'B789', 'A35K']]);
+      const hub = AIRPORT_BY_CODE[bases[0]];
+      const flagship = hub && hub.runwayM >= 3000 && trafficOf(hub) >= 40 && hash(`${id}a380`) % 3 === 0;
+      return [...narrow, ...(airbus && hash(`${id}xlr`) % 2 === 0 ? ['A21X' as const] : []), ...wide, ...(flagship ? ['A388' as const] : [])];
+    }
+    case 'low':
+      return [...(airbus ? ['A20N', 'A21N'] as const : ['B738', 'B38M'] as const), ...(airbus && hash(`${id}xlr`) % 2 === 0 ? ['A21X' as const] : []), pick('wide', ['A333', 'A339'] as AircraftModel[])];
+    case 'regional':
+      return [pick('prop', ['ATR72', 'Q400'] as AircraftModel[]), pick('jet', ['E75L', 'E190'] as AircraftModel[]), ...(hash(`${id}both`) % 3 === 0 ? ['Q400' as const] : [])];
+  }
+}
 
 // Fictional names, picked to sound like they belong where the airline is based (shown in Traditional Chinese, as
 // the rest of the game). Kept clear of real airline names.
@@ -222,7 +248,7 @@ function buildAirlines(): Airline[] {
   const make = (country: string, kind: AirlineKind, n: number, bases: string[], name: string) => {
     const s = KIND_SETTINGS[kind];
     const id = n === 0 ? `${country}-${kind}` : `${country}-${kind}-${n + 1}`;
-    out.push({ id, name, kind, country, color: COLORS[hash(id) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality });
+    out.push({ id, name, kind, country, color: COLORS[hash(id) % COLORS.length], bases, fareMult: s.fareMult, quality: s.quality, fleet: [...new Set(houseFleet(id, kind, bases))] });
   };
   for (const c of countries) {
     const list = [...byCountry.get(c)!].sort((x, y) => busyness(y) - busyness(x));
@@ -309,7 +335,8 @@ function nearestAirline(airlines: Airline[], A: Airport, B: Airport, distKm: num
 
 function canFly(type: AircraftModel, a: Airport, b: Airport, distKm: number): boolean {
   const s = AIRCRAFT[type];
-  return distKm <= s.rangeKm && classRank(s.cls) <= Math.min(classRank(a.maxClass), classRank(b.maxClass));
+  return distKm <= s.rangeKm && classRank(s.cls) <= Math.min(classRank(a.maxClass), classRank(b.maxClass))
+    && (s.minRunwayM ?? 0) <= Math.min(a.runwayM, b.runwayM);
 }
 
 /** Low-cost airlines fly single-aisle jets, and widebodies only on longer routes (like the long-haul low-cost arms in Asia). */
@@ -317,8 +344,11 @@ const LOW_COST_WIDEBODY_KM = 2500;
 
 /** Smallest aircraft in the airline's fleet that carries the expected load, or the largest that can fly it. */
 function pickType(al: Airline, a: Airport, b: Airport, distKm: number, seatsNeeded: number): AircraftModel | null {
-  const fleet = KIND_SETTINGS[al.kind].fleet
+  const usable = (types: AircraftModel[]) => types
     .filter((t) => canFly(t, a, b, distKm) && !(al.kind === 'low' && AIRCRAFT[t].cls === 'widebody' && distKm < LOW_COST_WIDEBODY_KM)).sort((x, y) => AIRCRAFT[x].seats - AIRCRAFT[y].seats);
+  // Its own fleet first; an airline without a suitable type there (a long route beyond its range) leases the kind's standard one.
+  let fleet = usable(al.fleet);
+  if (!fleet.length) fleet = usable(KIND_SETTINGS[al.kind].fleet);
   if (!fleet.length) return null;
   return fleet.find((t) => AIRCRAFT[t].seats >= seatsNeeded) ?? fleet[fleet.length - 1];
 }
@@ -405,7 +435,7 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
   return departureTimes(key, freq);
 }
 
-const OTHER: Airline = { id: 'other', name: '其他航空', kind: 'full', country: '', color: '#8a9aa6', bases: [], fareMult: 1, quality: 0 };
+const OTHER: Airline = { id: 'other', name: '其他航空', kind: 'full', country: '', color: '#8a9aa6', bases: [], fareMult: 1, quality: 0, fleet: [] };
 const AVERAGE_LOAD = 0.8;
 
 function buildServices(airlines: Airline[], m: Market): RivalService[] {

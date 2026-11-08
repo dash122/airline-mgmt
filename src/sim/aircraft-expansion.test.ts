@@ -3,7 +3,8 @@ import { AIRCRAFT, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORTS } from '../data/airports';
 import { emptyPlan, routeProblem } from './simulate';
 import { typesFor } from './schedule';
-import { rivalsFrom } from './competitors';
+import { airlines, rivalsAt } from './competitors';
+import { marketBetween } from './markets';
 
 const ADDED: AircraftModel[] = ['A21X', 'BCS3', 'E75L', 'A339', 'B78X', 'A35K', 'B779', 'A388'];
 const RUNWAY_NEEDED = 3000;
@@ -55,16 +56,37 @@ describe('expanded aircraft list', () => {
     expect(typesFor(emptyPlan(short![0]), short![0], short![1])).not.toContain('A388');
   });
 
-  test('rival airlines keep their own fleets, so the added types never appear in competitor schedules', () => {
-    const hubs = ['TPE', 'HKG', 'NRT', 'ICN', 'SIN', 'BKK', 'LAX', 'LHR', 'JFK', 'DXB', 'SYD', 'CDG'].filter((c) => AIRPORTS.some((a) => a.code === c));
+  test('rivals fly their own fleets: varied makers, and every flight within the type\'s range and runway needs', () => {
+    const used = new Set<AircraftModel>();
     let checked = 0;
-    for (const a of hubs) for (const b of hubs) {
-      if (a === b) continue;
-      for (const s of rivalsFrom(a, b)) {
-        checked++;
-        expect(ADDED, `${a}-${b}`).not.toContain(s.type);
+    for (const al of airlines()) {
+      expect(al.fleet.length, al.id).toBeGreaterThan(0);
+      for (const a of AIRPORTS.filter((x) => al.bases.includes(x.code)).slice(0, 2)) {
+        for (const { services } of rivalsAt(a.code).slice(0, 8)) for (const s of services) {
+          if (s.airline.id !== al.id) continue;
+          const A = AIRPORTS.find((x) => x.code === s.from)!, B = AIRPORTS.find((x) => x.code === s.to)!;
+          const km = marketBetween(s.from, s.to)!.distKm, spec = AIRCRAFT[s.type];
+          checked++;
+          used.add(s.type);
+          if (al.fleet.includes(s.type)) {
+            expect(km, `${al.id} ${s.type}`).toBeLessThanOrEqual(spec.rangeKm);
+            expect(spec.minRunwayM ?? 0, `${al.id} ${s.type}`).toBeLessThanOrEqual(Math.min(A.runwayM, B.runwayM));
+          }
+        }
       }
     }
     expect(checked).toBeGreaterThan(0);
+    // Boeing and Airbus narrowbodies and some of the later types all appear across the rivals.
+    expect(used.has('B738') || used.has('B38M')).toBe(true);
+    expect(used.has('A20N') || used.has('A21N')).toBe(true);
+    expect(ADDED.some((t) => used.has(t))).toBe(true);
+  });
+
+  test('only airlines with a big hub and a 3 km runway get an A380', () => {
+    for (const al of airlines().filter((x) => x.fleet.includes('A388'))) {
+      const hub = AIRPORTS.find((x) => x.code === al.bases[0])!;
+      expect(al.kind).toBe('full');
+      expect(hub.runwayM).toBeGreaterThanOrEqual(RUNWAY_NEEDED);
+    }
   });
 });
