@@ -432,21 +432,39 @@ export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '
   );
 }
 
-/** The route sheet's note: codeshare travellers on this route, each partner a tap away. */
+const FED_SHOWN = 3;
+
+/** The route sheet's note: codeshare travellers on this route. A share bar shows each partner's part; the top few are listed and the rest sit behind a toggle. */
 export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number }) {
   const open = useContext(CodeshareLink);
+  const [all, setAll] = useState(false);
   const fedBy = Object.values(net?.codeshares ?? {}).flatMap((c) => c.feeds.filter((f) => f.key === routeKey && f.pax >= 1).map((f) => ({ airline: c.airline, key: c.key, pax: f.pax })))
     .sort((x, y) => y.pax - x.pax);
   if (!fedBy.length) return null;
   const total = fedBy.reduce((s, f) => s + f.pax, 0);
+  const shown = all ? fedBy : fedBy.slice(0, FED_SHOWN);
   return (
     <div className="cs-feed-note">
-      <span><Icon n="link" /> 共享帶進 <b>{count(total)}</b> 人/週 · 占 {pct(total / Math.max(1, routePax))}</span>
-      <div className="chips">{fedBy.map((f) => (
-        <button key={`${f.airline}|${f.key}`} className="chip" onClick={() => open?.(f.airline, f.key)}>
-          <i className="dash" style={{ borderColor: colorOf(f.airline) }} />{airlineName(f.airline)} {f.key.replace('-', '⇄')} · {count(f.pax)} 人
-        </button>
-      ))}</div>
+      <div className="cs-feed-head">
+        <span><Icon n="link" /> 共享帶進 <b>{count(total)}</b> 人/週 · 占 {pct(total / Math.max(1, routePax))}</span>
+        {fedBy.length > FED_SHOWN && <button className="cs-feed-more" aria-expanded={all} onClick={() => setAll((v) => !v)}>{all ? '收起' : `全部 ${fedBy.length} 家`}</button>}
+      </div>
+      <div className="cs-feed-bar" role="img" aria-label={fedBy.map((f) => `${airlineName(f.airline)} ${count(f.pax)} 人`).join('，')}>
+        {fedBy.map((f) => <i key={`${f.airline}|${f.key}`} style={{ width: `${(100 * f.pax) / total}%`, background: colorOf(f.airline) }} />)}
+      </div>
+      <ul className="cs-feed-list">
+        {shown.map((f) => (
+          <li key={`${f.airline}|${f.key}`}>
+            <button onClick={() => open?.(f.airline, f.key)}>
+              <i className="dash" style={{ borderColor: colorOf(f.airline) }} />
+              <span className="nm">{airlineName(f.airline)}</span>
+              <small className="rt">{f.key.replace('-', '⇄')}</small>
+              <b>{count(f.pax)} 人</b>
+              <small className="sh">{pct(f.pax / total)}</small>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
