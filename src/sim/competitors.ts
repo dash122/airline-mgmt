@@ -427,6 +427,17 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
       if (out.length >= perDay) break;
       if (out.every((t) => Math.abs(t - s.dep) >= 120)) out.push(s.dep);
     }
+    // About a third of services with two or more flights a day swap the weakest slot for a night departure (a
+    // red-eye), the best-scoring one that fits, so late-night long-haul flights exist without taking over.
+    if (perDay >= 2 && out.length >= 2 && hash(`${key}redeye`) % 3 === 0) {
+      const isNight = (t: number) => t >= 22 * 60 || t < 4 * 60;
+      const night = slots.filter((x) => isNight(x.dep)).sort((x, y) => y.q - x.q || x.dep - y.dep);
+      if (!out.some(isNight)) {
+        const keep = out.slice(0, -1);
+        const pick = night.find((x) => keep.every((t) => Math.abs(t - x.dep) >= 120));
+        if (pick) out.splice(0, out.length, ...keep, pick.dep);
+      }
+    }
     return out.map((t, i) => Math.min(LAST_DEP, round5(t + jitter(i, 40)))).sort((x, y) => x - y);
   }
   const within = (ts: number[]) => ts.map((t) => Math.min(LAST_DEP, Math.max(FIRST_DEP, round5(t)))).sort((x, y) => x - y);
