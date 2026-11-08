@@ -1,10 +1,10 @@
 import { createComputeClient } from './compute-client';
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
 import { marketsReady, prepareMarkets } from '../sim/markets';
-import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, simulate, toggleHosted, toggleCodeshare, utcFromLocal, warmCompetition, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, toggleHosted, toggleCodeshare, utcFromLocal, warmCompetition, type NetworkResult, type Plan } from '../sim/simulate';
 import { CodeshareLink, CodeshareSheet } from './codeshare';
 import { HostedLink, HostedSheet } from './hosted';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
@@ -104,12 +104,12 @@ export default function App() {
   // Whether the world demand model is built (see the background build below), and whether a view is waiting for it.
   const [marketsBuilt, setMarketsBuilt] = useState(marketsReady);
   const marketsWanted = useRef(false);
-  // Keep route detail metrics in sync with the current itinerary while the worker
-  // computes the full network result used by the map and other panels.
-  // The simulation runs synchronously on the main thread, so it is driven by a deferred copy of the plan: a tap
-  // commits and paints its feedback first, and the route metrics catch up in the next render.
-  const deferredPlan = useDeferredValue(plan);
-  const liveRouteResult = useMemo(() => marketsBuilt && deferredPlan && selectedRouteKey && routePairs(deferredPlan).some((r) => r.key === selectedRouteKey) ? simulate(deferredPlan) : null, [deferredPlan, selectedRouteKey, marketsBuilt]);
+  // The route sheet's figures come from the calculation worker's result for the current plan. The last result is kept
+  // until the next one arrives, so an edit doesn't block the main thread with a second full simulation.
+  const lastNetwork = useRef<NetworkResult | null>(null);
+  if (result) lastNetwork.current = result;
+  const routeOpen = !!plan && !!selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey);
+  const liveRouteResult = routeOpen ? (result ?? lastNetwork.current) : null;
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>('routes');

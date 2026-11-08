@@ -1,6 +1,8 @@
 import { analyzeAirport } from './airport-analysis.worker';
 import { destinationsFrom, previewChoice } from '../sim/newroute';
 import { simulate } from '../sim/simulate';
+import { fareCurve } from '../sim/fares';
+import { routeWhatIf } from '../sim/route-whatif';
 import { codeshareIdeaSteps, hostedIdeaSteps, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
 
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
@@ -12,7 +14,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     // Collapse superseded edits before doing expensive work.
     await yieldTask();
     if (current !== version) return;
-    const { id, request, kind, plan, result, code, transfer, from, to, choices, near } = event.data;
+    const { id, request, kind, plan, result, code, transfer, from, to, choices, near, routeKey, a, b } = event.data;
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
@@ -38,6 +40,8 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         port.postMessage({ id, ideas: step.value });
       }
       else if (kind === 'destinations') port.postMessage({ request, destinations: destinationsFrom(plan, from) });
+      else if (kind === 'fare-curve') port.postMessage({ id, value: fareCurve(plan, routeKey) });
+      else if (kind === 'what-if') port.postMessage({ id, value: routeWhatIf(plan, a, b, routeKey) });
       else {
         const previews = [];
         for (const { choice, dep } of choices as { choice: Parameters<typeof previewChoice>[2]; dep: number }[]) {
