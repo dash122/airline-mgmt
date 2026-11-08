@@ -386,7 +386,7 @@ export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClos
         <button className="danger grow" onClick={() => setConfirmCancel(true)}>✕ {isTrip ? '取消來回航班' : '取消航班'}</button>
       </div>
       {delta !== 0 && isTrip && <div className="hint">請先儲存時間，或關閉以放棄變更，再換飛機。</div>}
-      {confirmCancel && <div className="confirm"><span>確定取消{isTrip ? '這組來回航班' : '這班航班'}？</span><button onClick={() => setConfirmCancel(false)}>返回</button><button onClick={() => { onChange(withAc(plan, removeUnit(ac, u)), `已取消 ${at(first.from, first.dep)} ${first.from}→${first.to}${isTrip ? ' 與回程' : ''}`); onClose(); }}>確定取消</button></div>}
+      {confirmCancel && <div className="confirm"><span>確定取消{isTrip ? '這組來回航班' : '這班航班'}？</span><button className="secondary" onClick={() => setConfirmCancel(false)}>返回</button><button className="danger solid" onClick={() => { onChange(withAc(plan, removeUnit(ac, u)), `已取消 ${at(first.from, first.dep)} ${first.from}→${first.to}${isTrip ? ' 與回程' : ''}`); onClose(); }}>確定取消</button></div>}
       {last < ac.legs.length - 1 && !isTrip && <div className="hint warn"><Icon n="warn" /> 飛機可能停在別的機場</div>}
     </Sheet>
   );
