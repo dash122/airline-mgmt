@@ -126,7 +126,7 @@ export type Section = 'routes' | 'hubs' | 'fleet' | 'vs' | 'share';
 type RouteFilter = 'all' | 'long' | 'mine' | `hub:${string}`;
 const PAGE = 15;
 
-export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, onOpenRoute, onOpen, onCodeshare, initialTab, back, onClose }: {
+export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, onOpenRoute, onOpen, onCodeshare, initialTab, onClose }: {
   plan: Plan; result: NetworkResult | null; id: string;
   /** Start or end a codeshare on one of its routes. */
   onCodeshare: (key: string) => void;
@@ -134,7 +134,7 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
   /** The route picked out on the map. */
   focus: string | null; onFocus: (key: string | null) => void;
   onPickAirport: (code: string) => void; onOpenRoute: (key: string) => void; onOpen: (a: string, b: string) => void;
-  back?: { label: string; go: () => void }; onClose: () => void;
+  onClose: () => void;
 }) {
   const net = useMemo(() => airlineNetwork(id), [id]);
   const [tab, setTab] = useState<Section>(initialTab ?? 'routes');
@@ -156,8 +156,7 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
   return (
     <Sheet title={a.name} onClose={onClose}
       sub={<span className="ins"><span>{countryName(a.country)} · {KIND_NAMES[a.kind]}</span><IN n="market" v={count(net.countries.length)} label="飛的國家" w="飛" u="國" /></span>}
-      info={<p>{blurb(net)} {net.pointToPoint ? '最大機場' : '主樞紐'}：{name(main.code)} {main.code}。對手的班表和票價固定，不會因為你而改變。</p>}
-      action={back && <button className="back" onClick={back.go} aria-label={`返回${back.label}`}>‹ {back.label}</button>}>
+      info={<p>{blurb(net)} {net.pointToPoint ? '最大機場' : '主樞紐'}：{name(main.code)} {main.code}。對手的班表和票價固定，不會因為你而改變。</p>}>
       <div className="al-head">
         <Tail net={net} size={44} />
         <div className="grow">

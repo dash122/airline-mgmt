@@ -50,7 +50,7 @@ export function FlightLoads({ a, b, flights, plan, onEdit }: {
       </div>}>
       每班載客率
     </Head>
-    {flights.length > 1 && (full || empty) && <div className="ins">
+    {flights.length > 1 && (full > 0 || empty > 0) && <div className="ins">
       {full > 0 && <Badge n="spill" tone="warn">{full} 班客滿</Badge>}
       {empty > 0 && <Badge n="seat" tone="bad">{empty} 班不到六成</Badge>}
     </div>}

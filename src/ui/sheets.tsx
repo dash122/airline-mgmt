@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type MouseEvent as RMouseEvent, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
@@ -53,20 +53,44 @@ export type SheetSize = 'compact' | 'half' | 'full';
 /** Step through a list of things (your routes, your airports) without going back to the list. */
 export type Pager = { label: string; prev?: () => void; next?: () => void };
 
+/**
+ * Where a sheet sits in the one-sheet navigation (phone and desktop alike): the home sheet carries the section
+ * switcher and never closes; a page pushed on top of it has a ‹ back button instead of ✕.
+ */
+export type SheetNav = {
+  /** The home sheet: the section control shown above the title. */
+  switcher?: ReactNode;
+  /** A pull-down on the title, to switch between the views of one section (飛機 / 班表). */
+  menu?: { items: [string, string][]; value: string; onPick: (id: string) => void };
+  back?: { label: string; go: () => void };
+  /** The home sheet's height, kept by the app so it survives going into a page and back. */
+  detent?: SheetSize;
+  onDetent?: (s: SheetSize) => void;
+};
+export const SheetNavContext = createContext<SheetNav | null>(null);
+
 export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className, pager }: {
   title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode; summary?: ReactNode; className?: string;
   /** Swipe the top of the sheet sideways (or use the arrows) to move to the previous or next item. */
   pager?: Pager;
 }) {
-  const [s, setS] = useState<SheetSize>(size);
+  const ctx = useContext(SheetNavContext);
+  const nav = over ? null : ctx;
+  const [local, setLocal] = useState<SheetSize>(size);
+  const s = nav?.detent ?? local;
+  const setS = nav?.onDetent ?? setLocal;
+  const root = !!nav?.switcher;
+  // The home sheet's smallest height is just its title row, so the map is the whole screen.
+  const canCompact = !!summary || root;
   const [showInfo, setShowInfo] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   // Drag the top of a sheet: up to expand, down to shrink, down from the smallest size to close.
-  const drag = useRef<{ x: number; y: number; moved: boolean; axis: 'x' | 'y' | null } | null>(null);
+  const drag = useRef<{ x: number; y: number; moved: boolean; axis: 'x' | 'y' | null; grab: boolean } | null>(null);
   const [pull, setPull] = useState(0);
   const [slide, setSlide] = useState(0);
   const onDown = (e: RPointerEvent) => {
     if ((e.target as HTMLElement).closest('button:not(.grab), a, input, select, summary')) return;
-    drag.current = { x: e.clientX, y: e.clientY, moved: false, axis: null };
+    drag.current = { x: e.clientX, y: e.clientY, moved: false, axis: null, grab: !!(e.target as HTMLElement).closest('.grab') };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: RPointerEvent) => {
@@ -74,10 +98,12 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
     const dy = e.clientY - d.y, dx = e.clientX - d.x;
     if (!d.axis && Math.hypot(dx, dy) > 6) { d.moved = true; d.axis = pager && Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y'; }
     if (d.axis === 'x') setSlide((dx < 0 && pager?.next) || (dx > 0 && pager?.prev) ? dx : dx / 4);
-    else if (d.axis === 'y') setPull(Math.max(0, dy));
+    else if (d.axis === 'y') setPull(dy > 0 ? dy : dy / 3);
   };
   const onUp = (e: RPointerEvent) => {
     const d = drag.current; drag.current = null; setPull(0); setSlide(0);
+    // The pointer is captured by the sheet top, so a tap on the handle arrives here rather than as its click.
+    if (d && !d.moved && d.grab) { setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : canCompact ? 'compact' : 'half'); return; }
     if (!d || !d.moved) return;
     if (d.axis === 'x') {
       const dx = e.clientX - d.x;
@@ -89,22 +115,51 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
     if (Math.abs(dy) < 36) return;
     if (dy < 0) setS(s === 'compact' ? 'half' : 'full');
     else if (s === 'full') setS('half');
-    else if (s === 'half' && summary) setS('compact');
+    else if (s === 'half' && canCompact) setS('compact');
+    else if (root) return;
+    else if (nav?.back) nav.back.go();
     else if (!over) onClose();
   };
-  const cycle = () => { if (drag.current?.moved) return; setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : summary ? 'compact' : 'half'); };
+  // Keyboard and screen readers press the handle as a button; a pointer tap is handled in onUp.
+  const cycle = (e: RMouseEvent) => { if (e.detail !== 0) return; setS(s === 'compact' ? 'half' : s === 'half' ? 'full' : canCompact ? 'compact' : 'half'); };
+  // Swipe right from the left edge of a pushed page to go back, as on iPhone.
+  const edge = useRef<{ x: number; y: number } | null>(null);
+  const [edgeDx, setEdgeDx] = useState(0);
+  const edgeProps = nav?.back ? {
+    onPointerDown: (e: RPointerEvent) => { edge.current = { x: e.clientX, y: e.clientY }; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); },
+    onPointerMove: (e: RPointerEvent) => { if (edge.current) setEdgeDx(Math.max(0, e.clientX - edge.current.x)); },
+    onPointerUp: (e: RPointerEvent) => { const d = edge.current; edge.current = null; setEdgeDx(0); if (d && e.clientX - d.x > 70) nav.back!.go(); },
+    onPointerCancel: () => { edge.current = null; setEdgeDx(0); },
+  } : null;
+  const moving = pull ? `translateY(${pull}px)` : edgeDx ? `translateX(${edgeDx}px)` : '';
+  const menu = nav?.menu;
   return (
     <>
       {over && <div className="scrim" onClick={onClose} />}
-      <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
-        style={pull ? { transform: `translateY(${pull}px)`, transition: 'none' } : undefined}>
+      <div className={`sheet ${s}${over ? ' over' : ''}${root ? ' nav-root' : ''}${nav?.back ? ' nav-page' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
+        style={moving ? { transform: moving, transition: 'none' } : undefined}>
+        {edgeProps && <div className="edge-back" aria-hidden="true" {...edgeProps} />}
         <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
           style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
+        {nav?.switcher && <div className="sheet-switcher">{nav.switcher}</div>}
+        {nav?.back && <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="nav-back-chev" aria-hidden="true" />{nav.back.label}</button>}
         <div className="sheet-head">
           <div className="grow">
-            <h3>{title}{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</h3>
+            <h3>{menu
+              ? <button className="title-menu" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen} aria-haspopup="menu">{title}<span className="title-menu-chev" aria-hidden="true" /></button>
+              : title}{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</h3>
             {sub && <div className="sub">{sub}</div>}
+            {menu && menuOpen && <>
+              <div className="menu-scrim" onClick={() => setMenuOpen(false)} />
+              <div className="pull-menu" role="menu">
+                {menu.items.map(([id, label]) => (
+                  <button key={id} role="menuitemradio" aria-checked={menu.value === id} onClick={() => { setMenuOpen(false); menu.onPick(id); }}>
+                    <span className="pull-check" aria-hidden="true">{menu.value === id ? '✓' : ''}</span>{label}
+                  </button>
+                ))}
+              </div>
+            </>}
           </div>
           {action}
           {pager && (pager.prev || pager.next) && <span className="pager" role="group" aria-label="上一個或下一個">
@@ -112,10 +167,10 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
             <small>{pager.label}</small>
             <button onClick={pager.next} disabled={!pager.next} aria-label="下一個">›</button>
           </span>}
-          <button className="close" onClick={onClose} aria-label="關閉">✕</button>
+          {!nav?.switcher && !nav?.back && <button className="close" onClick={onClose} aria-label="關閉">✕</button>}
         </div>
         </div>
-        {s === 'compact' ? <div className={`sheet-body compact-body${className ? ` ${className}-compact` : ''}`}>{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : <div className="sheet-body">
+        {s === 'compact' ? (summary ? <div className={`sheet-body compact-body${className ? ` ${className}-compact` : ''}`}>{summary}<button className="secondary" onClick={() => setS('half')}>查看詳情</button></div> : null) : <div className="sheet-body">
           {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
           {children}
         </div>}
