@@ -2199,3 +2199,31 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
 .route-group-head b { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .route-group-head b.good { color: var(--good); } .route-group-head b.bad { color: var(--bad); }
 .swipe-hint { color: var(--muted); font-size: var(--fs-2xs); text-align: center; margin: -2px 0 0; }
+
+/* Schedule board: one column per aircraft, time runs down. Press and hold a flight to drag it. */
+.board { display: flex; flex-direction: column; gap: 4px; overflow-x: auto; padding-bottom: 8px; }
+.board-head, .board-grid { display: grid; grid-template-columns: 30px repeat(var(--cols, 3), minmax(84px, 1fr)); gap: 6px; min-width: 0; }
+.board-head { position: sticky; top: 0; z-index: 3; padding: 6px 0; background: var(--bg); }
+.board-who { display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; }
+.board-who b { font-size: var(--fs-sm); }
+.board-who small { font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.board-who small.bad { color: var(--bad); }
+.board-grid { position: relative; }
+.board-hours { position: relative; }
+.board-hours span { position: absolute; right: 2px; transform: translateY(-50%); font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.board-hours span:first-child { transform: none; }
+.board-col { position: relative; border-radius: var(--r-sm); cursor: copy; min-width: 0;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--muted) 10%, transparent) 6px 7px), var(--group, var(--panel)); }
+.board-line { position: absolute; left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--muted) 18%, transparent); pointer-events: none; }
+.board-line.major { border-top-color: color-mix(in srgb, var(--muted) 35%, transparent); }
+.board-blk { position: absolute; left: 3px; right: 3px; border-radius: 6px; color: #fff; padding: 3px 5px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 0;
+  overflow: hidden; text-align: left; line-height: 1.2; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: box-shadow .15s, transform .15s; }
+.board-blk b { font-size: var(--fs-2xs); font-weight: 700; white-space: nowrap; }
+.board-blk small { font-size: var(--fs-2xs); opacity: .85; font-variant-numeric: tabular-nums; }
+.board-blk.sel { outline: 2.5px solid var(--text); outline-offset: 1px; z-index: 1; }
+.board-blk.lifted { z-index: 2; transform: scale(1.04); box-shadow: 0 6px 16px rgba(0, 0, 0, .25); overflow: visible; }
+.board-blk.clash { outline: 2.5px solid var(--bad); outline-offset: 1px; box-shadow: 0 0 0 6px var(--bad-soft), 0 6px 16px rgba(0, 0, 0, .25); }
+.board-tip { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); background: var(--text); color: var(--panel); border-radius: var(--r-pill); padding: 2px 8px; font-size: var(--fs-2xs); font-weight: 700; white-space: nowrap; }
+.board-blk.clash .board-tip { background: var(--bad); color: #fff; }
+.board-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad); pointer-events: none; z-index: 0; opacity: .8; }
+.board-blk { z-index: 1; }

@@ -1,4 +1,5 @@
 import { CodeshareSection } from './codeshare';
+import { ScheduleBoard, shiftText } from './ScheduleBoard';
 import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
@@ -14,7 +15,7 @@ import {
 } from '../sim/simulate';
 import { marketBetween } from '../sim/markets';
 import { count, money, pct } from './format';
-import { arrival, at, dayStart, legSegments, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
+import { arrival, at, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
 import { Badge, hm, IN, Icon, Ring } from './viz';
@@ -123,26 +124,19 @@ function loadView(): SchedView {
   try { const v = localStorage.getItem(VIEW_KEY); return v === 'time' || v === 'airport' || v === 'aircraft' ? v : 'aircraft'; } catch { return 'aircraft'; }
 }
 
-export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, onGap, onClose }: {
+export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, onGap, onChange, onClose }: {
   plan: Plan; result: NetworkResult | null; now: number; selected: { acId: string; legs: number[] } | null; preset?: { airport: string } | null;
-  onPickLeg: (acId: string, leg: number) => void; onGap: (acId: string, t: number) => void; onClose: () => void;
+  onPickLeg: (acId: string, leg: number) => void; onGap: (acId: string, t: number) => void; onChange: (plan: Plan, msg: string) => void; onClose: () => void;
 }) {
   const [view, setViewState] = useState<SchedView>(() => (preset ? 'time' : loadView()));
   const setView = (v: SchedView) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* storage unavailable */ } };
   const [mode, setMode] = useState<'dep' | 'arr'>('dep');
   const [basis, setBasis] = useState<ClockBasis>('local');
   const [airport, setAirport] = useState<string | null>(preset?.airport ?? null);
-  const start0 = dayStart(plan.base);
-  const nowPct = ((((now - start0) % DAY) + DAY) % DAY) / DAY * 100;
-  const tapGap = (ac: Aircraft, e: React.MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const minute = Math.round((((e.clientX - r.left) / r.width) * DAY) / 15) * 15;
-    onGap(ac.id, start0 + minute);
-  };
   return (
     <Sheet size="full" title="班表" sub={view === 'aircraft' ? <IN n="clock" v={plan.base} label="時間基準" u="時間" /> : undefined} onClose={onClose}
       info={view === 'aircraft'
-        ? <p>點航班調整，點空白處加班。斜線是飛機停在地面的時間：空檔越少，租金攤得越薄。</p>
+        ? <p>每欄是一架飛機，時間往下走（{plan.base} 時間）。點航班調整，點空白處加班。按住航班再上下拖就能改時間，來回會一起移；變紅表示會撞到前後航班。</p>
         : <p>點航班調整。每個航班每天飛一次。<b className="daymark">+1</b> 隔天抵達（含時差），<b className="daymark">-1</b> 抵達當地日期比出發早一天。</p>}>
       <div className="seg three" role="tablist" aria-label="班表檢視">
         {([['time', '時間', 'clock'], ['airport', '機場', 'base'], ['aircraft', '飛機', 'plane']] as const).map(([v, label, ic]) => (
@@ -154,32 +148,13 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
           onMode={setMode} onBasis={setBasis} onAirport={setAirport} onPickLeg={onPickLeg} />
       )}
       {plan.fleet.length === 0 && <div className="hint center">還沒有飛機。租一架飛機後，就能安排航班。</div>}
-      {view === 'aircraft' && <div className="gantt">
-        <div className="g-row g-hours">
-          <span />
-          <div className="g-track plain">{[0, 6, 12, 18].map((h) => <span key={h} style={{ left: `${(h / 24) * 100}%` }}>{h}</span>)}<span style={{ right: 0 }}>24</span></div>
-        </div>
-        {plan.fleet.map((ac) => {
-          const info = rotationInfo(ac);
-          const bad = !info.closed || !info.fits;
-          return (
-            <div className="g-row" key={ac.id}>
-              <span className="g-who">{ac.reg}<small className={bad ? 'bad' : ''}>{AIRCRAFT[ac.type].name.replace(/^(Airbus|Boeing|Embraer) /, '')} · {bad ? '⚠' : pct(info.utilisation)}</small></span>
-              <div className="g-track" onClick={(e) => tapGap(ac, e)} role="button" aria-label={`${ac.reg} 加航班`}>
-                {[6, 12, 18].map((h) => <i key={h} className="g-tick" style={{ left: `${(h / 24) * 100}%` }} />)}
-                {legSegments(ac, plan.base).map((s, k) => (
-                  <button key={k} className={`g-blk${selected?.acId === ac.id && selected.legs.includes(s.i) ? ' sel' : ''}`}
-                    style={{ left: `${s.left}%`, width: `${s.width}%`, background: s.color }}
-                    onClick={(e) => { e.stopPropagation(); onPickLeg(ac.id, s.i); }} aria-label={`${ac.legs[s.i].from} 到 ${ac.legs[s.i].to}`}>
-                    {s.width > 4.5 ? s.label : ''}
-                  </button>
-                ))}
-                <i className="g-now" style={{ left: `${nowPct}%` }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>}
+      {view === 'aircraft' && plan.fleet.length > 0 && (
+        <ScheduleBoard plan={plan} now={now} selected={selected} onPickLeg={onPickLeg} onGap={onGap}
+          onShift={(acId, unit, delta) => {
+            const ac = plan.fleet.find((x) => x.id === acId);
+            if (ac) onChange(withAc(plan, shiftUnit(ac, unit, delta)), `${ac.reg} ${shiftText(delta)}`);
+          }} />
+      )}
       {view === 'aircraft' && result && plan.fleet.length > 0 && (
         <div className="ins"><IN n="util" v={pct(result.avgUtilisation)} label="平均利用率" w="利用率" /></div>
       )}

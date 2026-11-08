@@ -323,6 +323,7 @@ export default function App() {
         <SchedulePanel key={schedAirport?.airport ?? 'all'} plan={plan} result={result} now={clock.now()} selected={schedSel} preset={schedAirport}
           onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
           onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
+          onChange={(next, msg) => { update(next); setToast(msg); }}
           onClose={() => openTab(null)} />
       )}
       {showPanel === 'fleet' && (
