@@ -1147,7 +1147,8 @@ button.primary, .primary.wide { box-shadow: 0 3px 8px color-mix(in srgb, var(--a
 }
 
 /* Waypoint: a calm, editorial operations desk. */
-.topbar, .sheet, .subnav, .clockbar .when, .speed, .map-legend { backdrop-filter: blur(18px); }
+/* Not on .sheet: sheets are opaque, and a blurred backdrop on a sheet that changes size leaves stale paint on iOS. */
+.topbar, .subnav, .clockbar .when, .speed, .map-legend { backdrop-filter: blur(18px); }
 .topbar { border-radius: var(--r-lg); }
 .kpi .label { text-transform: uppercase; letter-spacing: .06em; }
 .kpi .value { font-size: var(--fs-lg); }
