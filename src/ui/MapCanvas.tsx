@@ -119,11 +119,28 @@ export default function MapCanvas(props: Props) {
     panTarget.current = { cx: fit.cx + (w / 2 - right / 2) / scale, cy: fit.cy - (h / 2 - (top + bottom) / 2) / scale, scale };
   }, [props.airline?.id, props.airline?.route]);
 
+  // While a route is being planned, fit both of its ends into the strip above the half-height sheet on phones.
+  const plannedFrom = props.hint?.length === 1 && props.connectFrom ? props.hint[0][0] : null;
+  const plannedTo = props.hint?.length === 1 && props.connectFrom ? props.hint[0][1] : null;
+  useEffect(() => {
+    const v = viewRef.current;
+    const { w, h } = sizeRef.current;
+    if (!v || !plannedFrom || !plannedTo || w >= 820) return;
+    const A = AIRPORT_BY_CODE[plannedFrom], B = AIRPORT_BY_CODE[plannedTo];
+    if (!A || !B) return;
+    const lons = [A.lon, nearestLongitude(B.lon, A.lon)];
+    const lats = [A.lat, B.lat];
+    const top = 124, bottom = h * 0.4, pad = 48;
+    const fit = fitView(Math.max(80, w - 2 * pad), Math.max(80, bottom - top - 2 * pad), Math.min(...lats) - 1, Math.min(...lons) - 1, Math.max(...lats) + 1, Math.max(...lons) + 1);
+    const scale = Math.max(0.6, Math.min(30, fit.scale));
+    panTarget.current = { cx: fit.cx, cy: fit.cy - (h / 2 - (top + bottom) / 2) / scale, scale };
+  }, [plannedFrom, plannedTo]);
+
   // Keep the selected airport or route visible above the bottom sheet on phones.
   useEffect(() => {
     const v = viewRef.current;
     const { w, h } = sizeRef.current;
-    if (!v || !props.selection || w >= 820) return;
+    if (!v || !props.selection || w >= 820 || (plannedFrom && plannedTo)) return;
     let lat: number, lon: number;
     if (props.selection.kind === 'airport') {
       const a = AIRPORT_BY_CODE[props.selection.id];
