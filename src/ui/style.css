@@ -856,7 +856,7 @@ button.back { background: var(--line); border-radius: var(--r-md); padding: 5px 
 .od-end { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 0; padding: 6px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); min-width: 0; color: var(--text); background: transparent; }
 .od-end small { font-size: var(--fs-3xs); color: var(--muted); }
 .od-main { display: flex; align-items: baseline; gap: 6px; min-width: 0; max-width: 100%; }
-.od-end b { font-size: var(--fs-lg); letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
+.od-end b { font-size: var(--fs-lg); letter-spacing: 0.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .od-main span { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .od-end.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .od-end.empty b { color: var(--accent); }
@@ -865,14 +865,23 @@ button.back { background: var(--line); border-radius: var(--r-md); padding: 5px 
 input.search { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-md); padding: 11px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 input.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .dests { list-style: none; margin: 0; padding: 0; }
-.dests li { border-bottom: 1px solid var(--line); }
-.dests li > button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 2px; min-height: 52px; color: var(--text); background: transparent; }
-.dests .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.dests .name b { font-size: var(--fs-md); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* One compact row per airport: name and code on top; country, flight time, rivals and the "no direct" tag on one
+   grey line; weekly passengers on the right with their unit on the same line. */
+.dests li { border-bottom: var(--hairline, 1px) solid var(--line); }
+.dests li:last-child { border-bottom: 0; }
+.dests li > button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 4px; min-height: 52px; color: var(--text); background: transparent; }
+.dests .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dests .name b { font-size: var(--fs-md); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; line-height: 1.25; }
 .dests .name em { font-style: normal; font-weight: 500; color: var(--muted); font-size: var(--fs-xs); }
 .dests small { color: var(--muted); font-size: var(--fs-2xs); }
 .dests li.off { opacity: 0.5; }
 .dests .chev { font-size: var(--fs-xl); color: var(--muted); }
+.dests .name .ins { line-height: 1.3; }
+.dests .badge { padding: 1px 6px; font-size: var(--fs-3xs); }
+.dests .est { flex-direction: row; align-items: baseline; gap: 3px; min-width: 0; white-space: nowrap; }
+.dests .est b { font-size: var(--fs-md); }
+.dests .est small { font-size: var(--fs-3xs); }
+.dests .est.muted { max-width: 110px; white-space: normal; line-height: 1.25; }
 .est { display: flex; flex-direction: column; align-items: flex-end; min-width: 64px; font-variant-numeric: tabular-nums; }
 .est b { font-size: var(--fs-lg); }
 .est small { font-size: var(--fs-3xs); }
@@ -1550,7 +1559,7 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .plan-summary > span:first-child { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .03em; }
 .plan-summary strong { font-size: var(--fs-3xl); letter-spacing: -.035em; }
 .plan-summary-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
-.plan-summary-meta span { padding: 5px 8px; border-radius: var(--r-xs); background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); font-size: var(--fs-2xs); }
+.plan-summary-meta span { padding: 0; border-radius: var(--r-xs); background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); font-size: var(--fs-2xs); }
 .plan-summary-meta b { color: var(--text); font-size: var(--fs-xs); }
 .route-selection { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; font-size: var(--fs-xs); }
 .route-selection > span:first-child { padding: 4px 7px; border-radius: var(--r-xs); color: var(--accent); background: var(--accent-soft); font-size: var(--fs-3xs); font-weight: 800; }
@@ -1559,8 +1568,6 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .opt.aircraft-option { min-height: 128px; border-radius: var(--r-md); }
 .aircraft-option .delta small::before { content: ''; }
 .trip { gap: 10px; padding: 13px; background: var(--accent-soft); }
-.dests li > button { padding: 13px 4px; }
-.dests .name { gap: 4px; }
 .route-competitors-entry { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-xs); }
 .route-competitor-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .route-competitor-chips .chip { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--accent-tint); color: var(--text); font-size: var(--fs-xs); line-height: 1.2; white-space: nowrap; }
@@ -2468,13 +2475,13 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
   /* Start: a large title over one grouped list of bases. */
   .start { background: var(--bg); }
   .start-card { background: var(--bg); box-shadow: none; }
-  .start-intro { min-height: 0; padding: 56px 20px 8px; background: none; color: var(--text); }
+  .start-intro { min-height: 0; padding: 56px 16px 8px; background: none; color: var(--text); }
   .start-brand { color: var(--muted); font-size: var(--fs-xs); }
   .start-brand small, .start-decoration, .start-intro p, .start-choice > p:not(.fine) { display: none; }
   .start-intro h1 { margin: 10px 0 0; font-size: 34px; line-height: 1.25; letter-spacing: -.02em; color: var(--text); font-weight: 700; }
   .start-intro h1 em { color: var(--accent); }
   .start-choice { padding: 16px; background: none; }
-  .start-choice h2 { margin: 8px 4px 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .start-choice h2 { margin: 8px 0 6px; font-size: var(--fs-sm); font-weight: 500; color: var(--muted); letter-spacing: 0; }
   .start-choice .base-grid { margin-top: 0; display: flex; flex-direction: column; gap: 0; background: var(--group); border-radius: var(--r-md); overflow: hidden; }
   .base-grid button { position: relative; min-height: 48px; padding: 0 16px; border: 0; border-radius: 0; background: transparent; gap: 8px; }
   .base-grid button + button::before { content: ''; position: absolute; left: 16px; right: 0; top: 0; border-top: var(--hairline) solid var(--line-strong); }
@@ -2499,11 +2506,13 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
   .seg button::after { content: ''; position: absolute; inset: -6px 0; }
   .chip, .directory-chips .chip, .airport-route-filters .chip, .route-tools .chip, .chips .chip { min-height: 32px; padding: 0 12px; font-size: var(--fs-sm); position: relative; }
   .chip::after { content: ''; position: absolute; inset: -6px -2px; }
-  .chips.scroll { gap: 6px; }
+  /* Scrolling chip rows bleed to the screen edge, so the cut-off chip reads as "more to the right". */
+  .chips.scroll { gap: 6px; margin: 0 -16px; padding: 0 16px 2px; scroll-padding-inline: 16px; }
 
   .sheet-head, .airport-sheet .sheet-head { padding: 10px 8px 2px 16px; }
   .sheet-head h3, .airport-sheet .sheet-head h3 { font-size: 20px; }
-  .sheet-body, .airport-sheet .sheet-body { gap: 8px; padding: 4px 12px 12px; }
+  /* Same 16px edge as the header and footer, so titles, cards and buttons share one left line. */
+  .sheet-body, .airport-sheet .sheet-body { gap: 8px; padding: 4px 16px 12px; }
   .viewopts { gap: 8px; }
 
   /* Timetable rows: time, route, one grey line of facts, load pill. */
@@ -2538,6 +2547,12 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
   .airline-card-title em { border: 0; background: var(--fill-2); }
   .airline-card-stats { gap: 2px 10px; }
   .dir-bar, .directory-search { margin: 0; }
+
+  /* Destination list: one grouped card, rows separated by hairlines inset from the edge. */
+  .dests { background: var(--group); border-radius: var(--r-md); padding: 0 12px; }
+  .dests li { border-bottom-color: var(--line-strong); }
+  .dests li > button { padding: 7px 0; min-height: 50px; }
+  .dests .est { gap: 2px; }
 }
 
 /* ───────────── Maps-style shell (2026-11-08) ─────────────
