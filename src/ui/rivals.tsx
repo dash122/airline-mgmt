@@ -4,7 +4,7 @@ import { CompactTimetable } from './CompactTimetable';
 import { KIND_NAMES, rivalsBetween, type Airline } from '../sim/competitors';
 import { type NetworkResult, type Plan, type RouteResult } from '../sim/simulate';
 import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
-import { count, pct } from './format';
+import { count, pct, price } from './format';
 import { useAirlineLink } from './airlines';
 import { Head } from './sheets';
 import { IN, Ring } from './viz';
@@ -136,7 +136,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
                     {r.kind === 'connecting' ? <IN n="transfer" v="其他城市" label="在其他城市換機" w="經" />
                       : r.kind === 'ownVia' || r.kind === 'rivalVia' ? <IN n="transfer" v={r.via} label={`${a} → ${r.via} → ${b}`} w="經" /> : null}
                     {r.kind !== 'connecting' && r.kind !== 'ownVia' && <IN n="plane" v={count(r.freq)} label="班/週" u="班/週" />}
-                    {r.fare ? <IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /> : null}
+                    {r.fare ? <IN n="fare" v={price(r.fare)} label="票價" w="票價" /> : null}
                     {r.airports.length ? <span className="code-chips" title="飛的機場">{r.airports.map((k) => <span key={k}>{k.replace('-', '–')}</span>)}</span> : null}
                   </span>
                 </span>

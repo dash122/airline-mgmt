@@ -9,7 +9,7 @@ import { marketSplit } from '../sim/share';
 import { canCodeshare, hasCodeshare, hhmm, routePairs, type NetworkResult, type Plan } from '../sim/simulate';
 import { CodeshareTab } from './codeshare';
 import { CompactTimetable } from './CompactTimetable';
-import { count, pct, short } from './format';
+import { count, pct, price, short } from './format';
 import { Head, Sheet, shortType } from './sheets';
 import { Badge, IN, Icon, type IconName } from './viz';
 
@@ -242,7 +242,7 @@ function RouteRow({ r, plan, flown, open, shared, canShare, onToggle, onPickAirp
       <button className="al-route-top" onClick={onToggle} aria-expanded={open}>
         <span className="name">
           <b>{r.a} ⇄ {name(r.b)} {r.b}</b>
-          <span className="ins"><IN n="long" v={`${count(r.distKm)}km`} label={r.distKm > LONG_HAUL_KM ? '長程' : '距離'} u={r.distKm > LONG_HAUL_KM ? ' 長程' : undefined} tone={r.distKm > LONG_HAUL_KM ? 'accent' : undefined} /><IN n="plane" v={shortType(r.type)} label="機型" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /></span>
+          <span className="ins"><IN n="long" v={`${count(r.distKm)}km`} label={r.distKm > LONG_HAUL_KM ? '長程' : '距離'} u={r.distKm > LONG_HAUL_KM ? ' 長程' : undefined} tone={r.distKm > LONG_HAUL_KM ? 'accent' : undefined} /><IN n="plane" v={shortType(r.type)} label="機型" /><IN n="fare" v={price(r.fare)} label="票價" w="票價" /></span>
         </span>
         {shared && <Badge n="link" tone="good" label="共享" />}
         {flown && <Badge n="route" tone="warn" label="你也飛" />}
@@ -394,7 +394,7 @@ function VersusYou({ plan, result, net, onOpenRoute, onOpen, onPickAirport }: {
           <ul className="markets">
             {ideas.map((r) => (
               <li key={r.key}>
-                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<span className="ins"><IN n="plane" v={`${r.freq}/週`} label="它的班次" w="它" /><IN n="fare" v={`$${count(r.fare)}`} label="票價 NT$" w="票價" /></span></span>
+                <span className="name">{r.a} ⇄ {name(r.b)} {r.b}<span className="ins"><IN n="plane" v={`${r.freq}/週`} label="它的班次" w="它" /><IN n="fare" v={price(r.fare)} label="票價" w="票價" /></span></span>
                 <button onClick={() => onOpen(r.a, r.b)}>開航</button>
               </li>
             ))}

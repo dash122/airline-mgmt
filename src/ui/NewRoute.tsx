@@ -11,7 +11,7 @@ import {
   TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
-import { count, money, pct, short } from './format';
+import { count, hkSigned, money, pct, price, short } from './format';
 import { FlightTimes } from './FlightTimes';
 import { MarketShare } from './rivals';
 import { at, Sheet, shortType } from './sheets';
@@ -323,10 +323,10 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       {preview && chosen && (
         <div className="plan-summary">
           <div className="plan-summary-head">
-            <span>預計全網損益／週</span>
+            <span>預計全網週損益</span>
             {recommended ? <i className="ac-best">建議</i> : <i className="plan-tag">已調整</i>}
           </div>
-          <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{signed(preview.networkDelta)}</strong>
+          <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{hkSigned(preview.networkDelta)}</strong>
           <div className="plan-summary-meta">
             <span><b>{owned ? owned.reg : shortType(chosen.type)}</b> {owned ? '現有' : '租用'}</span>
             <span><b>{count(preview.pax)}</b> 人/週</span>
@@ -380,7 +380,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
         </div>
       )}
       <MarketShare a={from} b={to} split={previewMarket} title="目前行程與市場占有率" />
-      {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</div>}
+      {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · {price(m.ground.fare)}</div>}
       </details>
     </Sheet>
   );
