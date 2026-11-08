@@ -1,6 +1,6 @@
 // Weekly network simulation over the player's fleet and daily schedules.
 // Pure and deterministic: the same plan always gives the same result.
-import { AIRCRAFT, classRank, type AircraftModel } from '../data/aircraft';
+import { AIRCRAFT, classRank, type AircraftModel, type AircraftSpec } from '../data/aircraft';
 import { AIRPORT_BY_CODE, AIRPORTS, type Airport } from '../data/airports';
 import { airChoice, airUtility, type AirOffer, departureQuality, FARE_SENSITIVITY, fareResponse, groundUtility, noTravelUtility, stayHomeUtility, THETA, timeOfDayQuality, VALUE_OF_TIME } from './choice';
 import { airlines, rivalsAt, rivalsBetween, rivalsFrom, type Airline, type RivalService } from './competitors';
@@ -237,8 +237,13 @@ export function routeProblem(a: string, b: string, aircraft: AircraftModel): str
   if (d > spec.rangeKm) return `超出${spec.name}航程`;
   const maxRank = Math.min(classRank(A.maxClass), classRank(B.maxClass));
   if (classRank(spec.cls) > maxRank) return '跑道無法起降此機型';
+  if (spec.minRunwayM && Math.min(A.runwayM, B.runwayM) < spec.minRunwayM) return '跑道太短，無法起降此機型';
   return null;
 }
+
+/** Whether an airport's runway is long enough for a type: its size class, then any extra length the type needs. */
+export const runwayFits = (spec: AircraftSpec, airport: Airport) => classRank(spec.cls) <= classRank(airport.maxClass)
+  && (spec.minRunwayM === undefined || airport.runwayM >= spec.minRunwayM);
 
 export interface RotationInfo {
   blockMin: number; // per day, averaged over the cycle
