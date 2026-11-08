@@ -7,7 +7,7 @@ import { marketSplit, type MarketSplit, type ShareRow } from '../sim/share';
 import { count, pct } from './format';
 import { useAirlineLink } from './airlines';
 import { Head } from './sheets';
-import { IN } from './viz';
+import { IN, Ring } from './viz';
 import { ConnectionFlow } from './ConnectionFlow';
 
 /** An airline's name; taps open its profile wherever the app provides one. */
@@ -50,6 +50,17 @@ export function marketSummary({ rows, ownTurnedAway }: MarketSplit): string {
 }
 
 /** Show both journey types on the same total-market denominator. */
+/** One share as a bar: supply (flights) or demand (passengers). */
+function CompareBar({ label, sub, share }: { label: string; sub: string; share: number }) {
+  return (
+    <div className="share-bar-row">
+      <span className="share-bar-label"><b>{label}</b><small>{sub}</small></span>
+      <span className="share-bar" aria-hidden="true"><i style={{ width: `${Math.round(Math.min(1, share) * 100)}%` }} /></span>
+      <b className="share-bar-val">{pct(share)}</b>
+    </div>
+  );
+}
+
 function DirectVsTransit({ rows, total }: { rows: ShareRow[]; total: number }) {
   const transit = rows.filter(isTransit).reduce((s, r) => s + r.pax, 0);
   const direct = rows.filter((r) => !isTransit(r)).reduce((s, r) => s + r.pax, 0);
@@ -89,13 +100,25 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         <p>市占看班次、起飛時段、票價和服務；轉機票價較低，也會搶直飛旅客，但等越久分到越少。對手的班表和票價固定。</p>
         {result && result.pax - result.localPax >= 1 && <p>另有每週 {count(result.pax - result.localPax)} 人只在這條航線轉機去別處，算在別的市場。客滿時本地和轉機旅客按比例分座位。</p>}
       </>} right={<small className="muted"><IN n="pax" v={count(total)} label="旅客/週" u="人/週" /></small>}>{title}</Head>
-      <div className="share-overview">
-        <div><span>你的旅客市占</span><strong>{pct(ownPax / total)}</strong><small>{count(ownPax)} 人／週 · 含直飛及轉機</small></div>
-        <div className="share-overview-total"><span>市場旅客</span><strong>{count(total)}</strong><small>人／週 · 雙向</small></div>
+      <div className="share-hero">
+        <Ring value={ownPax / total} tone="good" size={58} stroke={6}><b>{pct(ownPax / total)}</b></Ring>
+        <div className="share-hero-text"><b>你的市占</b><small>{count(ownPax)} 人／週 · 含轉機</small></div>
+        <div className="share-hero-total"><span>市場</span><b>{count(total)}</b><small>人／週</small></div>
       </div>
-      <p className="market-insight">{summary}</p>
+      <div className="share-compare" role="img" aria-label={`班次 你占 ${pct(split.ownFreqShare)}，旅客 你占 ${pct(ownPax / total)}`}>
+        <CompareBar label="班次" sub="供給" share={split.ownFreqShare} />
+        <CompareBar label="旅客" sub="需求" share={ownPax / total} />
+        {Math.abs(split.ownFreqShare - ownPax / total) > 0.05 && (
+          <p className="market-insight">{split.ownFreqShare > ownPax / total ? '班次比旅客多，可減班或換小飛機。' : '旅客比班次多，加班可以多拿。'}</p>
+        )}
+      </div>
       <DirectVsTransit rows={rows} total={total} />
-      {result && net && <ConnectionFlow a={a} b={b} net={net} />}
+      {result && net && (
+        <details className="share-more-details">
+          <summary>轉機從哪來</summary>
+          <ConnectionFlow a={a} b={b} net={net} />
+        </details>
+      )}
       <div className="share-breakdown-label"><b>航空公司市占分布</b><span>占全部旅客</span></div>
       <div className="share-track" role="img" aria-label={rows.map((r) => `${rowName(r)} ${pct(r.share)}`).join('，')}>{segments}</div>
       <ul className="share-list">

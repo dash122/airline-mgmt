@@ -144,13 +144,20 @@ export const bestShare = (choices: ShareChoice[]) =>
 /** One codeshare idea across all partners. */
 export interface CodeshareIdea extends CodeshareOption { airline: string }
 
-/** The best codeshares not yet in the plan, across every partner that can codeshare, most profit first. */
-export function codeshareIdeas(plan: Plan, limit = 12): CodeshareIdea[] {
+/**
+ * The best codeshares not yet in the plan, across every partner that can codeshare, most profit first.
+ * With `near`, only partner routes that start or end at one of those airports (extensions of a route you fly).
+ */
+export function codeshareIdeas(plan: Plan, limit = 12, near?: string[]): CodeshareIdea[] {
   if (!plan.fleet.length) return [];
   const out: CodeshareIdea[] = [];
   for (const a of airlines()) {
     if (!canCodeshare(a)) continue;
-    for (const o of codeshareOptions(plan, a.id)) if (!o.active && o.gain > 0) out.push({ ...o, airline: a.id });
+    for (const o of codeshareOptions(plan, a.id)) {
+      if (o.active || o.gain <= 0) continue;
+      if (near && !near.some((c) => o.route.a === c || o.route.b === c)) continue;
+      out.push({ ...o, airline: a.id });
+    }
   }
   return out.sort((x, y) => y.gain - x.gain).slice(0, limit);
 }
