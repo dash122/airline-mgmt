@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rivalsBetween } from './competitors';
-import { bestShare, hostedChoices, hostedIdeas, hostedImpact, hostedOptions, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
+import { bestShare, codeshareIdeaSteps, hostedChoices, hostedIdeaSteps, hostedIdeas, hostedImpact, hostedOptions, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
 import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, feederFlights, HOSTED_FEE_PER_WEEK, setHostedShare, toggleHosted, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
 import { AIRCRAFT } from '../data/aircraft';
 import { hubTransit } from './airports';
@@ -138,6 +138,21 @@ describe('codeshare', () => {
     expect(new Set(ideas.map((i) => i.airline)).size).toBeGreaterThan(1);
     for (const i of ideas) expect(i.gain).toBeGreaterThan(0);
     expect(codeshareIdeas(withCs, 50).some((i) => i.airline === partner.id && i.route.key === key)).toBe(false);
+  });
+
+  it('the step version finds the same ideas as it goes, so a long search can show partial results', () => {
+    const found: ReturnType<typeof codeshareIdeas> = [];
+    const steps = codeshareIdeaSteps(plan, 8, undefined, found);
+    let r = steps.next();
+    let pauses = 0;
+    while (!r.done) { pauses++; r = steps.next(); }
+    expect(pauses).toBeGreaterThan(1);
+    expect(r.value.map((i) => `${i.airline}|${i.route.key}`)).toEqual(codeshareIdeas(plan, 8).map((i) => `${i.airline}|${i.route.key}`));
+    expect(found.length).toBeGreaterThan(0);
+    const hosted = hostedIdeaSteps(plan, 8);
+    let h = hosted.next();
+    while (!h.done) h = hosted.next();
+    expect(h.value.map((i) => `${i.airline}|${i.key}`)).toEqual(hostedIdeas(plan, 8).map((i) => `${i.airline}|${i.key}`));
   });
 
   it('extensions: near limits ideas to partner routes that touch those airports', () => {

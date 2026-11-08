@@ -562,7 +562,7 @@ const MAX_FIT_UP = 4, MAX_FIT_UP_SMALL = 2;
 const MIN_UNSERVED_FIT = 0.01;
 
 /** Pairs of airports handled between pauses while the demand model is built in the background. */
-const CHUNK = 16384;
+const CHUNK = 1024;
 
 interface MarketTable { all: Map<string, Market>; byAirport: Map<string, Market[]>; annualPax: Map<string, number> }
 
