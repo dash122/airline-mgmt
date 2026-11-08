@@ -24,26 +24,47 @@ const dur = hm;
 
 // ---------- Routes ----------
 
+type RouteSort = 'need' | 'profit' | 'load' | 'share';
+const SORTS: [RouteSort, string][] = [['need', '建議'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']];
+
 export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onCodeshare, onClose }: {
   plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
   onPartner: (airline: string) => void; onCodeshare: (airline: string, key: string) => void; onClose: () => void;
 }) {
-  const [only, setOnly] = useState<'all' | 'todo'>('all');
-  const rows = routePairs(plan)
-    .map((r) => {
-      const res = result?.routes[r.key];
-      const figures = res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null;
-      const types = [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))];
-      return { ...r, figures, types, health: routeHealth(figures, r.flightsPerDay / 2) };
-    })
-    .sort((x, y) => healthRank(x.health) - healthRank(y.health) || (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0));
+  const [only, setOnly] = useState(false);
+  const [sort, setSort] = useState<RouteSort>('need');
+  const pairs = routePairs(plan);
+  // Which end a route hangs from: the hub, then the base, then whichever end has more of your routes.
+  const degree = new Map<string, number>();
+  for (const r of pairs) for (const c of [r.a, r.b]) degree.set(c, (degree.get(c) ?? 0) + 1);
+  const homeOf = (a: string, b: string) => {
+    for (const h of [plan.hub, plan.base]) if (h === a || h === b) return h;
+    return (degree.get(a) ?? 0) >= (degree.get(b) ?? 0) ? a : b;
+  };
+  const rows = pairs.map((r) => {
+    const res = result?.routes[r.key];
+    const figures = res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null;
+    const types = [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))];
+    const home = homeOf(r.a, r.b);
+    return { ...r, figures, types, home, other: home === r.a ? r.b : r.a, share: res?.marketShare ?? 0, health: routeHealth(figures, r.flightsPerDay / 2) };
+  });
+  type Row = (typeof rows)[number];
+  const by: Record<RouteSort, (x: Row, y: Row) => number> = {
+    need: (x, y) => healthRank(x.health) - healthRank(y.health) || (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
+    profit: (x, y) => (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
+    load: (x, y) => (y.figures?.loadFactor ?? 0) - (x.figures?.loadFactor ?? 0),
+    share: (x, y) => y.share - x.share,
+  };
   const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
-  const shown = only === 'todo' ? todo : rows;
+  const shown = (only ? todo : rows).slice().sort(by[sort]);
   const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
+  const groups = [...new Set(shown.map((r) => r.home))]
+    .map((home) => ({ home, rows: shown.filter((r) => r.home === home) }))
+    .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
-      info={rows.length > 0 && <p>先列出要處理的航線（客滿、虧損、空位多），每條只給一個建議動作。點航線看票價、航班和市場。損益是每週航段損益，不含租金。</p>}
+      info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。損益是每週航段損益，不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length === 0 && (
         <div className="empty-cta">
@@ -60,22 +81,35 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
           <span><b className={todo.length ? 'warn' : 'good'}>{todo.length}</b><small>條要處理</small></span>
         </div>
       )}
-      {todo.length > 0 && rows.length > 3 && (
-        <div className="seg two routes-filter" role="tablist">
-          <button role="tab" aria-selected={only === 'all'} className={only === 'all' ? 'on' : ''} onClick={() => setOnly('all')}>全部 {rows.length}</button>
-          <button role="tab" aria-selected={only === 'todo'} className={only === 'todo' ? 'on' : ''} onClick={() => setOnly('todo')}>要處理 {todo.length}</button>
+      {rows.length > 1 && (
+        <div className="chips scroll route-tools" role="toolbar" aria-label="篩選和排序">
+          {todo.length > 0 && <button className={`chip${only ? ' strong' : ''}`} aria-pressed={only} onClick={() => setOnly(!only)}>要處理 {todo.length}</button>}
+          {todo.length > 0 && <span className="sep" aria-hidden="true" />}
+          {SORTS.map(([k, label]) => <button key={k} className={`chip${sort === k ? ' strong' : ''}`} aria-pressed={sort === k} onClick={() => setSort(k)}>{label}{sort === k && k !== 'need' ? ' ↓' : ''}</button>)}
         </div>
       )}
-      <ul className="route-rows">
-        {shown.map((r) => {
-          const market = marketBetween(r.a, r.b);
-          return (
-            <RouteRow key={r.key} name={routeName(r.a, r.b)} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
-              sub={[r.types.join('、'), market?.distKm ? `${count(market.distKm)} 公里` : ''].filter(Boolean).join(' · ')}
-              onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
-          );
-        })}
-      </ul>
+      {groups.map((g) => {
+        const sum = g.rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
+        return (
+          <section key={g.home} className="route-group">
+            <div className="route-group-head">
+              <h4>{AIRPORT_BY_CODE[g.home].name} {g.home} · {g.rows.length}</h4>
+              <b className={sum >= 0 ? 'good' : 'bad'}>{sum >= 0 ? '+' : ''}{money(sum)}／週</b>
+            </div>
+            <ul className="route-rows">
+              {g.rows.map((r) => {
+                const market = marketBetween(r.a, r.b);
+                return (
+                  <RouteRow key={r.key} name={AIRPORT_BY_CODE[r.other].name} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
+                    sub={[r.other, r.types.join('、'), market?.distKm ? `${count(market.distKm)} 公里` : ''].filter(Boolean).join(' · ')}
+                    onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+      {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">← 滑動減一班 · 加一班 →</p>}
       <CodeshareSection plan={plan} result={result} onPick={onPartner} onToggle={onCodeshare} onOpenRoute={onOpen} />
     </Sheet>
   );
