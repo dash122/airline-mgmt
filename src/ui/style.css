@@ -2238,3 +2238,14 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
   .hud .money-btn .kpi { grid-area: auto !important; }
   .hud .money-btn::after { content: ''; position: absolute; inset: -6px -4px; }
 }
+
+/* Airline directory: results first; one chip row, the rest behind 篩選. */
+.dir-bar { align-items: center; }
+.dir-bar .sep { width: 1px; height: 22px; background: var(--line-strong); flex: none; margin: 0 2px; }
+.dir-bar .chip { min-height: 36px; display: inline-flex; align-items: center; gap: 4px; }
+.dir-bar .filter-chip.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.dir-filters { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; border-radius: var(--r-md); background: var(--group, var(--panel)); }
+.dir-filters .directory-filter-label { margin: 4px 0 0; }
+.chips.wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips.wrap .chip { min-height: 36px; }
+.dir-filters .secondary { margin-top: 6px; }
