@@ -50,6 +50,8 @@ export interface Codeshare {
   airline: string;
   /** The route, as pairKey. */
   key: string;
+  /** Share of each partner flight's seats the player may sell (one of CODESHARE_SHARES). Default CODESHARE_SEAT_SHARE. */
+  seatShare?: number;
 }
 
 // ---------- Codeshare terms ----------
@@ -58,10 +60,18 @@ export interface Codeshare {
 // flights' own reference fares: the player keeps its own flight's part and the partner gets its flight's part. The player
 // pays a flat weekly fee per codeshare route (sales, IT, ground handling agreements).
 
-/** Share of each partner flight's seats the player may sell. */
+/** Share of each partner flight's seats the player may sell, unless the codeshare sets its own. */
 export const CODESHARE_SEAT_SHARE = 0.2;
-/** What one codeshare route costs per week, NT$. */
-export const CODESHARE_FEE_PER_WEEK = 150_000;
+/** Seat blocks the player can ask for. */
+export const CODESHARE_SHARES = [0.1, 0.2, 0.3, 0.4] as const;
+/**
+ * What one codeshare route costs per week, NT$: a fixed part (sales, IT, ground handling agreements) plus a part that
+ * grows with the seat block. A bigger block costs more but less per seat.
+ */
+export const codeshareFee = (share: number) => Math.round(60_000 + 450_000 * share);
+/** The fee for the default block. */
+export const CODESHARE_FEE_PER_WEEK = codeshareFee(CODESHARE_SEAT_SHARE);
+export const shareOf = (cs: Pick<Codeshare, 'seatShare'>) => cs.seatShare ?? CODESHARE_SEAT_SHARE;
 /** Low-cost airlines don't sell connections, and so don't codeshare. */
 export const canCodeshare = (a: Airline) => a.kind !== 'low' && a.id !== 'other';
 
@@ -84,7 +94,8 @@ export interface PartnerFlight {
 const codeshareIndex = new Map<string, PartnerFlight[]>();
 /** The partner flights of one codeshare, both directions. Empty when the airline doesn't fly the route (or can't codeshare). */
 export function partnerFlights(cs: Codeshare): PartnerFlight[] {
-  const k = `${cs.airline}|${cs.key}`;
+  const share = shareOf(cs);
+  const k = `${cs.airline}|${cs.key}|${share}`;
   let list = codeshareIndex.get(k);
   if (!list) {
     list = [];
@@ -93,7 +104,7 @@ export function partnerFlights(cs: Codeshare): PartnerFlight[] {
       for (const s of rivalsBetween(a, b)) {
         if (s.airline.id !== cs.airline || !canCodeshare(s.airline) || !s.times.length) continue;
         const perWeek = Math.min(7, s.freq / s.times.length);
-        const seats = Math.round(AIRCRAFT[s.type].seats * CODESHARE_SEAT_SHARE);
+        const seats = Math.round(AIRCRAFT[s.type].seats * share);
         for (const t of s.times) {
           list.push({ key: cs.key, airline: s.airline.id, from: s.from, to: s.to, dep: mod(utcFromLocal(s.from, t), DAY), block: blockMinutes(s.from, s.to, s.type), perWeek, seats, type: s.type });
         }
@@ -111,6 +122,17 @@ export function toggleCodeshare(plan: Plan, airline: string, key: string): Plan 
   const list = plan.codeshares ?? [];
   const next = hasCodeshare(plan, airline, key) ? list.filter((c) => c.airline !== airline || c.key !== key) : [...list, { airline, key }];
   return { ...plan, codeshares: next };
+}
+/** The codeshare's seat block, or null when it isn't in the plan. */
+export const codeshareShare = (plan: Plan, airline: string, key: string) => {
+  const c = plan.codeshares?.find((x) => x.airline === airline && x.key === key);
+  return c ? shareOf(c) : null;
+};
+/** Starts the codeshare (if needed) with this seat block. The default block isn't stored. */
+export function setCodeshareShare(plan: Plan, airline: string, key: string, share: number): Plan {
+  const cs: Codeshare = share === CODESHARE_SEAT_SHARE ? { airline, key } : { airline, key, seatShare: share };
+  const list = plan.codeshares ?? [];
+  return { ...plan, codeshares: hasCodeshare(plan, airline, key) ? list.map((c) => (c.airline === airline && c.key === key ? cs : c)) : [...list, cs] };
 }
 /** The partner airline's name. */
 export const airlineName = (id: string) => airlines().find((a) => a.id === id)?.name ?? id;
@@ -369,6 +391,26 @@ export interface CodeshareResult {
   markets: { o: string; d: string; via: string; pax: number }[];
   /** The player's own routes these travellers also fly, with how many (weekly, both directions) and the fares they paid for them. */
   feeds: { key: string; pax: number; revenue: number }[];
+  /** Seat block in use (share of each partner flight). */
+  share: number;
+  /** Each partner departure, in time order per direction. */
+  departures: CodeshareDeparture[];
+}
+
+/** One partner departure of a codeshare. Times in UTC minutes; pax, wanted and seats per departure. */
+export interface CodeshareDeparture {
+  from: string;
+  to: string;
+  dep: number;
+  arr: number;
+  perWeek: number;
+  seats: number;
+  pax: number;
+  wanted: number;
+  /** How many of the player's own flights connect with it (before or after). Zero: nobody can use it. */
+  links: number;
+  /** The own flight that brings it the most travellers: from, to and departure (UTC). */
+  top?: { from: string; to: string; dep: number; pax: number };
 }
 
 export interface NetworkResult {
@@ -716,6 +758,11 @@ export function simulate(plan: Plan): NetworkResult {
   };
   // The partner's part of a ticket follows the market's reference fare (the player sets fares on its own flights).
   const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
+  // Which of the player's flights each partner flight connects with, and how many travellers each pairing carries.
+  const partnerLinks = new Map<Flight, Set<Flight>>();
+  const linkOf = (f: Flight) => { let set = partnerLinks.get(f); if (!set) partnerLinks.set(f, (set = new Set())); return set; };
+  const linkPax = new Map<Flight, Map<Flight, number>>();
+  const partnerWanted = new Map<Flight, number>();
   for (const f1 of every) {
     const mult1 = multOf(f1);
     if (!f1.partner) add(f1.from, f1.to, { flights: [f1], weight: flightTimeQuality(f1), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
@@ -727,6 +774,8 @@ export function simulate(plan: Plan): NetworkResult {
       if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub))) continue;
       const m = marketBetween(f1.from, f2.to);
       if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) continue;
+      if (f1.partner) linkOf(f1).add(f2);
+      if (f2.partner) linkOf(f2).add(f1);
       // Extra time versus flying nonstop, valued in the same units as fares. Long waits and stopovers count less than in full.
       const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
       // Connecting fares follow the fares the player sets on the legs, weighted by distance.
@@ -802,7 +851,8 @@ export function simulate(plan: Plan): NetworkResult {
     if (!fl.length) continue;
     csResults.set(id, {
       key: cs.key, airline: cs.airline, flights: fl.reduce((s, f) => s + f.perWeek, 0), seats: fl.reduce((s, f) => s + f.perWeek * f.seats, 0),
-      pax: 0, wanted: 0, feedRevenue: 0, partnerRevenue: 0, fee: CODESHARE_FEE_PER_WEEK, markets: [], marketMap: new Map(), feeds: [], feedMap: new Map(),
+      pax: 0, wanted: 0, feedRevenue: 0, partnerRevenue: 0, fee: codeshareFee(shareOf(cs)), markets: [], marketMap: new Map(), feeds: [], feedMap: new Map(),
+      share: shareOf(cs), departures: [],
     });
   }
   const csOf = (f: Flight) => csResults.get(`${f.partner!.airline}|${f.partner!.key}`)!;
@@ -837,6 +887,11 @@ export function simulate(plan: Plan): NetworkResult {
         const toPartner = n * fare * it.perWeek * partnerShare;
         cs.pax += n * it.perWeek;
         cs.wanted += want * it.perWeek;
+        partnerWanted.set(partnerLeg, (partnerWanted.get(partnerLeg) ?? 0) + want * it.perWeek / partnerLeg.perWeek);
+        const own = it.flights.find((f) => !f.partner)!;
+        const lp = linkPax.get(partnerLeg) ?? new Map<Flight, number>();
+        lp.set(own, (lp.get(own) ?? 0) + n * it.perWeek);
+        linkPax.set(partnerLeg, lp);
         cs.partnerRevenue += toPartner;
         for (const f of it.flights) {
           if (f.partner) continue;
@@ -971,7 +1026,15 @@ export function simulate(plan: Plan): NetworkResult {
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const codeshares: Record<string, CodeshareResult> = {};
   for (const [id, { marketMap, feedMap, ...r }] of csResults) {
-    codeshares[id] = { ...r, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6), feeds: [...feedMap.values()].sort((x, y) => y.pax - x.pax) };
+    const departures: CodeshareDeparture[] = partners.filter((f) => `${f.partner!.airline}|${f.partner!.key}` === id).map((f) => {
+      const best = [...(linkPax.get(f) ?? new Map<Flight, number>())].sort((x, y) => y[1] - x[1])[0];
+      return {
+        from: f.from, to: f.to, dep: f.dep, arr: f.arr, perWeek: f.perWeek, seats: f.seats, pax: flightPax.get(f) ?? 0,
+        wanted: partnerWanted.get(f) ?? 0, links: partnerLinks.get(f)?.size ?? 0,
+        top: best && best[1] > 0.05 ? { from: best[0].from, to: best[0].to, dep: best[0].dep, pax: best[1] } : undefined,
+      };
+    }).sort((x, y) => x.from.localeCompare(y.from) || localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
+    codeshares[id] = { ...r, departures, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6), feeds: [...feedMap.values()].sort((x, y) => y.pax - x.pax) };
   }
   const codeshareCost = Object.values(codeshares).reduce((s, c) => s + c.fee, 0);
   const cost = flyingCost + ownershipCost + hubCost + codeshareCost;

@@ -2,9 +2,9 @@
 // Every number comes from running the whole week's simulation with and without the codeshare (about 1 ms each).
 import { airlines } from './competitors';
 import { airlineNetwork, type AirlineRoute } from './networks';
-import { canCodeshare, hasCodeshare, routePairs, simulate, toggleCodeshare, type CodeshareResult, type NetworkResult, type Plan } from './simulate';
+import { canCodeshare, CODESHARE_SHARES, codeshareShare, hasCodeshare, routePairs, setCodeshareShare, simulate, toggleCodeshare, type CodeshareResult, type NetworkResult, type Plan } from './simulate';
 
-export { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, canCodeshare, hasCodeshare, toggleCodeshare } from './simulate';
+export { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, canCodeshare, codeshareFee, codeshareShare, hasCodeshare, setCodeshareShare, toggleCodeshare } from './simulate';
 
 export interface CodeshareOption {
   route: AirlineRoute;
@@ -95,13 +95,16 @@ export interface CodeshareImpact {
   routes: CodeshareRouteImpact[];
 }
 
-/** The effect of a codeshare (whether or not it is in the plan yet). Null when the partner doesn't fly it. */
-export function codeshareImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult): CodeshareImpact | null {
+/**
+ * The effect of a codeshare (whether or not it is in the plan yet), with its seat block or, when given, another one.
+ * Null when the partner doesn't fly it.
+ */
+export function codeshareImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult, share?: number): CodeshareImpact | null {
   const active = hasCodeshare(plan, airlineId, key);
   const cur = now ?? simulate(plan);
-  const other = simulate(toggleCodeshare(plan, airlineId, key));
-  const withIt = active ? cur : other;
-  const without = active ? other : cur;
+  const without = active ? simulate(toggleCodeshare(plan, airlineId, key)) : cur;
+  const withIt = share !== undefined && share !== codeshareShare(plan, airlineId, key) ? simulate(setCodeshareShare(plan, airlineId, key, share))
+    : active ? cur : simulate(toggleCodeshare(plan, airlineId, key));
   const stats = withIt.codeshares[`${airlineId}|${key}`];
   if (!stats) return null;
   const gain = profit(withIt) - profit(without);
@@ -119,4 +122,35 @@ export function codeshareImpact(plan: Plan, airlineId: string, key: string, now?
     };
   });
   return { active, stats, gain, feedRevenue: stats.feedRevenue, ownRevenue, paxCost, fee, routes };
+}
+
+/** What each seat block would add to the week (fee included), and what it would sell. */
+export interface ShareChoice { share: number; gain: number; pax: number; wanted: number; seats: number }
+
+export function shareChoices(plan: Plan, airlineId: string, key: string): ShareChoice[] {
+  const active = hasCodeshare(plan, airlineId, key);
+  const without = simulate(active ? toggleCodeshare(plan, airlineId, key) : plan);
+  return CODESHARE_SHARES.map((share) => {
+    const r = simulate(setCodeshareShare(plan, airlineId, key, share));
+    const s = r.codeshares[`${airlineId}|${key}`];
+    return { share, gain: profit(r) - profit(without), pax: s?.pax ?? 0, wanted: s?.wanted ?? 0, seats: s?.seats ?? 0 };
+  });
+}
+
+/** The seat block that adds the most (the smaller one when two are within NT$10k). */
+export const bestShare = (choices: ShareChoice[]) =>
+  choices.reduce((b, c) => (c.gain > b.gain + 10_000 ? c : b), choices[0]);
+
+/** One codeshare idea across all partners. */
+export interface CodeshareIdea extends CodeshareOption { airline: string }
+
+/** The best codeshares not yet in the plan, across every partner that can codeshare, most profit first. */
+export function codeshareIdeas(plan: Plan, limit = 12): CodeshareIdea[] {
+  if (!plan.fleet.length) return [];
+  const out: CodeshareIdea[] = [];
+  for (const a of airlines()) {
+    if (!canCodeshare(a)) continue;
+    for (const o of codeshareOptions(plan, a.id)) if (!o.active && o.gain > 0) out.push({ ...o, airline: a.id });
+  }
+  return out.sort((x, y) => y.gain - x.gain).slice(0, limit);
 }

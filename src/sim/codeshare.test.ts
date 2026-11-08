@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rivalsBetween } from './competitors';
-import { codeshareImpact, codeshareOptions } from './codeshare';
-import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
+import { bestShare, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
+import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
 import { AIRCRAFT } from '../data/aircraft';
 import { hubTransit } from './airports';
 
@@ -89,5 +89,54 @@ describe('codeshare', () => {
     const t = hubTransit(withCs, after, 'BKK');
     const row = t.carried.find((l) => [l.o, l.d].sort().join('-') === 'HKT-TPE');
     expect(row?.viaPax ?? 0).toBeGreaterThan(10);
+  });
+
+  it('lets the player size the seat block, with a fee that grows with it', () => {
+    expect(codeshareShare(withCs, partner.id, key)).toBe(CODESHARE_SEAT_SHARE);
+    const big = setCodeshareShare(withCs, partner.id, key, 0.4);
+    expect(big.codeshares).toEqual([{ airline: partner.id, key, seatShare: 0.4 }]);
+    // Back to the default stores no override; on a plan without it, it starts the codeshare.
+    expect(setCodeshareShare(big, partner.id, key, CODESHARE_SEAT_SHARE).codeshares).toEqual([{ airline: partner.id, key }]);
+    expect(setCodeshareShare(plan, partner.id, key, 0.1).codeshares).toEqual([{ airline: partner.id, key, seatShare: 0.1 }]);
+    const r = simulate(big).codeshares[`${partner.id}|${key}`];
+    expect(r.share).toBe(0.4);
+    expect(r.seats).toBeGreaterThan(cs.seats * 1.9);
+    expect(r.fee).toBe(codeshareFee(0.4));
+    expect(codeshareFee(0.4)).toBeGreaterThan(CODESHARE_FEE_PER_WEEK);
+    expect(codeshareFee(0.4) / 0.4).toBeLessThan(CODESHARE_FEE_PER_WEEK / CODESHARE_SEAT_SHARE);
+    expect(r.pax).toBeGreaterThanOrEqual(cs.pax - 1e-6);
+  });
+
+  it('prices every seat block against having no codeshare', () => {
+    const choices = shareChoices(withCs, partner.id, key);
+    expect(choices.map((c) => c.share)).toEqual([...CODESHARE_SHARES]);
+    const now = choices.find((c) => c.share === CODESHARE_SEAT_SHARE)!;
+    expect(now.gain).toBeCloseTo(after.revenue - after.cost - (before.revenue - before.cost), 0);
+    expect(shareChoices(plan, partner.id, key)[1].gain).toBeCloseTo(now.gain, 0);
+    expect(choices).toContain(bestShare(choices));
+    const imp = codeshareImpact(withCs, partner.id, key, undefined, 0.4)!;
+    expect(imp.gain).toBeCloseTo(choices[3].gain, 0);
+  });
+
+  it('reports each partner departure, what it sells and which of your flights it connects with', () => {
+    expect(cs.departures.length).toBe(partnerFlights({ airline: partner.id, key }).length);
+    const sold = cs.departures.reduce((s, d) => s + d.pax * d.perWeek, 0);
+    expect(sold).toBeCloseTo(cs.pax, 3);
+    for (const d of cs.departures) {
+      expect(d.pax).toBeLessThanOrEqual(d.seats + 1e-6);
+      expect(d.wanted).toBeGreaterThanOrEqual(d.pax - 1e-6);
+      if (d.pax > 0.1) expect(d.links).toBeGreaterThan(0);
+      if (d.top) expect([d.top.from, d.top.to].sort().join('-')).toBe('BKK-TPE');
+    }
+    expect(cs.departures.some((d) => d.top)).toBe(true);
+  });
+
+  it('lists the best new codeshares across every partner', () => {
+    const ideas = codeshareIdeas(plan, 8);
+    expect(ideas.length).toBeGreaterThan(0);
+    expect(ideas.map((i) => i.gain)).toEqual(ideas.map((i) => i.gain).sort((x, y) => y - x));
+    expect(new Set(ideas.map((i) => i.airline)).size).toBeGreaterThan(1);
+    for (const i of ideas) expect(i.gain).toBeGreaterThan(0);
+    expect(codeshareIdeas(withCs, 50).some((i) => i.airline === partner.id && i.route.key === key)).toBe(false);
   });
 });
