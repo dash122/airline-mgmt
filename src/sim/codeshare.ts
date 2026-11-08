@@ -33,16 +33,25 @@ export function playerAirports(plan: Plan): Set<string> {
  * The partner's routes from airports the player flies to, with what codesharing on each would add to (or, for an
  * active one, what it adds now to) the week's profit. Routes that would carry nobody are left out unless active.
  */
-export function codeshareOptions(plan: Plan, airlineId: string): CodeshareOption[] {
+/** `now` is the plan's own simulation; pass it when comparing many partners so it is worked out once. */
+export function codeshareOptions(plan: Plan, airlineId: string, now?: NetworkResult): CodeshareOption[] {
+  return drain(codeshareOptionSteps(plan, airlineId, now));
+}
+
+/** The same search one route at a time, so a caller can yield between simulations (each one is a full week). */
+export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: NetworkResult): Generator<void, CodeshareOption[], void> {
   const net = airlineNetwork(airlineId);
   if (!net || !canCodeshare(net.airline) || !plan.fleet.length) return [];
   const mine = playerAirports(plan);
   const routes = net.routes.filter((r) => mine.has(r.a) || mine.has(r.b) || hasCodeshare(plan, airlineId, r.key))
     .sort((x, y) => Number(hasCodeshare(plan, airlineId, y.key)) - Number(hasCodeshare(plan, airlineId, x.key)) || y.freq - x.freq)
     .slice(0, MAX_OPTIONS);
-  const now = simulate(plan);
+  // Most partners fly none of your airports: nothing to compare, so no simulation at all.
+  if (!routes.length) return [];
+  now ??= simulate(plan);
   const out: CodeshareOption[] = [];
   for (const route of routes) {
+    yield;
     const active = hasCodeshare(plan, airlineId, route.key);
     const other = simulate(toggleCodeshare(plan, airlineId, route.key));
     const withIt = active ? now : other;
@@ -149,17 +158,33 @@ export interface CodeshareIdea extends CodeshareOption { airline: string }
  * With `near`, only partner routes that start or end at one of those airports (extensions of a route you fly).
  */
 export function codeshareIdeas(plan: Plan, limit = 12, near?: string[]): CodeshareIdea[] {
+  return drain(codeshareIdeaSteps(plan, limit, near));
+}
+
+/**
+ * The same search, one partner at a time, so a caller can yield between partners and drop a search that a newer
+ * plan has made stale. Returns the ranked list as the generator's final value.
+ */
+export function* codeshareIdeaSteps(plan: Plan, limit = 12, near?: string[], out: CodeshareIdea[] = []): Generator<void, CodeshareIdea[], void> {
   if (!plan.fleet.length) return [];
-  const out: CodeshareIdea[] = [];
+  const now = simulate(plan);
   for (const a of airlines()) {
     if (!canCodeshare(a)) continue;
-    for (const o of codeshareOptions(plan, a.id)) {
+    const options = yield* codeshareOptionSteps(plan, a.id, now);
+    for (const o of options) {
       if (o.active || o.gain <= 0) continue;
       if (near && !near.some((c) => o.route.a === c || o.route.b === c)) continue;
       out.push({ ...o, airline: a.id });
     }
   }
   return out.sort((x, y) => y.gain - x.gain).slice(0, limit);
+}
+
+/** Runs a step generator to the end and returns its result. */
+function drain<T>(steps: Generator<void, T, void>): T {
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
 }
 
 // ---------- Partners selling your routes ----------
@@ -228,10 +253,16 @@ function partnersAt(key: string): string[] {
 
 /** Partners that could sell one of your routes, most profit first (active ones first). */
 export function hostedOptions(plan: Plan, key: string, limit = 24): HostedOption[] {
+  return drain(hostedOptionSteps(plan, key, limit));
+}
+
+/** The same search one partner at a time (see codeshareOptionSteps). */
+export function* hostedOptionSteps(plan: Plan, key: string, limit = 24): Generator<void, HostedOption[], void> {
   if (!routePairs(plan).some((r) => r.key === key)) return [];
   const now = simulate(plan);
   const out: HostedOption[] = [];
   for (const id of partnersAt(key).slice(0, limit)) {
+    yield;
     const active = isHosted(plan, id, key);
     const other = simulate(toggleHosted(plan, id, key));
     const withIt = active ? now : other;
@@ -250,6 +281,14 @@ export function hostedOptions(plan: Plan, key: string, limit = 24): HostedOption
 
 /** The best partners to sell any of your routes, not yet doing so. */
 export function hostedIdeas(plan: Plan, limit = 12, perRoute = 12): HostedOption[] {
-  return routePairs(plan).flatMap((r) => hostedOptions(plan, r.key, perRoute).filter((o) => !o.active && o.gain > 0))
-    .sort((x, y) => y.gain - x.gain).slice(0, limit);
+  return drain(hostedIdeaSteps(plan, limit, perRoute));
+}
+
+/** The same search, one of your routes at a time (see codeshareIdeaSteps). */
+export function* hostedIdeaSteps(plan: Plan, limit = 12, perRoute = 12, out: HostedOption[] = []): Generator<void, HostedOption[], void> {
+  for (const r of routePairs(plan)) {
+    const options = yield* hostedOptionSteps(plan, r.key, perRoute);
+    for (const o of options) if (!o.active && o.gain > 0) out.push(o);
+  }
+  return out.sort((x, y) => y.gain - x.gain).slice(0, limit);
 }

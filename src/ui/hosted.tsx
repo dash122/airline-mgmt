@@ -25,20 +25,20 @@ export const HostedTerms = () => (
 
 /** Partners worth letting sell your routes, from the calculation worker. */
 function useHostedIdeas(plan: Plan) {
-  const [state, setState] = useState<{ plan: Plan; ideas: HostedOption[] } | null>(null);
+  const [state, setState] = useState<{ plan: Plan; ideas: HostedOption[]; done: boolean } | null>(null);
   const worker = useRef<Worker | null>(null);
   const seq = useRef(0);
   useEffect(() => {
     if (!plan.fleet.length) return;
     const w = worker.current ??= createComputeClient('codeshare');
     const id = ++seq.current;
-    const onMessage = (e: MessageEvent<{ id: number; ideas?: HostedOption[] }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, ideas: e.data.ideas }); };
+    const onMessage = (e: MessageEvent<{ id: number; ideas?: HostedOption[]; partial?: boolean }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, ideas: e.data.ideas, done: !e.data.partial }); };
     w.addEventListener('message', onMessage);
     w.postMessage({ id, plan, kind: 'hosted' });
     return () => w.removeEventListener('message', onMessage);
   }, [plan]);
   useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
-  return state ? { ideas: state.ideas.filter((i) => hostedShare(plan, i.airline, i.key) === null), fresh: state.plan === plan } : null;
+  return state ? { ideas: state.ideas.filter((i) => hostedShare(plan, i.airline, i.key) === null), fresh: state.plan === plan && state.done } : null;
 }
 
 const blockTone = (s: { pax: number; seats: number; wanted: number }): Tone =>
@@ -95,8 +95,8 @@ export function HostedHub({ plan, onOpen, onShare }: { plan: Plan; onOpen: (key:
       )}
       <Head info={<><p>讓哪個夥伴賣你哪條航線，每週多賺最多（以 {pct(CODESHARE_SEAT_SHARE)} 座位估算）。點進去可以比較同一條航線的其他夥伴、調座位數。</p><HostedTerms /></>}
         right={ideas && !ideas.fresh ? <small className="muted">更新中…</small> : undefined}>推薦夥伴</Head>
-      {!ideas && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各夥伴</div>}
-      {ideas && ideas.ideas.length === 0 && <div className="hint center">目前沒有划算的夥伴，你的航班可能已經很滿</div>}
+      {(!ideas || (!ideas.fresh && ideas.ideas.length === 0)) && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各夥伴</div>}
+      {ideas?.fresh && ideas.ideas.length === 0 && <div className="hint center">目前沒有划算的夥伴，你的航班可能已經很滿</div>}
       {ideas && ideas.ideas.length > 0 && (
         <ul className="cs-ideas">
           {ideas.ideas.slice(0, shown).map((o) => {
