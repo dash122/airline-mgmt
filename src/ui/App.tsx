@@ -559,7 +559,12 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
   if (speed !== 0) lastRun.current = speed;
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 500); return () => clearInterval(id); }, []);
   const now = clock.now();
-  const estimate = result ? (result.revenue - result.cost) / 7 : null;
+  // The daily figure is the week's network result over seven. While an edit is being worked out the last figure stays
+  // on screen and changes in place, instead of blanking to a dash for as long as the calculation takes.
+  const fresh = result ? (result.revenue - result.cost) / 7 : null;
+  const lastEstimate = useRef<number | null>(null);
+  if (fresh !== null) lastEstimate.current = fresh;
+  const estimate = fresh ?? lastEstimate.current;
   const last = history.at(-1);
   const toneOf = (v: number | null) => (v === null ? '' : v >= 0 ? 'good' : 'bad');
   const close = () => setOpen(false);

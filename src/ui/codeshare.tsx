@@ -37,21 +37,21 @@ export const CodeshareTerms = () => (
 
 /** Ideas across every partner, from the shared calculation worker (about a second on a phone). */
 function useCodeshareIdeas(plan: Plan) {
-  const [state, setState] = useState<{ plan: Plan; ideas: CodeshareIdea[] } | null>(null);
+  const [state, setState] = useState<{ plan: Plan; ideas: CodeshareIdea[]; done: boolean } | null>(null);
   const worker = useRef<Worker | null>(null);
   const seq = useRef(0);
   useEffect(() => {
     if (!plan.fleet.length) return;
     const w = worker.current ??= createComputeClient('codeshare');
     const id = ++seq.current;
-    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[] }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, ideas: e.data.ideas }); };
+    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[]; partial?: boolean }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, ideas: e.data.ideas, done: !e.data.partial }); };
     w.addEventListener('message', onMessage);
     w.postMessage({ id, plan });
     return () => w.removeEventListener('message', onMessage);
   }, [plan]);
   useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
   // Keep the last list while a new one is worked out, minus anything just shared.
-  return state ? { ideas: state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null), fresh: state.plan === plan } : null;
+  return state ? { ideas: state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null), fresh: state.plan === plan && state.done } : null;
 }
 
 /** Each active codeshare with what it adds this week. */
@@ -112,8 +112,8 @@ function OutHub({ plan, onOpen, onShare, onPartners }: {
       )}
       <Head info={<><p>所有夥伴的航線裡，加了之後每週多賺最多的幾條（以 {pct(CODESHARE_SEAT_SHARE)} 座位估算）。點進去可以調座位數再決定。</p><CodeshareTerms /></>}
         right={ideas && !ideas.fresh ? <small className="muted">更新中…</small> : undefined}>推薦共享</Head>
-      {!ideas && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較所有夥伴的航線</div>}
-      {ideas && ideas.ideas.length === 0 && <div className="hint center">目前沒有划算的共享，先多開幾條航線</div>}
+      {(!ideas || (!ideas.fresh && ideas.ideas.length === 0)) && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較所有夥伴的航線</div>}
+      {ideas?.fresh && ideas.ideas.length === 0 && <div className="hint center">目前沒有划算的共享，先多開幾條航線</div>}
       {ideas && ideas.ideas.length > 0 && (
         <ul className="cs-ideas">
           {ideas.ideas.slice(0, shown).map((i) => (

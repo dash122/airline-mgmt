@@ -311,6 +311,8 @@ interface Itinerary {
   perWeek: number; // departures a week of the itinerary (the rarer of its flights)
   fareMult: number; // the player's fare setting: the route's own, or for a connection the distance-weighted mix of its legs
   wait?: number; // layover minutes, for connections
+  /** Layover minutes at each stop, for trips with two stops (0 where the traveller stays on the same aircraft). */
+  waits?: number[];
   /** The partner's seat block on the player's flight, for trips a partner sells. */
   block?: Flight;
 }
@@ -409,6 +411,8 @@ export interface AircraftResult {
 export interface TransferFlow {
   from: string;
   to: string;
+  /** For a trip with two stops: every airport it stops at, origin and destination included. */
+  stops?: string[];
   pax: number; // weekly
   long: number; // of which with a 3 to 8 hour layover
   stopover: number; // of which staying 8 hours or more
@@ -617,10 +621,25 @@ export function connectionHourCost(directKm: number): number {
  * (connectFareShare), which wins back part of this in the market.
  */
 export function connectionWeight(blockH: number, waitMin: number, via: string, directKm: number, through = false): number {
-  const felt = blockH + (through ? waitMin / 60 : layoverCostHours(waitMin, via));
-  const direct = typicalFlightHours(directKm);
-  return Math.exp(-connectionHourCost(directKm) * (felt - direct + (through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H)));
+  return tripWeight(blockH, [{ waitMin, via, through }], directKm);
 }
+
+/**
+ * The same weight for a trip with any number of stops: every layover costs what it would on a one-stop trip, and each
+ * extra stop costs the bother of changing planes again.
+ */
+export function tripWeight(blockH: number, layovers: { waitMin: number; via: string; through: boolean }[], directKm: number): number {
+  let felt = blockH, bother = 0;
+  for (const l of layovers) {
+    felt += l.through ? l.waitMin / 60 : layoverCostHours(l.waitMin, l.via);
+    bother += l.through ? THROUGH_PENALTY_H : CONNECTION_PENALTY_H;
+  }
+  return Math.exp(-connectionHourCost(directKm) * (felt - typicalFlightHours(directKm) + bother));
+}
+
+/** A second stop sells this much less of the nonstop fare than a one-stop trip with the same layover. */
+export const TWO_STOP_FARE_DISCOUNT = 0.05;
+
 /**
  * A one-stop trip may be at most this much longer than the direct distance (3x under 800 km). Detours below this
  * are not forbidden: the extra flying time already costs the itinerary most of its travellers.
@@ -641,6 +660,18 @@ export function minConnect(code: string, from: string, to: string, hub?: string)
 export function detourOk(distKm: number, legsKm: number): boolean {
   return legsKm <= distKm * (distKm < 800 ? MAX_DETOUR_SHORT : MAX_DETOUR);
 }
+
+/**
+ * The connection between two flights of one trip: the layover, and whether the traveller stays on the same aircraft.
+ * Null when the second flight leaves too soon after the first lands.
+ */
+function connectionAt(f1: Flight, f2: Flight, hub?: string): { wait: number; through: boolean } | null {
+  const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
+  const wait = mod(f2.dep - f1.arr, DAY);
+  if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, hub))) return null;
+  return { wait, through };
+}
+
 /** Per passenger on each flight: check-in, catering and airport passenger fees, NT$. */
 export const PAX_COST_PER_SEGMENT = 250;
 /** Share of ticket revenue that goes on sales, distribution and card fees. */
@@ -919,6 +950,41 @@ export function simulate(plan: Plan): NetworkResult {
     }
   }
 
+  // Two-stop trips: the player's own flights to a hub and on to a second airport, then a codeshare flight to the
+  // destination (or a codeshare flight out, then the player's own two). This is how a codeshare extends the player's
+  // network: Guangzhou-Miami through Hong Kong and New York once the partner sells New York-Miami. Hosted feeders
+  // are not chained, and the partner leg is always a flight the player sells seats on.
+  const sellable = partners.filter((p) => !p.partner!.hosted);
+  const sellableFrom = new Map<string, Flight[]>();
+  for (const p of sellable) sellableFrom.set(p.from, [...(sellableFrom.get(p.from) ?? []), p]);
+  const addTwoStop = (legs: [Flight, Flight, Flight]) => {
+    const [f1, f2, f3] = legs;
+    const c1 = connectionAt(f1, f2, plan.hub), c2 = connectionAt(f2, f3, plan.hub);
+    if (!c1 || !c2) return;
+    const origin = f1.from, dest = f3.to;
+    // Both stops must be in cities of their own: no doubling back to the origin's or the destination's city.
+    const cities = [f1.to, f2.to].map((c) => AIRPORT_BY_CODE[c].metro);
+    if (cities.some((metro) => metro === AIRPORT_BY_CODE[origin].metro || metro === AIRPORT_BY_CODE[dest].metro)) return;
+    const m = marketBetween(origin, dest);
+    const km = f1.distKm + f2.distKm + f3.distKm;
+    if (!m || !detourOk(m.distKm, km)) return;
+    const layovers = [{ waitMin: c1.wait, via: f1.to, through: c1.through }, { waitMin: c2.wait, via: f2.to, through: c2.through }];
+    // The player's own flight that connects with the partner's leg is always the middle one.
+    const partnerLeg = legs.find((f) => f.partner)!;
+    linkOf(partnerLeg).add(f2);
+    const longest = Math.max(0, ...layovers.map((l) => (l.through ? 0 : l.waitMin)));
+    add(origin, dest, {
+      flights: legs,
+      weight: flightTimeQuality(f1) * tripWeight(f1.blockH + f2.blockH + f3.blockH, layovers, m.distKm),
+      fareShare: Math.max(MIN_CONNECT_FARE_SHARE, connectFareShare(longest) - TWO_STOP_FARE_DISCOUNT),
+      fareMult: legs.reduce((s, f) => s + multOf(f) * f.distKm, 0) / km,
+      perWeek: Math.min(...legs.map((f) => f.perWeek)),
+      waits: layovers.map((l) => (l.through ? 0 : l.waitMin)),
+    });
+  };
+  for (const f1 of flights) for (const f2 of ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) addTwoStop([f1, f2, p]);
+  for (const p of sellable) for (const f2 of ownFrom.get(p.to) ?? []) for (const f3 of ownFrom.get(f2.to) ?? []) addTwoStop([p, f2, f3]);
+
   // Demand per itinerary (daily).
   const demand = new Map<Itinerary, number>();
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
@@ -981,7 +1047,7 @@ export function simulate(plan: Plan): NetworkResult {
   const flightLocalPax = new Map<Flight, number>();
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
-  const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`
+  const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`, plus `|${stops}` for two-stop trips
   const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]>; feedMap: Map<string, CodeshareResult['feeds'][number]> }>();
   for (const cs of plan.codeshares ?? []) {
     const id = `${cs.airline}|${cs.key}`;
@@ -1017,14 +1083,21 @@ export function simulate(plan: Plan): NetworkResult {
       const fare = Math.round(info.refFare * it.fareMult) * it.fareShare;
       if (it.flights.length > 1) {
         connectingWeekly += n * it.perWeek;
-        const tk = `${it.flights[0].to}|${it.flights[0].from}|${it.flights[1].to}`;
-        const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
-        tf.pax += n * it.perWeek;
-        const kind = layoverKind(it.wait ?? 0);
-        if (kind !== 'quick') tf[kind] += n * it.perWeek;
-        transferFlows.set(tk, tf);
+        // A trip counts at every airport where it changes planes. Two-stop trips also carry their full stop list.
+        const origin = it.flights[0].from, dest = it.flights[it.flights.length - 1].to;
+        const route = it.flights.length > 2 ? `|${[origin, ...it.flights.slice(0, -1).map((f) => f.to), dest].join('>')}` : '';
+        it.flights.slice(0, -1).forEach((f, i) => {
+          const tk = `${f.to}|${origin}|${dest}${route}`;
+          const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
+          tf.pax += n * it.perWeek;
+          const kind = layoverKind((it.waits ?? [it.wait ?? 0])[i]);
+          if (kind !== 'quick') tf[kind] += n * it.perWeek;
+          transferFlows.set(tk, tf);
+        });
       }
       const dist = it.flights.reduce((s, f) => s + f.distKm, 0);
+      // The player's own part of a trip with a partner leg is split between its own flights by distance.
+      const ownKm = it.flights.reduce((s, f) => s + (f.partner ? 0 : f.distKm), 0);
       const partnerLeg = it.flights.find((f) => f.partner);
       // The partner keeps its flight's part of the fare, in proportion to the two flights' own fares (a short
       // flight gets more than its share of the distance, as in airlines' prorate agreements); the player keeps the rest.
@@ -1049,7 +1122,9 @@ export function simulate(plan: Plan): NetworkResult {
         cs.pax += n * it.perWeek;
         cs.wanted += want * it.perWeek;
         partnerWanted.set(partnerLeg, (partnerWanted.get(partnerLeg) ?? 0) + want * it.perWeek / partnerLeg.perWeek);
-        const own = it.flights.find((f) => !f.partner)!;
+        // The player's flight the partner's leg connects with: the one next to it.
+        const at = it.flights.indexOf(partnerLeg);
+        const own = [it.flights[at - 1], it.flights[at + 1]].find((f) => f && !f.partner)!;
         const lp = linkPax.get(partnerLeg) ?? new Map<Flight, number>();
         lp.set(own, (lp.get(own) ?? 0) + n * it.perWeek);
         linkPax.set(partnerLeg, lp);
@@ -1059,7 +1134,7 @@ export function simulate(plan: Plan): NetworkResult {
           const fk = pairKey(f.from, f.to);
           const feed = cs.feedMap.get(fk) ?? { key: fk, pax: 0, revenue: 0 };
           feed.pax += n * it.perWeek;
-          feed.revenue += n * fare * it.perWeek * (1 - partnerShare);
+          feed.revenue += n * fare * it.perWeek * (1 - partnerShare) * (f.distKm / ownKm);
           cs.feedMap.set(fk, feed);
         }
         cs.feedRevenue += n * fare * it.perWeek - toPartner;
@@ -1074,7 +1149,7 @@ export function simulate(plan: Plan): NetworkResult {
       for (const f of it.flights) {
         if (f.partner) { flightPax.set(f, (flightPax.get(f) ?? 0) + n); continue; }
         flightPax.set(f, (flightPax.get(f) ?? 0) + n);
-        flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (partnerLeg ? n * fare * (1 - partnerShare) : (n * fare * f.distKm) / dist));
+        flightRevenue.set(f, (flightRevenue.get(f) ?? 0) + (partnerLeg ? (n * fare * (1 - partnerShare) * f.distKm) / ownKm : (n * fare * f.distKm) / dist));
         if (it.flights.length === 1) {
           flightLocalRevenue.set(f, (flightLocalRevenue.get(f) ?? 0) + n * fare);
           flightLocalPax.set(f, (flightLocalPax.get(f) ?? 0) + n);
@@ -1205,12 +1280,12 @@ export function simulate(plan: Plan): NetworkResult {
   const cost = flyingCost + ownershipCost + hubCost + codeshareCost;
   const transfers: NetworkResult['transfers'] = {};
   for (const [k, tf] of transferFlows) {
-    const [via, from, to] = k.split('|');
+    const [via, from, to, route] = k.split('|');
     const t = (transfers[via] ??= { pax: 0, long: 0, stopover: 0, flows: [] });
     t.pax += tf.pax;
     t.long += tf.long;
     t.stopover += tf.stopover;
-    t.flows.push({ from, to, ...tf });
+    t.flows.push({ from, to, ...tf, ...(route ? { stops: route.split('>') } : {}) });
   }
   for (const t of Object.values(transfers)) t.flows.sort((x, y) => y.pax - x.pax);
   return {
