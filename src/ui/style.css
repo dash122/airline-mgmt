@@ -472,12 +472,14 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .opt small { color: var(--muted); font-size: var(--fs-xs); }
 .opt.pick { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 /* Aircraft choice: one scrolling strip of tiles (fleet, then leases by size), and one panel for the chosen aircraft */
-.ac-rail { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x proximity; overscroll-behavior-x: contain; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: thin; }
-.ac-group { flex: none; display: flex; flex-direction: column; gap: 4px; padding-right: 14px; border-right: 1px solid var(--line); }
-.ac-group:last-child { border-right: 0; }
-.ac-group-label { font-size: var(--fs-3xs); font-weight: 650; color: var(--muted); white-space: nowrap; }
-.ac-group-tiles { display: flex; gap: 6px; }
-.ac-tile { position: relative; flex: 0 0 96px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 10px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
+.ac-picker { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ac-tabs { display: flex; gap: 4px; padding: 3px; border-radius: var(--r-pill); background: var(--line); overflow-x: auto; scrollbar-width: none; }
+.ac-tab { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 7px 12px; border: 0; border-radius: var(--r-pill); background: transparent; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.ac-tab small { font-size: var(--fs-3xs); opacity: .7; }
+.ac-tab.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.ac-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.ac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; min-width: 0; }
+.ac-tile { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 10px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
 .ac-tile.on { border-color: var(--accent); background: var(--accent-soft); }
 .ac-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .ac-tile small { font-size: var(--fs-3xs); color: var(--muted); }
