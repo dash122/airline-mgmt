@@ -28,7 +28,7 @@ describe('aircraft picker', () => {
     const previews = new Map<string, RoutePreview>(choices.map((c) => [c.id, preview(0)]));
     const html = renderToStaticMarkup(<AircraftPicker plan={plan} choices={choices} previews={previews} best={choices[0]} chosen={choices[0]} onPick={() => {}} />);
     for (const t of ['A388', 'B779', 'A35K', 'B78X', 'A339'] as const) {
-      expect(html, t).toContain(`title="${AIRCRAFT[t].name}"`);
+      expect(html, t).toContain(`title="${AIRCRAFT[t].name} · ${AIRCRAFT[t].seats} 座"`);
     }
   });
 

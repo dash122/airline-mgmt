@@ -176,6 +176,8 @@ function DestRow({ from, d, onPick }: { from: string; d: Destination; onPick: ()
  * The aircraft as one strip of tiles (fleet first, then leases by size, best first within each size) and one panel for
  * the chosen aircraft. Arrow keys step through the tiles, so 20-odd types take a single row instead of a tall list.
  */
+const TAB_LABEL: Record<string, string> = { fleet: '現有', turboprop: '螺旋槳', regional: '支線', narrowbody: '窄體', widebody: '廣體' };
+
 export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }: {
   plan: Plan; choices: RouteChoice[]; previews: Map<string, RoutePreview>; best: RouteChoice | null; chosen: RouteChoice | null;
   onPick: (c: RouteChoice) => void;
@@ -210,10 +212,12 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
     const d = delta(c);
     return (
       <button key={c.id} data-id={c.id} role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
-        title={`${ac ? `${ac.reg} · ` : ''}${s.name}`} className={`ac-tile${on ? ' on' : ''}`} onClick={() => onPick(c)}>
-        {best?.id === c.id && <i className="ac-best">建議</i>}
-        <b className="ac-tile-name">{ac ? ac.reg : shortType(c.type)}</b>
-        <small>{ac ? shortType(c.type) : s.name !== shortType(c.type) ? s.name : ''} · {s.seats} 座</small>
+        title={`${ac ? `${ac.reg} · ` : ''}${s.name} · ${s.seats} 座`} className={`ac-tile${on ? ' on' : ''}`} onClick={() => onPick(c)}>
+        <span className="ac-tile-main">
+          {best?.id === c.id && <i className="ac-dot" aria-label="建議" />}
+          <b className="ac-tile-name">{ac ? ac.reg : shortType(c.type)}</b>
+          <small>{s.seats}</small>
+        </span>
         <strong className={d >= 0 ? 'good' : 'bad'}>{signed(d)}</strong>
       </button>
     );
@@ -224,11 +228,12 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
       <div className="ac-tabs" role="tablist" aria-label="機型類別">
         {groups.map((g) => (
           <button key={g.key} role="tab" aria-selected={g.key === active.key} className={`ac-tab${g.key === active.key ? ' on' : ''}`} onClick={() => setTab(g.key)}>
-            {g.label}<small>{g.items.length}</small>{g.items.includes(best as RouteChoice) && <i className="ac-dot" aria-label="含建議機型" />}
+            {TAB_LABEL[g.key] ?? g.label}{g.items.includes(best as RouteChoice) && <i className="ac-dot" aria-label="含建議機型" />}
           </button>
         ))}
       </div>
       <div className="ac-grid" role="radiogroup" aria-label="飛機方案" ref={gridRef} onKeyDown={step}>{active.items.map(tile)}</div>
+      {chosen && <div className="ac-detail">{AIRCRAFT[chosen.type].name} · {AIRCRAFT[chosen.type].seats} 座</div>}
     </div>
   );
 }
