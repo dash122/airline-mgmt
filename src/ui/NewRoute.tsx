@@ -181,23 +181,27 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
   plan: Plan; choices: RouteChoice[]; previews: Map<string, RoutePreview>; best: RouteChoice | null; chosen: RouteChoice | null;
   onPick: (c: RouteChoice) => void;
 }) {
-  const railRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<string | null>(null);
   if (choices.length === 0) return null;
   const delta = (c: RouteChoice) => previews.get(c.id)!.networkDelta;
   const byDelta = (x: RouteChoice, y: RouteChoice) => delta(y) - delta(x);
   const fleet = choices.filter((c) => c.kind === 'fleet').sort(byDelta);
-  const groups = CLASS_ORDER
-    .map((cls: AircraftClass) => ({ cls, items: choices.filter((c) => c.kind === 'lease' && AIRCRAFT[c.type].cls === cls).sort(byDelta) }))
-    .filter((g) => g.items.length > 0);
-  const ordered = [...fleet, ...groups.flatMap((g) => g.items)];
+  const groups: { key: string; label: string; items: RouteChoice[] }[] = [
+    ...(fleet.length ? [{ key: 'fleet', label: '現有', items: fleet }] : []),
+    ...CLASS_ORDER.map((cls: AircraftClass) => ({ key: cls, label: CLASS_NAMES[cls], items: choices.filter((c) => c.kind === 'lease' && AIRCRAFT[c.type].cls === cls).sort(byDelta) }))
+      .filter((g) => g.items.length > 0),
+  ];
+  const ownGroup = (c: RouteChoice | null) => groups.find((g) => c && g.items.includes(c))?.key;
+  const active = groups.find((g) => g.key === tab) ?? groups.find((g) => g.key === ownGroup(chosen)) ?? groups[0];
 
   const step = (e: React.KeyboardEvent) => {
     const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-    if (!dir || !chosen) return;
+    if (!dir || !chosen || !active.items.includes(chosen)) return;
     e.preventDefault();
-    const next = ordered[(ordered.indexOf(chosen) + dir + ordered.length) % ordered.length];
+    const next = active.items[(active.items.indexOf(chosen) + dir + active.items.length) % active.items.length];
     onPick(next);
-    railRef.current?.querySelector<HTMLElement>(`[data-id="${next.id}"]`)?.focus();
+    gridRef.current?.querySelector<HTMLElement>(`[data-id="${next.id}"]`)?.focus();
   };
 
   const tile = (c: RouteChoice) => {
@@ -209,17 +213,23 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
       <button key={c.id} data-id={c.id} role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
         title={`${ac ? `${ac.reg} · ` : ''}${s.name}`} className={`ac-tile${on ? ' on' : ''}`} onClick={() => onPick(c)}>
         {best?.id === c.id && <i className="ac-best">建議</i>}
-        <b className="ac-tile-name">{shortType(c.type)}</b>
-        <small>{s.seats} 座</small>
+        <b className="ac-tile-name">{ac ? ac.reg : shortType(c.type)}</b>
+        <small>{ac ? shortType(c.type) : s.name !== shortType(c.type) ? s.name : ''} · {s.seats} 座</small>
         <strong className={d >= 0 ? 'good' : 'bad'}>{signed(d)}</strong>
       </button>
     );
   };
 
   return (
-    <div className="ac-rail" role="radiogroup" aria-label="飛機方案" ref={railRef} onKeyDown={step}>
-      {fleet.length > 0 && <div className="ac-group"><span className="ac-group-label">現有機隊</span><div className="ac-group-tiles">{fleet.map(tile)}</div></div>}
-      {groups.map((g) => <div className="ac-group" key={g.cls}><span className="ac-group-label">{CLASS_NAMES[g.cls]}</span><div className="ac-group-tiles">{g.items.map(tile)}</div></div>)}
+    <div className="ac-picker">
+      <div className="ac-tabs" role="tablist" aria-label="機型類別">
+        {groups.map((g) => (
+          <button key={g.key} role="tab" aria-selected={g.key === active.key} className={`ac-tab${g.key === active.key ? ' on' : ''}`} onClick={() => setTab(g.key)}>
+            {g.label}<small>{g.items.length}</small>{g.items.includes(best as RouteChoice) && <i className="ac-dot" aria-label="含建議機型" />}
+          </button>
+        ))}
+      </div>
+      <div className="ac-grid" role="radiogroup" aria-label="飛機方案" ref={gridRef} onKeyDown={step}>{active.items.map(tile)}</div>
     </div>
   );
 }
