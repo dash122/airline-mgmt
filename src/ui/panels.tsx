@@ -89,9 +89,8 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
       )}
       {rows.length > 0 && (
         <div className="routes-summary">
-          <span><small>每週</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></span>
-          <span><b>{daily}</b><small>班來回/日</small></span>
-          <span><b className={todo.length ? 'warn' : 'good'}>{todo.length}</b><small>條要處理</small></span>
+          <span><small>每週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></span>
+          <small className="routes-summary-meta">{daily} 班來回/日{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</small>
         </div>
       )}
       {rows.length > 1 && (
@@ -105,10 +104,10 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
         const sum = g.rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
         return (
           <section key={g.home} className="route-group">
-            <div className="route-group-head">
+            {groups.length > 1 && <div className="route-group-head">
               <h4>{AIRPORT_BY_CODE[g.home].name} {g.home} · {g.rows.length}</h4>
               <b className={sum >= 0 ? 'good' : 'bad'}>{sum >= 0 ? '+' : ''}{money(sum)}／週</b>
-            </div>
+            </div>}
             <ul className="route-rows">
               {g.rows.map((r) => {
                 return (
