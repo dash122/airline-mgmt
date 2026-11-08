@@ -13,7 +13,7 @@ import {
   blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
-import { count, money, pct, short } from './format';
+import { count, hk, hkSigned, money, pct, price, short } from './format';
 import { frequencyLabel, routeHealth } from './route-health';
 import { MarketShare, RouteRivals } from './rivals';
 import { AirlineLink } from './airlines';
@@ -325,9 +325,9 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   // One line on what is going on, and the one or two things that help.
   const advice: { text: string; acts: { label: string; icon: IconName; run: () => void }[] } | null = !result ? null
     : health.key === 'full' ? { text: '想搭的人比座位多', acts: [{ label: '加一班', icon: 'plus', run: onAdd }, { label: '漲價 5%', icon: 'up', run: () => setFare(fareMult + FARE_STEP) }] }
-    : health.key === 'loss' ? { text: '收入付不起飛行成本', acts: [...(betterFare ? [{ label: `改最賺票價 NT$${count((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare' as IconName, run: () => setFare(betterFare.mult) }] : []), ...(daily > 1 ? [{ label: '減一班', icon: 'seat' as IconName, run: onRemoveOne }] : [])] }
+    : health.key === 'loss' ? { text: '收入付不起飛行成本', acts: [...(betterFare ? [{ label: `改最賺票價 ${price((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare' as IconName, run: () => setFare(betterFare.mult) }] : []), ...(daily > 1 ? [{ label: '減一班', icon: 'seat' as IconName, run: onRemoveOne }] : [])] }
     : health.key === 'empty' ? { text: '座位比旅客多很多', acts: [...(daily > 1 ? [{ label: '減一班', icon: 'seat' as IconName, run: onRemoveOne }] : []), { label: '降價 5%', icon: 'down', run: () => setFare(fareMult - FARE_STEP) }] }
-    : betterFare ? { text: '還有更賺的票價', acts: [{ label: `改成 NT$${count((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare', run: () => setFare(betterFare.mult) }] }
+    : betterFare ? { text: '還有更賺的票價', acts: [{ label: `改成 ${price((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare', run: () => setFare(betterFare.mult) }] }
     : { text: '載客和損益都不錯', acts: [] };
   // The fare curve below already offers the best fare (with its gain), so don't say it twice.
   const fareOnScreen = tab === 'fare' && curve.length > 2 && !!betterFare;
@@ -342,10 +342,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
       <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
       <div className="route-preview-meta"><b>{frequencyLabel(daily)}</b><span>{result ? `${Math.round(result.pax).toLocaleString()} / ${Math.round(result.seats).toLocaleString()} 人／週` : '正在更新旅客數'}</span></div>
-      <div className="route-preview-profit"><span>每週航段損益</span><b className={result && profit < 0 ? 'bad' : 'good'}>{result ? money(profit) : '—'}</b></div>
+      <div className="route-preview-profit"><span>航線週損益</span><b className={result && profit < 0 ? 'bad' : 'good'}>{result ? hk(profit) : '—'}</b></div>
     </div>} title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><IN n="long" v={count(m?.distKm ?? 0)} label="距離" u="公里" />{types && <IN n="plane" v={types} label="機型" />}</span>} onClose={onClose} action={action}
       info={<>
-        <p>點數字看原因。損益是每週航段損益，不含飛機租金。</p>
+        <p>點數字看原因。金額是港幣（HK$）。航線週損益不含飛機租金。</p>
         {result && result.pax - result.localPax > 1 && <p>轉機旅客付直飛票價的 85%，再按兩段的票價設定分攤，所以這裡改票價也會影響他們。</p>}
       </>}
       footer={<div className="route-freq">
@@ -368,7 +368,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           <small>{short(result.pax)}/{short(result.seats)} 人</small>
         </button>
         <button className={why === 'profit' ? 'on' : ''} onClick={tap('profit')} aria-expanded={why === 'profit'}>
-          <small>週損益</small><b className={profit >= 0 ? 'good' : 'bad'}>{profit >= 0 ? '+' : ''}{money(profit)}</b><small>不含租金</small>
+          <small>航線週損益</small><b className={profit >= 0 ? 'good' : 'bad'}>{profit >= 0 ? '+' : ''}{money(profit)}</b><small>HK$ · 不含租金</small>
         </button>
         <button className={why === 'share' ? 'on' : ''} onClick={tap('share')} aria-expanded={why === 'share'}>
           <small>市占</small><b>{pct(result.marketShare)}</b><small>{result.spill > 1 ? `溢出 ${short(result.spill)}` : '這條航線'}</small>
@@ -384,7 +384,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
           : curve.length > 2 && now && best
           ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
               info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
-          : <div className="fare route-fare"><div className="grow"><div className="label">單程票價</div><div className="price">NT${count(fareNow)} <small>市場價 {pct(fareMult)}</small></div></div></div>}
+          : <div className="fare route-fare"><div className="grow"><div className="label">單程票價</div><div className="price">{price(fareNow)} <small>市場價 {pct(fareMult)}</small></div></div></div>}
       </>}
       {tab === 'flights' && <>
         {result && <DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} />}
@@ -393,7 +393,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </>}
       {tab === 'market' && <>
         <MarketShare a={a} b={b} result={result} net={net} split={split} />
-        {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</span>}</div>}
+        {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · {price(m.ground.fare)}</span>}</div>}
       </>}
       {tab === 'times' && <>
         <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
@@ -443,11 +443,11 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
       <div className="fare-read">
         <div className="fare-price">
           <small>單程票價{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</small>
-          <b>NT${count(refFare * shown.mult)}</b>
+          <b>{price(refFare * shown.mult)}</b>
           <small>市場價 {pct(shown.mult)}{shown === best && <span className="good"> · ★ 最賺</span>}</small>
         </div>
         <div className="fare-deltas" aria-live="polite">
-          <span><small>{changed ? '週損益變化' : '網路週損益'}</small><b className={!changed ? '' : dProfit >= 0 ? 'good' : 'bad'}>{changed ? signed(dProfit) : money(now.profit)}</b></span>
+          <span><small>{changed ? '全網週損益變化' : '全網週損益'}</small><b className={!changed ? '' : dProfit >= 0 ? 'good' : 'bad'}>{changed ? hkSigned(dProfit) : hk(now.profit)}</b></span>
           {changed && <span><small>載客率</small><b className={tone(shown.loadFactor)}>{`${pct(now.loadFactor)}→${pct(shown.loadFactor)}`}</b></span>}
           {changed && <span><small>溢出</small><b>{short(shown.spill)}</b></span>}
         </div>
@@ -456,7 +456,7 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
       <div className="fare-curve">
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="slider" tabIndex={0} aria-label="票價，拖動試算每週損益"
           aria-valuemin={curve[0].mult * 100} aria-valuemax={curve[curve.length - 1].mult * 100} aria-valuenow={Math.round(shown.mult * 100)}
-          aria-valuetext={`NT$${count(refFare * shown.mult)}`}
+          aria-valuetext={`${price(refFare * shown.mult)}`}
           onKeyDown={(e) => {
             if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); step(-1); }
             if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); step(1); }
@@ -475,12 +475,12 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
           <circle cx={x(iShown)} cy={y(shown.profit)} r={scrub ? 9 : 7} className="now" />
         </svg>
         <div className="fare-axis">
-          <span style={{ visibility: iBest / (curve.length - 1) < 0.3 ? 'hidden' : undefined }}>NT${count(refFare * curve[0].mult)}</span>
-          <span className="best-label" style={{ left: `${Math.min(86, Math.max(14, (100 * x(iBest)) / W))}%` }}>★ NT${count(refFare * best.mult)}</span>
-          <span style={{ visibility: iBest / (curve.length - 1) > 0.7 ? 'hidden' : undefined }}>NT${count(refFare * curve[curve.length - 1].mult)}</span>
+          <span style={{ visibility: iBest / (curve.length - 1) < 0.3 ? 'hidden' : undefined }}>{price(refFare * curve[0].mult)}</span>
+          <span className="best-label" style={{ left: `${Math.min(86, Math.max(14, (100 * x(iBest)) / W))}%` }}>★ {price(refFare * best.mult)}</span>
+          <span style={{ visibility: iBest / (curve.length - 1) > 0.7 ? 'hidden' : undefined }}>{price(refFare * curve[curve.length - 1].mult)}</span>
         </div>
       </div>
-      {best !== now && !scrub && <button className="secondary fare-best" onClick={() => onPick(best.mult)}>★ 改成最賺票價 NT${count(refFare * best.mult)} <b className="good">{signed(best.profit - now.profit)}</b></button>}
+      {best !== now && !scrub && <button className="secondary fare-best" onClick={() => onPick(best.mult)}>★ 改成最賺票價 {price(refFare * best.mult)} <b className="good">{signed(best.profit - now.profit)}</b></button>}
     </div>
   );
 }
@@ -588,11 +588,11 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
   const maxProfit = Math.max(1, ...rows.map((r) => Math.abs(r.revenue - r.flyingCost)));
   const anyLoss = rows.some((r) => r.revenue < r.flyingCost);
   return (
-    <Sheet size="full" title="報表" sub={<span className="ins"><IN n="money" v={money(balance)} label="累計損益" w="累計" tone={balance >= 0 ? 'good' : 'bad'} /></span>} onClose={onClose}
+    <Sheet size="full" title="報表" sub={<span className="ins"><IN n="money" v={hk(balance)} label="累計損益" w="累計" tone={balance >= 0 ? 'good' : 'bad'} /></span>} onClose={onClose}
       info={<p>每週數字是用目前的班表推估。航線損益＝票價收入減飛行與旅客成本，不含飛機租金。</p>}>
       <div className="plan-summary">
-        <span>預計全網損益／週（含租金）</span>
-        <strong className={result.revenue - result.cost >= 0 ? 'good' : 'bad'}>{result.revenue - result.cost >= 0 ? '+' : ''}{money(result.revenue - result.cost)}</strong>
+        <span>預計全網週損益（含租金）</span>
+        <strong className={result.revenue - result.cost >= 0 ? 'good' : 'bad'}>{hkSigned(result.revenue - result.cost)}</strong>
         <span>依目前班表推估</span>
       </div>
       <details className="route-adjust">
@@ -622,7 +622,7 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
         <Stat label="轉機" icon="transfer" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
       </div>
       </details>
-      <h4>航線 <small>每週航段損益，不含租金</small></h4>
+      <h4>航線 <small>航線週損益，不含租金</small></h4>
       <ul className="report">
         {rows.map((r) => {
           const p = r.revenue - r.flyingCost;
@@ -658,7 +658,7 @@ function MoneyFlow({ result }: { result: NetworkResult }) {
       <div className="mf-row">
         <span className="mf-label">收入</span>
         <div className="mf-track"><div className="mf-rev" style={{ width: `${(100 * result.revenue) / scale}%` }} /></div>
-        <b className="mf-num">{money(result.revenue)}</b>
+        <b className="mf-num">{hk(result.revenue)}</b>
       </div>
       <div className="mf-row">
         <span className="mf-label">去向</span>
@@ -667,7 +667,7 @@ function MoneyFlow({ result }: { result: NetworkResult }) {
             <Stack parts={parts} label={parts.map((p) => `${p.label} ${money(p.value)}`).join('，')} />
           </div>
         </div>
-        <b className={`mf-num ${profit >= 0 ? 'good' : 'bad'}`}>{profit >= 0 ? '+' : ''}{money(profit)}</b>
+        <b className={`mf-num ${profit >= 0 ? 'good' : 'bad'}`}>{hkSigned(profit)}</b>
       </div>
       <div className="legend">
         {parts.map((p) => p.value > 0 && <span key={p.key}><i style={{ background: p.color }} />{p.label} {money(p.value)}</span>)}

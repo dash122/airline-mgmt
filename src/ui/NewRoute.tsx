@@ -11,7 +11,7 @@ import {
   TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
-import { count, money, pct, short } from './format';
+import { count, hkSigned, money, pct, price, short } from './format';
 import { FlightTimes } from './FlightTimes';
 import { MarketShare } from './rivals';
 import { at, Sheet, shortType } from './sheets';
@@ -113,7 +113,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
   }, [rows, field, from]);
 
   return (
-    <Sheet size="full" title={field === 'to' ? '飛去哪裡？' : '從哪裡出發？'}
+    <Sheet size="half" title={field === 'to' ? '飛去哪裡？' : '從哪裡出發？'}
       info={<p>{field === 'to' ? '右邊數字是每日一班直飛，每週約載多少人。' : ''}也可以縮小面板，在地圖上點機場。</p>} onClose={onClose}
       action={onBack && <button className="secondary small" onClick={onBack}>返回</button>}>
       {ends}
@@ -257,7 +257,7 @@ function PlanStep(props: PlanStepProps) {
     return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); };
   }, [plan, result, from, to, choices]);
   if (!state || state.plan !== plan || state.result !== result || state.from !== from || state.to !== to) {
-    return <Sheet size="full" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : '正在計算航線方案…'}</div></Sheet>;
+    return <Sheet size="half" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : '正在計算航線方案…'}</div></Sheet>;
   }
   return <PlanStepReady {...props} choices={choices} previews={state.previews} />;
 }
@@ -309,7 +309,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
   };
 
   return (
-    <Sheet size="full" title={flown ? '這條航線再加一班' : '開新航線'} onClose={onClose}
+    <Sheet size="half" title={flown ? '這條航線再加一班' : '開新航線'} onClose={onClose}
       sub={<span className="ins"><IN n="long" v={`${count(m?.distKm ?? 0)}km`} label="距離" />{chosen && <IN n="clock" v={hours(blockMinutes(from, to, chosen.type))} label="單程" w="單程" />}</span>}
       info={<>
         <p>全網週損益＝開航後整個航空公司每週多賺多少，已含{preview?.lease ? '新飛機租金、' : ''}轉機旅客與對其他航線的影響。</p>
@@ -323,10 +323,10 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       {preview && chosen && (
         <div className="plan-summary">
           <div className="plan-summary-head">
-            <span>預計全網損益／週</span>
+            <span>預計全網週損益</span>
             {recommended ? <i className="ac-best">建議</i> : <i className="plan-tag">已調整</i>}
           </div>
-          <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{signed(preview.networkDelta)}</strong>
+          <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{hkSigned(preview.networkDelta)}</strong>
           <div className="plan-summary-meta">
             <span><b>{owned ? owned.reg : shortType(chosen.type)}</b> {owned ? '現有' : '租用'}</span>
             <span><b>{count(preview.pax)}</b> 人/週</span>
@@ -380,7 +380,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
         </div>
       )}
       <MarketShare a={from} b={to} split={previewMarket} title="目前行程與市場占有率" />
-      {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · NT${count(m.ground.fare)}</div>}
+      {m?.ground && <div className="hint">🚆 {m.ground.name} {m.ground.hours}h · {price(m.ground.fare)}</div>}
       </details>
     </Sheet>
   );

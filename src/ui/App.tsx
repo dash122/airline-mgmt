@@ -14,7 +14,7 @@ import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
 import { AirlineLink, AirlineSheet, AirlinesPanel, type Section as AirlineSection } from './airlines';
 import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel, type RoutesView } from './panels';
-import { money } from './format';
+import { hkSigned, money } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type GameState, type Speed } from './clock';
 
@@ -153,7 +153,7 @@ export default function App() {
           const csPax = out.reduce((s, c) => s + c.pax, 0) + inn.reduce((s, h) => s + h.pax, 0);
           history.push({ day: d, ...last, pax: (r?.pax ?? 0) / 7, cs: cs / 7, csPax: csPax / 7 });
         }
-        if (r) setToast(`第 ${today - 1} 天結算：${last.revenue >= last.cost ? '+' : ''}${money(last.revenue - last.cost)}`);
+        if (r) setToast(`第 ${today - 1} 天結算：${hkSigned(last.revenue - last.cost)}`);
         return { version: 1, utcMin: now, balance, history: history.slice(-HISTORY_DAYS) };
       });
     };
@@ -574,8 +574,8 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
     <header className={`island${open ? ' open' : ''}`}>
       <div className="island-bar">
         <button className="island-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="狀態與設定">
-          <span className="i-kpi"><small>累計</small><b className={toneOf(balance)}>{money(balance)}</b></span>
-          <span className="i-kpi"><small>每日</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
+          <span className="i-kpi"><small>累計 HK$</small><b className={toneOf(balance)}>{money(balance)}</b></span>
+          <span className="i-kpi"><small>每日 HK$</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
           <span className="i-kpi"><small>第 {dayAt(base, now)} 天</small><b>{hhmm(localMinutes(base, now))}</b></span>
         </button>
         <button className={`island-play${speed === 0 ? ' paused' : ''}`} onClick={() => onSpeed(speed === 0 ? lastRun.current : 0)} aria-label={speed === 0 ? '繼續' : '暫停'}>

@@ -6,7 +6,7 @@ import { countryName } from '../sim/networks';
 import { marketBetween, pairKey } from '../sim/markets';
 import { blockMinutes, flightsOn, hhmm, localMinutes, utcFromLocal, type FlightResult, type Plan } from '../sim/simulate';
 import { loadLine, LoadPill } from './FlightLoads';
-import { count } from './format';
+import { price } from './format';
 
 export function CarrierMark({ name, color, own = false }: { name: string; color?: string; own?: boolean }) {
   return <span className={`carrier-mark${own ? ' own' : ''}`} style={{ borderColor: color }} aria-hidden="true">{own ? '自家' : [...name].slice(0, 2).join('')}</span>;
@@ -65,7 +65,7 @@ export function CompactTimetable({ from, to, services, plan, loads, onEdit, show
             <span className="compact-arrival"><time>{hhmm(localMinutes(to, r.arr))}</time>{shift !== 0 && <sup>{shift > 0 ? '+' : ''}{shift}</sup>}</span>
             <span className="compact-duration">{Math.floor(duration / 60)}h{String(duration % 60).padStart(2, '0')}{r.load && <><br /><LoadPill f={r.load} /></>}</span>
           </summary>
-          <div className="compact-flight-detail"><b>{r.name}{r.country ? ` · ${r.country}` : ''}</b><span>{r.type}{r.reg ? ' · ' + r.reg : ''}{r.fare !== undefined ? ' · NT$' + count(r.fare) : ''}</span>
+          <div className="compact-flight-detail"><b>{r.name}{r.country ? ` · ${r.country}` : ''}</b><span>{r.type}{r.reg ? ' · ' + r.reg : ''}{r.fare !== undefined ? ' · ' + price(r.fare) : ''}</span>
             <span>{r.carrier === 'own' ? '每日營運' : `此方向每週 ${r.freq} 班`}{r.freq < 7 ? ' · 未指定營運星期' : ''}{shift !== 0 ? ` · 抵達日期差 ${shift > 0 ? '+' : ''}${shift} 天` : ''}</span>
             {r.load && <span>載客率 {Math.round(r.load.loadFactor * 100)}% · {loadLine(r.load)}</span>}
             {r.edit && <button onClick={r.edit}>調整這班航班</button>}

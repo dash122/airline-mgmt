@@ -14,7 +14,7 @@ import {
   blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, runwayFits, simulate, topMarketsFrom, utcFromLocal,
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
-import { count, money, pct } from './format';
+import { count, hkSigned, money, pct } from './format';
 import { arrival, at, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
@@ -69,7 +69,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
     .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
-      info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。損益是每週航段損益，不含租金。</p>}
+      info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。金額是港幣（HK$）。航線週損益不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length > 0 && (
         <div className="seg two routes-view" role="tablist" aria-label="航線類別">
@@ -89,7 +89,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
       )}
       {rows.length > 0 && (
         <div className="routes-summary">
-          <span><small>每週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{total >= 0 ? '+' : ''}{money(total)}</b></span>
+          <span><small>航線週損益合計</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
           <small className="routes-summary-meta">{daily} 班來回/日{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</small>
         </div>
       )}

@@ -224,7 +224,7 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
               <div className="st-top">
                 <span className="name"><span className="st-title">{AIRPORT_BY_CODE[r.code].name} {r.code}{r.code === plan.base && <span className="chip">基地</span>}{r.isHub && <span className="chip">轉運站</span>}</span>
                   <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="plane" v={r.departures} label="出發班次/週" u="班/週" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" />}</span></span>
-                {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`} title="每週分攤航段損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}<small>／週</small></span>}
+                {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`} title="分攤到這個機場的航線週損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}<small>／週</small></span>}
               </div>
               {use >= 0.7 && <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : 'warn'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>}
               {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" w="時間帶" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}

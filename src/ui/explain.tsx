@@ -1,7 +1,7 @@
 // Tap a number to see why it is what it is: a plain sentence, the few numbers behind it, and what to try.
 import { PAX_COST_PER_SEGMENT, SALES_COST_SHARE, type RouteResult } from '../sim/simulate';
 import type { MarketSplit } from '../sim/share';
-import { count, money, pct } from './format';
+import { count, money, pct, price } from './format';
 
 export type ExplainKey = 'lf' | 'spill' | 'share' | 'profit';
 
@@ -88,8 +88,8 @@ export function explainRoute(key: ExplainKey, r: RouteResult, split: MarketSplit
       if (rivals.length === 0) reasons.push('沒有其他航空直飛，你的對手是轉機或其他交通方式。');
       else {
         reasons.push(`你的班次占全部直飛的 ${pct(split.ownFreqShare)}。`);
-        if (rivalFare && r.fare > rivalFare * 1.03) reasons.push(`你的票價（NT$${count(r.fare)}）比對手平均（NT$${count(rivalFare)}）貴，所以市占比班次比例低。`);
-        else if (rivalFare && r.fare < rivalFare * 0.97) reasons.push(`你的票價（NT$${count(r.fare)}）比對手平均（NT$${count(rivalFare)}）便宜，幫你多拿一些旅客。`);
+        if (rivalFare && r.fare > rivalFare * 1.03) reasons.push(`你的票價（${price(r.fare)}）比對手平均（${price(rivalFare)}）貴，所以市占比班次比例低。`);
+        else if (rivalFare && r.fare < rivalFare * 0.97) reasons.push(`你的票價（${price(r.fare)}）比對手平均（${price(rivalFare)}）便宜，幫你多拿一些旅客。`);
         if (split.ownTurnedAway >= 1) reasons.push(`另有 ${count(split.ownTurnedAway)} 人選了你但航班客滿，不算在市占裡。`);
       }
       const top = [...rivals].sort((x, y) => y.pax - x.pax).slice(0, 3);
@@ -98,7 +98,7 @@ export function explainRoute(key: ExplainKey, r: RouteResult, split: MarketSplit
         why: `這個市場每週有 ${count(r.airTotal)} 人搭飛機（雙向），你載了 ${count(r.localPax)} 人。旅客依班次多寡、起飛時段、票價和服務來選航空。${reasons.join('')}`,
         rows: [
           { label: '你的班次 / 全部直飛', value: `${count(r.flightsPerWeek)} / ${count(r.flightsPerWeek + rivalFlights)} 班` },
-          ...(rivalFare ? [{ label: '你的票價 / 對手平均', value: `NT$${count(r.fare)} / NT$${count(rivalFare)}` }] : []),
+          ...(rivalFare ? [{ label: '你的票價 / 對手平均', value: `${price(r.fare)} / ${price(rivalFare)}` }] : []),
           ...top.map((x) => ({ label: x.airline?.name ?? x.id, value: `${pct(x.share)} · ${count(x.pax)} 人` })),
           ...(split.rows.some((x) => x.kind === 'connecting' || x.kind === 'rivalVia')
             ? [{ label: '轉機（其他航空）', value: count(split.rows.filter((x) => x.kind === 'connecting' || x.kind === 'rivalVia').reduce((s, x) => s + x.pax, 0)) }] : []),
@@ -114,7 +114,7 @@ export function explainRoute(key: ExplainKey, r: RouteResult, split: MarketSplit
       const costs = [
         { label: '飛行成本（燃油、組員、維修）', v: m.blockCost },
         { label: '起降與導航費', v: m.departureCost },
-        { label: `旅客服務（每人 NT$${PAX_COST_PER_SEGMENT}）`, v: m.paxCost },
+        { label: `旅客服務（每人 ${price(PAX_COST_PER_SEGMENT)}）`, v: m.paxCost },
         { label: `銷售手續費（票價 ${pct(SALES_COST_SHARE)}）`, v: m.salesCost },
       ];
       const biggest = [...costs].sort((x, y) => y.v - x.v)[0];
@@ -126,13 +126,13 @@ export function explainRoute(key: ExplainKey, r: RouteResult, split: MarketSplit
             : '收入不夠付飛行成本：就算每個座位都坐滿，現在的票價也付不起這架飛機飛這條線。'
         : '還沒有旅客，只有成本。';
       return {
-        title: `週航段損益 ${signed(profit)}`,
+        title: `航線週損益 ${signed(profit)}`,
         why: `${why}最大的支出是${biggest.label.replace(/（.*）/, '')}。這裡不含飛機租金，租金在「機隊」看。`,
         rows: [
           { label: '本地旅客票價', value: money(m.localRevenue) },
           { label: '轉機旅客票價（按距離分攤）', value: money(m.connectingRevenue) },
           ...costs.map((c) => ({ label: c.label, value: `−${money(c.v)}` })),
-          { label: '週航段損益', value: signed(profit), total: true, tone: profit >= 0 ? 'good' as const : 'bad' as const },
+          { label: '航線週損益', value: signed(profit), total: true, tone: profit >= 0 ? 'good' as const : 'bad' as const },
         ],
         tip: profit < 0
           ? (be && be.loadFactor > 1 ? '換小一點、省油的飛機，或漲價。' : r.spill > 1 ? '已經客滿：漲價或換大飛機。' : '多載人（降價、好時段、接轉機），或減班、換小飛機。')
