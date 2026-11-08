@@ -477,14 +477,14 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .ac-group:last-child { border-right: 0; }
 .ac-group-label { font-size: var(--fs-3xs); font-weight: 650; color: var(--muted); white-space: nowrap; }
 .ac-group-tiles { display: flex; gap: 6px; }
-.ac-tile { position: relative; flex: 0 0 96px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
+.ac-tile { position: relative; flex: 0 0 96px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 10px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
 .ac-tile.on { border-color: var(--accent); background: var(--accent-soft); }
 .ac-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .ac-tile small { font-size: var(--fs-3xs); color: var(--muted); }
 .ac-tile strong { margin-top: auto; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ac-tile strong.good { color: var(--good); }
 .ac-tile strong.bad { color: var(--bad); }
-.ac-best { font-style: normal; padding: 1px 5px; border-radius: var(--r-pill); background: var(--good); color: var(--accent-text); font-size: var(--fs-3xs); font-weight: 700; line-height: 1.4; }
+.ac-best { font-style: normal; padding: 1px 4px; border-radius: var(--r-pill); background: var(--good); color: var(--accent-text); font-size: var(--fs-3xs); font-weight: 700; line-height: 1.4; }
 .ac-tile .ac-best { position: absolute; top: 7px; right: 7px; }
 .ac-tile-name { font-size: var(--fs-sm); line-height: 1.2; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timepick { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
