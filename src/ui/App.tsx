@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
-import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, simulate, toggleCodeshare, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
+import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, simulate, toggleHosted, toggleCodeshare, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
 import { CodeshareLink, CodeshareSheet } from './codeshare';
+import { HostedLink, HostedSheet } from './hosted';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
 import { AircraftSheet, ResultsSheet, RouteSheet } from './sheets';
@@ -44,6 +45,7 @@ type Overlay =
   | { kind: 'gap'; acId: string; t: number }
   | { kind: 'lease' }
   | { kind: 'codeshare'; airline: string; key: string }
+  | { kind: 'hosted'; key: string; airline?: string }
   | ({ kind: 'new' } & NewRouteState)
   | null;
 
@@ -53,6 +55,7 @@ export default function App() {
     if (!p || p.version !== 2 || !AIRPORT_BY_CODE[p.base]) return null;
     return { ...p, hub: p.hub && AIRPORT_BY_CODE[p.hub] ? p.hub : undefined,
       codeshares: (p.codeshares ?? []).filter((c) => c.key.split('-').every((x) => AIRPORT_BY_CODE[x])),
+      hosted: (p.hosted ?? []).filter((c) => c.key.split('-').every((x) => AIRPORT_BY_CODE[x])),
       fleet: p.fleet.map(ac => ({ ...ac, legs: ac.legs.filter(l => AIRPORT_BY_CODE[l.from] && AIRPORT_BY_CODE[l.to]) })) };
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
@@ -182,6 +185,12 @@ export default function App() {
   };
   const newRoute = overlay?.kind === 'new' ? overlay : null;
   const openCodeshare = (airline: string, key: string) => setOverlay({ kind: 'codeshare', airline, key });
+  const openHosted = (key: string, airline?: string) => setOverlay({ kind: 'hosted', key, airline });
+  const toggleHost = (airline: string, key: string) => {
+    const on = plan.hosted?.some((h) => h.airline === airline && h.key === key);
+    update(toggleHosted(plan, airline, key));
+    setToast(on ? `${airlineName(airline)} 停止賣 ${key.replace('-', '⇄')}` : `${airlineName(airline)} 開始賣 ${key.replace('-', '⇄')}`);
+  };
   const csLabel = (airline: string, key: string) => `${airlineName(airline)} ${key.replace('-', '⇄')}`;
   const toggleShare = (airline: string, key: string) => {
     const on = hasCodeshare(plan, airline, key);
@@ -232,6 +241,7 @@ export default function App() {
   return (
     <AirlineLink.Provider value={openAirline}>
     <CodeshareLink.Provider value={openCodeshare}>
+    <HostedLink.Provider value={openHosted}>
     <div className={`app${hasSubnav ? ' has-subnav' : ''}`}>
       <MapCanvas
         plan={plan}
@@ -328,7 +338,7 @@ export default function App() {
       )}
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
-          onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')}
+          onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
           onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
       )}
       {showPanel === 'airports' && (
@@ -383,6 +393,18 @@ export default function App() {
           onPartner={() => openAirline(overlay.airline, 'share')}
           onClose={() => setOverlay(null)} />
       )}
+      {overlay?.kind === 'hosted' && (
+        <HostedSheet key={overlay.key} plan={plan} routeKey={overlay.key} airline={overlay.airline}
+          onSet={(airline, share) => {
+            const was = plan.hosted?.some((h) => h.airline === airline && h.key === overlay.key);
+            update(setHostedShare(plan, airline, overlay.key, share));
+            setToast(was ? `給${airlineName(airline)}的座位改成每班 ${Math.round(share * 100)}%` : `${airlineName(airline)} 開始賣 ${overlay.key.replace('-', '⇄')}`);
+          }}
+          onStop={(airline) => toggleHost(airline, overlay.key)}
+          onOpenRoute={() => openRoute(overlay.key)}
+          onPartner={(airline) => openAirline(airline)}
+          onClose={() => setOverlay(null)} />
+      )}
       {overlay?.kind === 'lease' && (
         <LeaseSheet plan={plan} onClose={() => setOverlay(null)}
           onLease={(type, to) => {
@@ -417,6 +439,7 @@ export default function App() {
         })}
       </nav>
     </div>
+    </HostedLink.Provider>
     </CodeshareLink.Provider>
     </AirlineLink.Provider>
   );

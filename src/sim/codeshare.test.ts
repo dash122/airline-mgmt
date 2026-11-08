@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rivalsBetween } from './competitors';
-import { bestShare, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
-import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
+import { bestShare, hostedChoices, hostedIdeas, hostedImpact, hostedOptions, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
+import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, feederFlights, HOSTED_FEE_PER_WEEK, setHostedShare, toggleHosted, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
 import { AIRCRAFT } from '../data/aircraft';
 import { hubTransit } from './airports';
 
@@ -138,5 +138,57 @@ describe('codeshare', () => {
     expect(new Set(ideas.map((i) => i.airline)).size).toBeGreaterThan(1);
     for (const i of ideas) expect(i.gain).toBeGreaterThan(0);
     expect(codeshareIdeas(withCs, 50).some((i) => i.airline === partner.id && i.route.key === key)).toBe(false);
+  });
+
+  describe('partners selling your routes', () => {
+    const route = 'BKK-TPE';
+    const host = hostedOptions(plan, route)[0];
+    const hosted = toggleHosted(plan, host.airline, route);
+    const res = simulate(hosted);
+    const h = res.hosted[`${host.airline}|${route}`];
+
+    it('brings the partner\'s travellers from its flights at either end onto your route', () => {
+      expect(host.gain).toBeGreaterThan(0);
+      expect(h.pax).toBeGreaterThan(50);
+      expect(h.pax).toBeLessThanOrEqual(h.seats + 1e-6);
+      expect(h.wanted).toBeGreaterThanOrEqual(h.pax - 1e-6);
+      expect(h.sources.length).toBeGreaterThan(0);
+      for (const f of feederFlights({ airline: host.airline, key: route })) {
+        expect([f.from, f.to].some((x) => x === 'BKK' || x === 'TPE')).toBe(true);
+        expect(f.hosted).toBe(route);
+      }
+      expect(res.routes[route].pax).toBeGreaterThan(before.routes[route].pax);
+      // Nothing sold on routes the partner doesn't sell, and no partner-only trips.
+      expect(res.routes['NRT-TPE']).toBeUndefined();
+    });
+
+    it('adds up: your fare share, displaced own travellers, costs and the fee', () => {
+      expect(h.fee).toBe(HOSTED_FEE_PER_WEEK);
+      expect(res.codeshareCost).toBe(HOSTED_FEE_PER_WEEK);
+      const imp = hostedImpact(hosted, host.airline, route)!;
+      expect(imp.gain).toBeCloseTo(res.revenue - res.cost - (before.revenue - before.cost), 0);
+      expect(imp.revenue + imp.ownRevenue - imp.paxCost - imp.fee).toBeCloseTo(imp.gain, 0);
+      expect(imp.lfAfter).toBeGreaterThan(imp.lfBefore);
+      expect(h.revenue).toBeGreaterThan(0);
+      expect(h.partnerRevenue).toBeGreaterThan(0);
+    });
+
+    it('caps the partner at its seat block on your flights', () => {
+      const small = simulate(setHostedShare(plan, host.airline, route, 0.1)).hosted[`${host.airline}|${route}`];
+      const big = simulate(setHostedShare(plan, host.airline, route, 0.4)).hosted[`${host.airline}|${route}`];
+      expect(big.seats).toBeGreaterThan(small.seats * 3.5);
+      expect(small.pax).toBeLessThanOrEqual(small.seats + 1e-6);
+      expect(big.pax).toBeGreaterThanOrEqual(small.pax - 1e-6);
+      const choices = hostedChoices(plan, host.airline, route);
+      expect(choices[1].gain).toBeCloseTo(host.gain, 0);
+    });
+
+    it('ranks partners for each of your routes', () => {
+      const ideas = hostedIdeas(plan, 6, 6);
+      expect(ideas.length).toBeGreaterThan(0);
+      expect(ideas.map((i) => i.gain)).toEqual(ideas.map((i) => i.gain).sort((x, y) => y - x));
+      const opts = hostedOptions(hosted, route);
+      expect(opts[0]).toMatchObject({ airline: host.airline, active: true });
+    });
   });
 });

@@ -16,6 +16,7 @@ import { frequencyLabel, routeHealth } from './route-health';
 import { MarketShare, RouteRivals } from './rivals';
 import { AirlineLink } from './airlines';
 import { FedByNote } from './codeshare';
+import { HostedNote } from './hosted';
 import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
@@ -307,6 +308,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
       {result && <FedByNote net={net} routeKey={routeKey} routePax={result.pax} />}
+      {result && <HostedNote net={net} routeKey={routeKey} />}
       <div className="seg route-tabs" role="tablist" aria-label="航線內容">
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
