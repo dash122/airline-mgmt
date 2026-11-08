@@ -14,9 +14,9 @@ import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, ty
 import { count, money, pct, short } from './format';
 import { FlightTimes } from './FlightTimes';
 import { MarketShare } from './rivals';
-import { at, Sheet, shortType, tone } from './sheets';
+import { at, Sheet, shortType } from './sheets';
 import { TimeStepper } from './panels';
-import { Badge, hm, IN, Icon, Ring } from './viz';
+import { Badge, hm, IN, Icon } from './viz';
 
 export type PickField = 'from' | 'to';
 export interface NewRouteState { from: string; to: string | null; pick: PickField | null }
@@ -190,7 +190,6 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
     .map((cls: AircraftClass) => ({ cls, items: choices.filter((c) => c.kind === 'lease' && AIRCRAFT[c.type].cls === cls).sort(byDelta) }))
     .filter((g) => g.items.length > 0);
   const ordered = [...fleet, ...groups.flatMap((g) => g.items)];
-  const maxSeats = Math.max(...choices.map((c) => AIRCRAFT[c.type].seats));
 
   const step = (e: React.KeyboardEvent) => {
     const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -207,49 +206,21 @@ export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }
     const on = chosen?.id === c.id;
     const d = delta(c);
     return (
-      <button key={c.id} data-id={c.id} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} title={`${ac ? `${ac.reg} · ` : '租用 · '}${s.name}`}
-        className={`ac-tile${on ? ' on' : ''}${ac ? ' owned' : ''}`} onClick={() => onPick(c)}>
-        <span className="ac-tile-top"><span>{ac ? ac.reg : '租用'}</span>{best?.id === c.id && <i className="ac-best">建議</i>}</span>
+      <button key={c.id} data-id={c.id} role="radio" aria-checked={on} tabIndex={on ? 0 : -1}
+        title={`${ac ? `${ac.reg} · ` : ''}${s.name}`} className={`ac-tile${on ? ' on' : ''}`} onClick={() => onPick(c)}>
+        {best?.id === c.id && <i className="ac-best">建議</i>}
         <b className="ac-tile-name">{shortType(c.type)}</b>
-        <span className="ac-bar" aria-hidden><i style={{ width: `${(s.seats / maxSeats) * 100}%` }} /></span>
-        <span className="ac-tile-foot"><span>{s.seats} 座</span><span className={d >= 0 ? 'good' : 'bad'}>{signed(d)}</span></span>
+        <small>{s.seats} 座</small>
+        <strong className={d >= 0 ? 'good' : 'bad'}>{signed(d)}</strong>
       </button>
     );
   };
 
-  const s = AIRCRAFT[chosen?.type ?? ordered[0].type];
-  const p = chosen ? previews.get(chosen.id)! : null;
-  const ac = chosen?.acId ? plan.fleet.find((x) => x.id === chosen.acId) : undefined;
-
   return (
-    <>
-      <div className="ac-rail" role="radiogroup" aria-label="飛機方案" ref={railRef} onKeyDown={step}>
-        {fleet.length > 0 && <div className="ac-group"><span className="ac-group-label">現有機隊</span><div className="ac-group-tiles">{fleet.map(tile)}</div></div>}
-        {groups.map((g) => <div className="ac-group" key={g.cls}><span className="ac-group-label">{CLASS_NAMES[g.cls]}</span><div className="ac-group-tiles">{g.items.map(tile)}</div></div>)}
-      </div>
-      {chosen && p && (
-        <div className="ac-hero" aria-live="polite">
-          <div className="ac-hero-head">
-            <div>
-              <small>{ac ? `現有 · ${ac.reg}` : '租用新機'} · {CLASS_NAMES[s.cls]}</small>
-              <b>{s.name}</b>
-            </div>
-            <div className="ac-hero-delta">
-              <strong className={p.networkDelta >= 0 ? 'good' : 'bad'}>{signed(p.networkDelta)}</strong>
-              <small>預計全網損益／週</small>
-            </div>
-          </div>
-          <div className="ins lg">
-            <IN n="seat" v={s.seats} label="座位" u="座" />
-            <IN n="long" v={`${count(s.rangeKm)}km`} label="航程" />
-            {ac
-              ? <IN n="util" v={`${pct(chosen.utilBefore ?? 0)}→${pct(chosen.utilAfter ?? 0)}`} label="利用率" w="利用率" />
-              : <IN n="lease" v={`${money(s.ownershipPerWeek)}/週`} label="租金" w="租金" />}
-            <span className={`in ${tone(p.loadFactor)}`}>載客率 <Ring value={p.loadFactor} tone={tone(p.loadFactor)} size={12} stroke={3} />{pct(p.loadFactor)}</span>
-          </div>
-        </div>
-      )}
-    </>
+    <div className="ac-rail" role="radiogroup" aria-label="飛機方案" ref={railRef} onKeyDown={step}>
+      {fleet.length > 0 && <div className="ac-group"><span className="ac-group-label">現有機隊</span><div className="ac-group-tiles">{fleet.map(tile)}</div></div>}
+      {groups.map((g) => <div className="ac-group" key={g.cls}><span className="ac-group-label">{CLASS_NAMES[g.cls]}</span><div className="ac-group-tiles">{g.items.map(tile)}</div></div>)}
+    </div>
   );
 }
 
@@ -317,6 +288,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
     const bm = blockMinutes(depFrom, other, ac.type);
     return { out: ac.legs[i], back: ac.legs[i + 1], bm, cycle: cycleOf(ac) };
   }, [applied, chosen, depFrom, other, dep]);
+  const owned = chosen?.acId ? plan.fleet.find((x) => x.id === chosen.acId) : undefined;
   const slot = slotProblem(plan, from, to);
   const rivals = useMemo(() => {
     const by = new Map<string, { name: string; color: string; freq: number }>();
@@ -348,25 +320,30 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       </button>}>
       {ends}
 
-      {preview && (
+      {preview && chosen && (
         <div className="plan-summary">
-          <span>預計全網損益／週</span>
+          <div className="plan-summary-head">
+            <span>預計全網損益／週</span>
+            {recommended ? <i className="ac-best">建議</i> : <i className="plan-tag">已調整</i>}
+          </div>
           <strong className={preview.networkDelta >= 0 ? 'good' : 'bad'}>{signed(preview.networkDelta)}</strong>
-          {preview.networkDelta < 0 && recommended && <span>最佳方案仍預計虧損</span>}
-          <div className="plan-summary-meta"><span><b>{count(preview.pax)}</b> 人／週</span><span><b>{pct(preview.loadFactor)}</b> 載客率</span></div>
+          <div className="plan-summary-meta">
+            <span><b>{owned ? owned.reg : shortType(chosen.type)}</b> {owned ? '現有' : '租用'}</span>
+            <span><b>{count(preview.pax)}</b> 人/週</span>
+            <span><b>{pct(preview.loadFactor)}</b> 載客率</span>
+          </div>
+          {preview.loadFactor >= 0.97 && <p className="plan-note warn">幾乎客滿，可換大機或加班</p>}
+          {recommended && preview.networkDelta < 0 && <p className="plan-note bad">最佳方案仍預計虧損</p>}
         </div>
       )}
-      {preview && preview.loadFactor >= 0.97 && <div className="hint warn"><Icon n="spill" /> 幾乎客滿：換大飛機或之後加班</div>}
 
-      {chosen && <div className="route-selection"><span>{recommended ? '建議方案' : '目前方案'}</span><b>{chosen.kind === 'lease' ? '租用' : '現有'} {shortType(chosen.type)}</b><span className="route-selection-dot">·</span><b>{at(depFrom, dep)}</b><small>{trip && trip.cycle > 1 ? `每 ${trip.cycle} 天來回` : '每日來回'}</small></div>}
       <details className="route-adjust">
-      <summary><span>飛機與時間</span><small>調整方案</small></summary>
-      <h4>飛機</h4>
-      {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
-      <AircraftPicker plan={plan} choices={choices} previews={previews} best={best} chosen={chosen}
-        onPick={(c) => { setPickId(c.id); setDep(null); }} />
+        <summary><span>飛機與時間</span><small>調整</small></summary>
+        {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
+        <AircraftPicker plan={plan} choices={choices} previews={previews} best={best} chosen={chosen}
+          onPick={(c) => { setPickId(c.id); setDep(null); }} />
 
-      {chosen && (
+        {chosen && (
         <>
           <h4>{depFrom} 出發（當地時間）</h4>
           <div className="chips">
@@ -377,7 +354,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
             })}
           </div>
           {fine ? <TimeStepper code={depFrom} dep={dep} lo={w.lo} hi={w.hi} onChange={setDep} />
-            : <button className="ghost" onClick={() => setFine(true)}>微調時間</button>}
+            : <button className="chip" onClick={() => setFine(true)}>微調</button>}
           {trip && (
             <div className="trip">
               <FlightTimes from={trip.out.from} to={trip.out.to} dep={trip.out.dep} arr={trip.out.dep + trip.bm} />
@@ -389,8 +366,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       )}
       </details>
       <details className="route-adjust">
-      <summary><span>市場與預測</span><small>查看詳情</small></summary>
-      <h4><Icon n="rival" /> 對手</h4>
+      <summary><span>市場</span><small>查看</small></summary>
       <div className="market-line ins lg">
         <IN n="pax" v={short((m?.airDemand ?? 0) * 2)} label="旅客/週" u="人/週" />
         {rivals.length > 0
