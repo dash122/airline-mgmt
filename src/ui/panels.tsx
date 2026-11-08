@@ -1,4 +1,4 @@
-import { CodeshareSection } from './codeshare';
+import { CodeshareHub } from './codeshare';
 import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
@@ -24,11 +24,15 @@ const dur = hm;
 
 // ---------- Routes ----------
 
-export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onCodeshare, onClose }: {
-  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
-  onPartner: (airline: string) => void; onCodeshare: (airline: string, key: string) => void; onClose: () => void;
+export type RoutesView = 'own' | 'share';
+
+export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onClose }: {
+  plan: Plan; result: NetworkResult | null; view: RoutesView; onView: (v: RoutesView) => void;
+  onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
+  onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void; onClose: () => void;
 }) {
   const [only, setOnly] = useState<'all' | 'todo'>('all');
+  const shared = plan.codeshares?.length ?? 0;
   const rows = routePairs(plan)
     .map((r) => {
       const res = result?.routes[r.key];
@@ -45,6 +49,14 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
       info={rows.length > 0 && <p>先列出要處理的航線（客滿、虧損、空位多），每條只給一個建議動作。點航線看票價、航班和市場。損益是每週航段損益，不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
+      {rows.length > 0 && (
+        <div className="seg two routes-view" role="tablist" aria-label="航線類別">
+          <button role="tab" aria-selected={view === 'own'} className={view === 'own' ? 'on' : ''} onClick={() => onView('own')}>自己飛 {rows.length}</button>
+          <button role="tab" aria-selected={view === 'share'} className={view === 'share' ? 'on' : ''} onClick={() => onView('share')}><Icon n="link" /> 代碼共享{shared ? ` ${shared}` : ''}</button>
+        </div>
+      )}
+      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} />}
+      {view === 'own' && <>
       {rows.length === 0 && (
         <div className="empty-cta">
           <div className="empty-flight" aria-hidden="true"><span>✈</span></div>
@@ -76,7 +88,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
           );
         })}
       </ul>
-      <CodeshareSection plan={plan} result={result} onPick={onPartner} onToggle={onCodeshare} onOpenRoute={onOpen} />
+      </>}
     </Sheet>
   );
 }

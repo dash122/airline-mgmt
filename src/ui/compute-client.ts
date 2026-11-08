@@ -1,7 +1,7 @@
 // All calculation clients share one runtime and its expensive, immutable market
 // and competitor caches. Separate ports keep their request IDs independent.
 let runtime: Worker | null = null;
-export function createComputeClient(scope: 'simulation' | 'airport' | 'preview'): Worker {
+export function createComputeClient(scope: 'simulation' | 'airport' | 'preview' | 'codeshare'): Worker {
   if (!runtime) {
     const worker = new Worker(new URL('./compute.worker.ts', import.meta.url), { type: 'module' });
     runtime = worker;

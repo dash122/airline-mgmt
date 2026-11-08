@@ -1,8 +1,9 @@
 import { analyzeAirport } from './airport-analysis.worker';
 import { destinationsFrom, previewChoice } from '../sim/newroute';
 import { simulate } from '../sim/simulate';
+import { codeshareIdeas } from '../sim/codeshare';
 
-self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview'; port: MessagePort }>) => {
+self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
   const { scope, port } = event.data;
   let version = 0;
   const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -15,6 +16,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
+      else if (scope === 'codeshare') port.postMessage({ id, ideas: codeshareIdeas(plan) });
       else if (kind === 'destinations') port.postMessage({ request, destinations: destinationsFrom(plan, from) });
       else {
         const previews = [];

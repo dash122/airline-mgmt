@@ -2,20 +2,20 @@ import { useContext, useMemo, useRef, useState, type PointerEvent as RPointerEve
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
-import { airlines, rivalsBetween } from '../sim/competitors';
+import { rivalsBetween } from '../sim/competitors';
 
-const airlineColor = (id: string) => airlines().find((a) => a.id === id)?.color ?? 'var(--muted)';
 import { units } from '../sim/schedule';
 import { bestFare, clampFare, fareCurve, FARE_MAX, FARE_MIN, FARE_STEP } from '../sim/fares';
 import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
-  airlineName, blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
+  blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
   type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { frequencyLabel, routeHealth } from './route-health';
 import { MarketShare, RouteRivals } from './rivals';
 import { AirlineLink } from './airlines';
+import { FedByNote } from './codeshare';
 import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
@@ -229,9 +229,6 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const split = useMemo(() => marketSplit(a, b, result, net), [a, b, result, net]);
   const routeCompetitors = useMemo(() => [...new Map(rivalsBetween(a, b).map((service) => [service.airline.id, service.airline])).values()], [a, b]);
   const explained = result && why ? explainRoute(why, result, split) : null;
-  // Codeshare travellers on this route: which partner flights bring them.
-  const fedBy = Object.entries(net?.codeshares ?? {}).flatMap(([id, c]) => c.feeds.filter((f) => f.key === routeKey && f.pax >= 1).map((f) => ({ id, airline: c.airline, key: c.key, pax: f.pax })))
-    .sort((x, y) => y.pax - x.pax);
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   const profit = result ? result.revenue - result.flyingCost : 0;
   const health = routeHealth(result ? { loadFactor: result.loadFactor, spill: result.spill, profit } : null, daily);
@@ -278,16 +275,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </button>
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
-      {fedBy.length > 0 && result && (
-        <div className="cs-feed-note">
-          <span><Icon n="link" /> 共享帶進 <b>{count(fedBy.reduce((s, f) => s + f.pax, 0))}</b> 人/週 · 占 {pct(fedBy.reduce((s, f) => s + f.pax, 0) / Math.max(1, result.pax))}</span>
-          <div className="chips">{fedBy.map((f) => (
-            <button key={f.id} className="chip" onClick={() => airlineLink?.(f.airline)}>
-              <i className="dash" style={{ borderColor: airlineColor(f.airline) }} />{airlineName(f.airline)} {f.key.replace('-', '⇄')} · {count(f.pax)} 人
-            </button>
-          ))}</div>
-        </div>
-      )}
+      {result && <FedByNote net={net} routeKey={routeKey} routePax={result.pax} />}
       <div className="seg route-tabs" role="tablist" aria-label="航線內容">
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>

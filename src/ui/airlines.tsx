@@ -162,7 +162,7 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
         ))}
       </div>
       {tab === 'routes' && <RouteList plan={plan} net={net} focus={focus} onFocus={onFocus} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} onCodeshare={onCodeshare} />}
-      {tab === 'share' && <CodeshareTab plan={plan} net={net} onToggle={onCodeshare} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} />}
+      {tab === 'share' && <CodeshareTab plan={plan} net={net} onToggle={onCodeshare} />}
       {tab === 'hubs' && <Hubs net={net} onPickAirport={onPickAirport} onShowRoutes={() => setTab('routes')} />}
       {tab === 'fleet' && <Fleet net={net} />}
       {tab === 'vs' && <VersusYou plan={plan} result={result} net={net} onOpenRoute={onOpenRoute} onOpen={onOpen} onPickAirport={onPickAirport} />}

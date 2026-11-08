@@ -1,181 +1,310 @@
-// Codeshare: pick a partner airline's routes to sell as connections with your own flights.
-import { useMemo, useState } from 'react';
+// Codeshare: sell seats on partner airlines' flights as connections with your own.
+// One hub (航線 → 共享) lists what you share and the best ideas across every partner; one sheet per codeshare shows
+// its demand per flight and lets you size its seat block.
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { airlines } from '../sim/competitors';
-import { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, codeshareImpact, codeshareOptions, partnersOf, type CodeshareImpact, type CodeshareOption } from '../sim/codeshare';
+import {
+  bestShare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareImpact, codeshareOptions, codeshareShare, shareChoices,
+  type CodeshareIdea, type CodeshareImpact, type CodeshareOption,
+} from '../sim/codeshare';
 import type { AirlineNetwork } from '../sim/networks';
-import type { NetworkResult, Plan } from '../sim/simulate';
+import { airlineName, hhmm, localMinutes, simulate, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
+import { createComputeClient } from './compute-client';
 import { count, money, pct } from './format';
-import { Head, routeName } from './sheets';
+import { Head, routeName, Sheet } from './sheets';
 import { Badge, IN, Icon, Meter, ProfitBar, Ring, type Tone } from './viz';
 
 const name = (c: string) => AIRPORT_BY_CODE[c]?.name ?? c;
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${money(Math.abs(n))}`;
+const colorOf = (id: string) => airlines().find((a) => a.id === id)?.color ?? '#888';
+const at = (code: string, utc: number) => hhmm(localMinutes(code, utc));
 const SHOWN = 6;
+const DEPS_SHOWN = 4;
+
+/** Opens the codeshare sheet for one partner route, from anywhere. */
+export const CodeshareLink = createContext<((airline: string, key: string) => void) | null>(null);
 
 /** The terms, shown behind the "i". */
 export const CodeshareTerms = () => (
-  <p>代碼共享：夥伴每班給你 {pct(CODESHARE_SEAT_SHARE)} 座位，你只賣給「轉乘你自己航班」的旅客。票價按兩段各自的票價比例分：你的航段歸你，夥伴的航段歸夥伴（短程段分得比距離多一點）。每條共享航線每週 {money(CODESHARE_FEE_PER_WEEK)}。損益變化已算入費用，也算入夥伴旅客占掉你座位的影響。廉價航空不做代碼共享。</p>
+  <p>代碼共享：夥伴每班留一塊座位給你（預設 {pct(CODESHARE_SEAT_SHARE)}，可調 10–40%），只賣給「轉乘你自己航班」的旅客。票價按兩段各自的票價比例分：你的航段歸你，夥伴的航段歸夥伴。每條每週 {money(codeshareFee(0.1))}–{money(codeshareFee(0.4))}，座位越多越貴、但每座越便宜（{pct(CODESHARE_SEAT_SHARE)} 是 {money(CODESHARE_FEE_PER_WEEK)}）。損益已算入費用和擠掉自家旅客的影響。廉價航空不做代碼共享。</p>
 );
 
-/** The partner profile's 共享 tab: its routes that connect with yours, ranked by what they would add each week. */
-export function CodeshareTab({ plan, net, onToggle, onPickAirport, onOpenRoute }: {
-  plan: Plan; net: AirlineNetwork; onToggle: (key: string) => void; onPickAirport: (code: string) => void; onOpenRoute?: (key: string) => void;
+// ---------- 航線 → 共享 ----------
+
+/** Ideas across every partner, from the shared calculation worker (about a second on a phone). */
+function useCodeshareIdeas(plan: Plan) {
+  const [state, setState] = useState<{ plan: Plan; ideas: CodeshareIdea[] } | null>(null);
+  const worker = useRef<Worker | null>(null);
+  const seq = useRef(0);
+  useEffect(() => {
+    if (!plan.fleet.length) return;
+    const w = worker.current ??= createComputeClient('codeshare');
+    const id = ++seq.current;
+    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[] }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, ideas: e.data.ideas }); };
+    w.addEventListener('message', onMessage);
+    w.postMessage({ id, plan });
+    return () => w.removeEventListener('message', onMessage);
+  }, [plan]);
+  useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
+  // Keep the last list while a new one is worked out, minus anything just shared.
+  return state ? { ideas: state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null), fresh: state.plan === plan } : null;
+}
+
+/** Each active codeshare with what it adds this week. */
+function useActive(plan: Plan) {
+  return useMemo(() => {
+    const list = plan.codeshares ?? [];
+    if (!list.length) return [];
+    const now = simulate(plan);
+    return list.map((c) => ({ airline: c.airline, key: c.key, imp: codeshareImpact(plan, c.airline, c.key, now) }))
+      .sort((x, y) => (y.imp?.gain ?? 0) - (x.imp?.gain ?? 0));
+  }, [plan]);
+}
+
+/** The 航線 tab's 共享 view: what you share, then the best new ones across all partners. */
+export function CodeshareHub({ plan, onOpen, onShare, onPartners }: {
+  plan: Plan; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
 }) {
-  const options = useMemo(() => codeshareOptions(plan, net.airline.id), [plan, net.airline.id]);
-  const [open, setOpen] = useState<string | null>(null);
+  const active = useActive(plan);
+  const ideas = useCodeshareIdeas(plan);
   const [shown, setShown] = useState(SHOWN);
-  if (net.airline.kind === 'low') return <div className="hint center"><Icon n="lock" /> 廉價航空不做代碼共享</div>;
   if (!plan.fleet.length) return <div className="hint center">先開航線，才接得上夥伴航班</div>;
-  const active = options.filter((o) => o.active);
-  const ideas = options.filter((o) => !o.active);
-  const maxGain = Math.max(1, ...options.map((o) => Math.abs(o.gain)));
-  const pax = active.reduce((s, o) => s + (o.stats?.pax ?? 0), 0);
-  const gain = active.reduce((s, o) => s + o.gain, 0);
+  const gain = active.reduce((s, a) => s + (a.imp?.gain ?? 0), 0);
+  const pax = active.reduce((s, a) => s + (a.imp?.stats.pax ?? 0), 0);
+  const maxIdea = Math.max(1, ...(ideas?.ideas ?? []).map((i) => i.gain));
   return (
     <>
       {active.length > 0 && (
-        <div className="cs-summary">
-          <span><Icon n="link" /> <b>{active.length}</b> 條共享</span>
-          <span><Icon n="pax" /> <b>{count(pax)}</b> 人/週</span>
-          <span className={gain >= 0 ? 'good' : 'bad'}><Icon n="money" /> <b>{signed(gain)}</b>/週</span>
+        <div className="routes-summary">
+          <span><small>每週</small><b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b></span>
+          <span><b>{count(pax)}</b><small>人/週</small></span>
+          <span><b>{active.length}</b><small>條共享</small></span>
         </div>
       )}
       {active.length > 0 && (
         <>
           <Head info={<CodeshareTerms />}>已共享</Head>
-          <ul className="cs-list">{active.map((o) => <OptionRow key={o.route.key} plan={plan} airline={net.airline.id} o={o} max={maxGain} open={open === o.route.key} onOpen={() => setOpen(open === o.route.key ? null : o.route.key)} onToggle={() => onToggle(o.route.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} />)}</ul>
+          <ul className="route-rows">
+            {active.map((a) => <ActiveRow key={`${a.airline}|${a.key}`} airline={a.airline} routeKey={a.key} imp={a.imp} onOpen={() => onOpen(a.airline, a.key)} />)}
+          </ul>
+        </>
+      )}
+      <Head info={<><p>所有夥伴的航線裡，加了之後每週多賺最多的幾條（以 {pct(CODESHARE_SEAT_SHARE)} 座位估算）。點進去可以調座位數再決定。</p><CodeshareTerms /></>}
+        right={ideas && !ideas.fresh ? <small className="muted">更新中…</small> : undefined}>推薦共享</Head>
+      {!ideas && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較所有夥伴的航線</div>}
+      {ideas && ideas.ideas.length === 0 && <div className="hint center">目前沒有划算的共享，先多開幾條航線</div>}
+      {ideas && ideas.ideas.length > 0 && (
+        <ul className="cs-ideas">
+          {ideas.ideas.slice(0, shown).map((i) => (
+            <IdeaRow key={`${i.airline}|${i.route.key}`} o={i} airline={i.airline} max={maxIdea} showAirline
+              onOpen={() => onOpen(i.airline, i.route.key)} onShare={() => onShare(i.airline, i.route.key)} />
+          ))}
+        </ul>
+      )}
+      {ideas && ideas.ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN)}>再顯示 {Math.min(SHOWN, ideas.ideas.length - shown)} 條</button>}
+      <div className="chips"><button className="chip" onClick={onPartners}><Icon n="rival" /> 按航空公司找</button></div>
+    </>
+  );
+}
+
+/** One codeshare you run: route, partner, how full its seat block is, what it adds. */
+function ActiveRow({ airline, routeKey, imp, onOpen }: { airline: string; routeKey: string; imp: CodeshareImpact | null; onOpen: () => void }) {
+  const [a, b] = routeKey.split('-');
+  const s = imp?.stats;
+  const use = s && s.seats ? s.pax / s.seats : 0;
+  const away = s ? turnedAway(s) : null;
+  const soldOut = !!away?.block;
+  const ownFull = !!away?.own;
+  const dead = !!s && s.pax < 1;
+  return (
+    <li className={`route-row cs-row${imp && imp.gain < 0 ? ' loss' : ''}`}>
+      <button className="route-row-main" onClick={onOpen}>
+        <span className="swatch dashed" style={{ borderColor: colorOf(airline) }} />
+        <span className="route-row-text">
+          <span className="route-row-top"><strong>{routeName(a, b)}</strong>{imp && <b className={`route-row-profit ${imp.gain < 0 ? 'bad' : 'good'}`}>{signed(imp.gain)}<small>／週</small></b>}</span>
+          <span className="route-row-meta">
+            {!imp ? <Badge n="warn" tone="warn">停飛</Badge>
+              : dead ? <Badge n="warn" tone="bad">接不上</Badge>
+              : soldOut ? <Badge n="spill" tone="accent">座位賣光</Badge>
+              : ownFull ? <Badge n="spill" tone="warn">你的航班滿</Badge>
+              : imp.gain < 0 ? <Badge n="down" tone="bad">虧錢</Badge> : null}
+            {s && <span className="route-row-load"><Meter value={use} tone={seatTone(s)} label={`共享座位賣出 ${pct(use)}`} /><b className={seatTone(s)}>{pct(use)}</b></span>}
+            <small className="route-row-sub">{airlineName(airline)} · {pct(s?.share ?? CODESHARE_SEAT_SHARE)} 座位</small>
+          </span>
+        </span>
+        <span className="chev" aria-hidden="true">›</span>
+      </button>
+    </li>
+  );
+}
+
+/** A codeshare you could start: route, partner, travellers, what it would add, and a one-tap 共享. */
+function IdeaRow({ o, airline, max, showAirline, onOpen, onShare }: {
+  o: CodeshareOption; airline: string; max: number; showAirline?: boolean; onOpen: () => void; onShare: () => void;
+}) {
+  const r = o.route;
+  const far = r.a === o.at ? r.b : r.a;
+  return (
+    <li className={o.active ? 'on' : ''}>
+      <button className="cs-idea-main" onClick={onOpen}>
+        {showAirline && <span className="swatch dashed" style={{ borderColor: colorOf(airline) }} />}
+        <span className="grow">
+          <b>{o.at} ⇄ {name(far)}</b>
+          <span className="ins">
+            {showAirline && <span className="in">{airlineName(airline)}</span>}
+            <IN n="pax" v={count(o.stats?.pax ?? 0)} label="轉乘旅客/週" u="人/週" />
+          </span>
+        </span>
+        <span className="cs-gain">
+          <b className={o.gain >= 0 ? 'good' : 'bad'}>{signed(o.gain)}</b><small>/週</small>
+          <ProfitBar value={o.gain} max={max} split={false} />
+        </span>
+      </button>
+      <button className={o.active ? 'secondary small' : 'primary small'} onClick={onShare} aria-pressed={o.active}>{o.active ? '取消' : '共享'}</button>
+    </li>
+  );
+}
+
+/**
+ * Travellers who wanted the codeshare but didn't get on, split by cause: the partner's seat block sold out
+ * (a bigger block helps) or your own flight was full (more flights of yours help).
+ */
+export function turnedAway(s: CodeshareResult) {
+  let block = 0, own = 0;
+  for (const d of s.departures) {
+    const n = Math.max(0, d.wanted - d.pax) * d.perWeek;
+    if (d.pax >= d.seats - 0.5) block += n; else own += n;
+  }
+  const min = Math.max(10, s.pax * 0.02);
+  return { block: block >= min ? block : 0, own: own >= min ? own : 0 };
+}
+
+const seatTone = (s: CodeshareResult): Tone => (turnedAway(s).block > 0 ? 'accent' : s.pax / Math.max(1, s.seats) >= 0.5 ? 'good' : 'warn');
+
+// ---------- The partner profile's 共享 tab ----------
+
+/** Its routes that connect with yours, ranked by what they would add each week. Tap one for the full picture. */
+export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: AirlineNetwork; onToggle: (key: string) => void }) {
+  const open = useContext(CodeshareLink);
+  const options = useMemo(() => codeshareOptions(plan, net.airline.id), [plan, net.airline.id]);
+  const [shown, setShown] = useState(SHOWN);
+  if (net.airline.kind === 'low') return <div className="hint center"><Icon n="lock" /> 廉價航空不做代碼共享</div>;
+  if (!plan.fleet.length) return <div className="hint center">先開航線，才接得上夥伴航班</div>;
+  const active = options.filter((o) => o.active);
+  const ideas = options.filter((o) => !o.active);
+  const max = Math.max(1, ...options.map((o) => Math.abs(o.gain)));
+  const gain = active.reduce((s, o) => s + o.gain, 0);
+  const row = (o: CodeshareOption) => (
+    <IdeaRow key={o.route.key} o={o} airline={net.airline.id} max={max} onOpen={() => open?.(net.airline.id, o.route.key)} onShare={() => onToggle(o.route.key)} />
+  );
+  return (
+    <>
+      {active.length > 0 && (
+        <>
+          <Head info={<CodeshareTerms />} right={<small className={gain >= 0 ? 'good' : 'bad'}><b>{signed(gain)}</b>/週</small>}>已共享 · {active.length}</Head>
+          <ul className="cs-ideas">{active.map(row)}</ul>
         </>
       )}
       <Head info={<CodeshareTerms />} right={<small className="muted">{ideas.length} 條接得上</small>}>{active.length ? '再共享' : '可共享的航線'}</Head>
       {ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
-      <ul className="cs-list">
-        {ideas.slice(0, shown).map((o) => <OptionRow key={o.route.key} plan={plan} airline={net.airline.id} o={o} max={maxGain} open={open === o.route.key} onOpen={() => setOpen(open === o.route.key ? null : o.route.key)} onToggle={() => onToggle(o.route.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} />)}
-      </ul>
+      <ul className="cs-ideas">{ideas.slice(0, shown).map(row)}</ul>
       {ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN * 2)}>再顯示 {Math.min(SHOWN * 2, ideas.length - shown)} 條</button>}
     </>
   );
 }
 
-function OptionRow({ plan, airline, o, max, open, onOpen, onToggle, onPickAirport, onOpenRoute }: {
-  plan: Plan; airline: string; o: CodeshareOption; max: number; open: boolean; onOpen: () => void; onToggle: () => void; onPickAirport: (code: string) => void; onOpenRoute?: (key: string) => void;
-}) {
-  const r = o.route;
-  const far = r.a === o.at ? r.b : r.a;
-  const s = o.stats;
-  return (
-    <li className={`${o.active ? 'on' : ''}${open ? ' open' : ''}`}>
-      <div className="cs-top">
-        <button className="name" onClick={onOpen} aria-expanded={open}>
-          <b>{o.at} ⇄ {name(far)} {far}</b>
-          <span className="ins"><IN n="plane" v={`${count(r.freq)}/週`} label="夥伴班次（每個方向）" w="它" /><IN n="pax" v={count(s?.pax ?? 0)} label="轉乘旅客/週" u="人/週" /></span>
-        </button>
-        <span className="cs-gain">
-          <b className={o.gain >= 0 ? 'good' : 'bad'}>{signed(o.gain)}</b><small>/週</small>
-          <ProfitBar value={o.gain} max={max} split />
-        </span>
-        <button className={o.active ? 'secondary small' : 'primary small'} onClick={onToggle} aria-pressed={o.active}>{o.active ? '取消' : '共享'}</button>
-      </div>
-      {open && <CodeshareDetail plan={plan} airline={airline} routeKey={r.key} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} far={far} />}
-    </li>
-  );
-}
-
-/** The 航線 tab's codeshare list: each partner route you sell; tap one to see what it does to your flights. */
-export function CodeshareSection({ plan, result, onPick, onToggle, onOpenRoute }: {
-  plan: Plan; result: NetworkResult | null; onPick: (airline: string) => void; onToggle: (airline: string, key: string) => void; onOpenRoute: (key: string) => void;
-}) {
-  const [open, setOpen] = useState<string | null>(null);
-  const partners = partnersOf(plan);
-  if (!partners.length) return null;
-  const rows = (plan.codeshares ?? []).map((c) => ({ c, id: `${c.airline}|${c.key}`, res: result?.codeshares[`${c.airline}|${c.key}`], al: airlines().find((a) => a.id === c.airline) }));
-  const pax = rows.reduce((s, r) => s + (r.res?.pax ?? 0), 0);
-  const income = rows.reduce((s, r) => s + (r.res ? r.res.feedRevenue - r.res.fee : 0), 0);
-  return (
-    <>
-      <Head info={<CodeshareTerms />} right={<small className="muted">{count(pax)} 人/週 · 票價−費用 <b className={income >= 0 ? 'good' : 'bad'}>{signed(income)}</b></small>}>代碼共享 · {rows.length}</Head>
-      <ul className="cs-routes">
-        {rows.map(({ c, id, res, al }) => {
-          const [a, b] = c.key.split('-');
-          const isOpen = open === id;
-          const use = res && res.seats ? res.pax / res.seats : 0;
-          return (
-            <li key={id} className={isOpen ? 'open' : ''}>
-              <button className="name" onClick={() => setOpen(isOpen ? null : id)} aria-expanded={isOpen}>
-                <span className="swatch dashed" style={{ borderColor: al?.color }} />
-                <span className="grow"><strong>{name(a)} ⇄ {name(b)}</strong>
-                  <small className="route-meta">{al?.name ?? c.airline} · {a}–{b}</small>
-                  {res ? <span className="cs-use"><Meter value={use} tone={seatTone(res)} label={`共享座位賣出 ${pct(use)}`} /><small>{count(res.pax)}/{count(res.seats)} 座</small></span> : <small>模擬計算中</small>}
-                </span>
-                <span className="cs-row-money">
-                  {res && <><b className={res.pax > 0 ? 'good' : 'muted'}>+{money(res.feedRevenue)}</b><small>票價/週</small></>}
-                </span>
-                <span className={`chev${isOpen ? ' up' : ''}`} aria-hidden="true">›</span>
-              </button>
-              {isOpen && (
-                <>
-                  <CodeshareDetail plan={plan} airline={c.airline} routeKey={c.key} onOpenRoute={onOpenRoute} />
-                  <div className="cs-acts">
-                    <button className="secondary small" onClick={() => onPick(c.airline)}><Icon n="rival" /> 看{al?.name ?? '夥伴'}</button>
-                    <button className="secondary small danger" onClick={() => { setOpen(null); onToggle(c.airline, c.key); }}><Icon n="cross" /> 取消共享</button>
-                  </div>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
-}
-
-const seatTone = (s: { pax: number; seats: number; wanted: number }): Tone => (s.wanted > s.pax + 1 ? 'accent' : s.pax / Math.max(1, s.seats) >= 0.5 ? 'good' : 'warn');
+// ---------- One codeshare ----------
 
 /**
- * What one codeshare does, from a simulation with and without it: where the money comes from and goes,
- * how many of its seats sell, and which of your flights it fills (and whom it pushes off them).
+ * Everything about one codeshare: what it adds, its seat block (with what each size would add), demand against
+ * seats, each partner departure and the flight of yours it connects with, the flights it fills and where travellers go.
  */
-export function CodeshareDetail({ plan, airline, routeKey, far, onOpenRoute, onPickAirport }: {
-  plan: Plan; airline: string; routeKey: string; far?: string; onOpenRoute?: (key: string) => void; onPickAirport?: (code: string) => void;
+export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpenRoute, onPartner, onClose }: {
+  plan: Plan; airline: string; routeKey: string;
+  onShare: (share: number) => void; onStop: () => void; onOpenRoute: (key: string) => void; onPartner: () => void; onClose: () => void;
 }) {
-  const imp = useMemo(() => codeshareImpact(plan, airline, routeKey), [plan, airline, routeKey]);
-  if (!imp) return <div className="hint center">它不飛這條航線了</div>;
+  const current = codeshareShare(plan, airline, routeKey);
+  const active = current !== null;
+  const choices = useMemo(() => shareChoices(plan, airline, routeKey), [plan, airline, routeKey]);
+  const best = bestShare(choices);
+  const [pick, setPick] = useState<number | null>(null);
+  const share = active ? current : pick ?? best.share;
+  const imp = useMemo(() => codeshareImpact(plan, airline, routeKey, undefined, share), [plan, airline, routeKey, share]);
+  const [a, b] = routeKey.split('-');
+  const color = colorOf(airline);
+  const sub = <span className="ins"><button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: color }} /><b>{airlineName(airline)}</b> ›</button>{imp && <IN n="plane" v={count(imp.stats.flights / 2)} label="夥伴班次（每個方向）" u="班/週" />}</span>;
+  if (!imp) {
+    return (
+      <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={sub} onClose={onClose}
+        footer={active ? <div className="cs-foot"><button className="secondary danger" onClick={onStop}><Icon n="cross" /> 取消共享</button></div> : undefined}>
+        <div className="hint center">{airlineName(airline)} 不飛這條航線了</div>
+      </Sheet>
+    );
+  }
   const s = imp.stats;
-  const left = Math.max(0, s.wanted - s.pax);
+  const away = turnedAway(s);
+  const next = CODESHARE_SHARES.find((x) => x > share);
+  // The fullest of your flights it feeds, where an extra flight would take the travellers turned away.
+  const fullRoute = [...imp.routes].sort((x, y) => y.lfAfter - x.lfAfter)[0];
+  const fee = codeshareFee(share);
   return (
-    <div className="cs-detail">
+    <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={sub} onClose={onClose} info={<CodeshareTerms />}
+      footer={<div className="cs-foot">
+        {active
+          ? <><span className="cs-foot-state"><Icon n="link" /> 共享中 · {pct(share)} 座位</span><button className="secondary danger" onClick={onStop}>取消共享</button></>
+          : <button className="primary wide" onClick={() => onShare(share)}><Icon n="link" /> 共享 {pct(share)} 座位 · {money(fee)}/週</button>}
+      </div>}>
       <MoneySteps imp={imp} />
-      <Head info={<p>夥伴每班留給你 {pct(CODESHARE_SEAT_SHARE)} 的座位，只賣給轉乘你航班的旅客。座位賣光時，再加共享也帶不進更多人。</p>}>共享座位</Head>
-      <div className="cs-seats">
-        <Meter value={s.seats ? s.pax / s.seats : 0} tone={seatTone(s)} label={`賣出 ${pct(s.seats ? s.pax / s.seats : 0)}`} />
-        <span className="ins">
-          <IN n="seat" v={`${count(s.pax)}/${count(s.seats)}`} label="共享座位賣出/每週" w="賣出" u="座/週" />
-          <IN n="plane" v={count(s.flights)} label="夥伴航班/週" u="班/週" />
-        </span>
-        {left >= Math.max(10, s.pax * 0.02) && <Badge n="spill" tone="accent">部分班次賣光・還有 {count(left)} 人想訂</Badge>}
+
+      <Head info={<p>每班留給你的座位比例。座位越多，賣光的班次越少，但費用越高。每格下面是用那個大小時每週多賺多少（已扣費用），★ 是最賺的。</p>}>共享座位</Head>
+      <div className="seg four cs-share-seg" role="radiogroup" aria-label="每班共享座位">
+        {choices.map((c) => (
+          <button key={c.share} role="radio" aria-checked={share === c.share} className={share === c.share ? 'on' : ''}
+            onClick={() => (active ? (c.share !== current && onShare(c.share)) : setPick(c.share))}>
+            <span>{c.share === best.share && <span className="star" aria-label="最賺">★</span>}{pct(c.share)}</span>
+            <small className={c.gain >= 0 ? 'good' : 'bad'}>{signed(c.gain)}</small>
+          </button>
+        ))}
       </div>
+
+      <Head info={<p>想訂：選這個共享行程的旅客。賣出：真的坐上的（共享座位或你的航班客滿時會少一些）。座位：每週夥伴留給你的位子。</p>}>需求</Head>
+      <DemandBar s={s} />
+      {away.block > 0 && (
+        <div className="cs-tip">
+          <Badge n="spill" tone="accent">座位賣光 · {count(away.block)} 人沒訂到</Badge>
+          {next && <button className="chip" onClick={() => (active ? onShare(next) : setPick(next))}><Icon n="plus" /> 加到 {pct(next)}</button>}
+        </div>
+      )}
+      {away.own > 0 && fullRoute && (
+        <div className="cs-tip">
+          <Badge n="spill" tone="warn">你的航班滿 · {count(away.own)} 人上不了</Badge>
+          <button className="chip" onClick={() => onOpenRoute(fullRoute.key)}><Icon n="plus" /> 看 {fullRoute.key.replace('-', '⇄')} 加班</button>
+        </div>
+      )}
+
+      <Departures deps={s.departures} />
+
       {imp.routes.length > 0 && (
         <>
           <Head info={<p>共享旅客也要搭你的航班。座位有空時，他們把空位補滿；客滿時，他們會擠掉原本買直飛或其他轉機的旅客。載客率是加共享前 → 加共享後。</p>}>帶進你的航班</Head>
           <ul className="cs-feeds">
             {imp.routes.map((r) => {
-              const [a, b] = r.key.split('-');
-              const body = (
-                <>
+              const [x, y] = r.key.split('-');
+              return (
+                <li key={r.key}><button onClick={() => onOpenRoute(r.key)}>
                   <Ring value={r.lfAfter} tone={r.lfAfter >= 0.8 ? 'good' : r.lfAfter >= 0.6 ? 'warn' : 'bad'} size={30} stroke={4} label={`載客率 ${pct(r.lfAfter)}`}><small>{Math.round(r.lfAfter * 100)}</small></Ring>
                   <span className="grow">
-                    <b>{routeName(a, b)}</b>
+                    <b>{routeName(x, y)}</b>
                     <span className="ins">
                       <IN n="pax" v={`+${count(r.feedPax)}`} label="共享旅客/週" u="人/週" tone="good" />
-                      <span className="in">載客率 {pct(r.lfBefore)} → <b>{pct(r.lfAfter)}</b></span>
-                      {r.displacedPax >= 1
-                        ? <Badge n="warn" tone="warn">擠掉自家 {count(r.displacedPax)} 人</Badge>
-                        : <Badge n="check" tone="good">補空位</Badge>}
+                      <span className="in">{pct(r.lfBefore)} → <b>{pct(r.lfAfter)}</b></span>
+                      {r.displacedPax >= 1 ? <Badge n="warn" tone="warn">擠掉 {count(r.displacedPax)}</Badge> : <Badge n="check" tone="good">補空位</Badge>}
                     </span>
                   </span>
-                </>
+                  <span className="chev" aria-hidden="true">›</span>
+                </button></li>
               );
-              return <li key={r.key}>{onOpenRoute ? <button onClick={() => onOpenRoute(r.key)}>{body}<span className="chev" aria-hidden="true">›</span></button> : <div>{body}</div>}</li>;
             })}
           </ul>
         </>
@@ -184,14 +313,72 @@ export function CodeshareDetail({ plan, airline, routeKey, far, onOpenRoute, onP
         <>
           <Head>旅客從哪來</Head>
           <ul className="cs-markets">
-            {s.markets.slice(0, 3).map((m) => (
+            {s.markets.slice(0, 4).map((m) => (
               <li key={`${m.o}${m.d}`}><span>{m.o} <i>→ {m.via} →</i> {m.d}</span><small>{name(m.o)}–{name(m.d)}</small><b>{count(m.pax)}<small> 人/週</small></b></li>
             ))}
           </ul>
         </>
       )}
-      {far && onPickAirport && <div className="chips"><button className="chip" onClick={() => onPickAirport(far)}><Icon n="base" /> 看{name(far)}機場</button></div>}
+    </Sheet>
+  );
+}
+
+/** Wanted, sold and seats on one bar: sold fills it, a tick marks how many wanted. */
+function DemandBar({ s }: { s: CodeshareResult }) {
+  const top = Math.max(s.seats, s.wanted, 1);
+  return (
+    <div className="cs-demand">
+      <div className="cs-demand-nums">
+        <span><small>想訂</small><b>{count(s.wanted)}</b></span>
+        <span><small>賣出</small><b className={seatTone(s)}>{count(s.pax)}</b></span>
+        <span><small>座位</small><b>{count(s.seats)}</b></span>
+        <small className="muted">每週</small>
+      </div>
+      <div className="cs-demand-bar" role="img" aria-label={`想訂 ${count(s.wanted)}，賣出 ${count(s.pax)}，座位 ${count(s.seats)}`}>
+        <i className="seats" style={{ width: `${(100 * s.seats) / top}%` }} />
+        <i className={`sold ${seatTone(s)}`} style={{ width: `${(100 * s.pax) / top}%` }} />
+        <i className="want" style={{ left: `calc(${(100 * s.wanted) / top}% - 1px)` }} />
+      </div>
     </div>
+  );
+}
+
+/** Each partner departure, per direction: times, seats sold, and the flight of yours it connects with. */
+function Departures({ deps }: { deps: CodeshareDeparture[] }) {
+  const [all, setAll] = useState(false);
+  const dirs = [...new Set(deps.map((d) => `${d.from}>${d.to}`))];
+  const linked = deps.filter((d) => d.links > 0).length;
+  return (
+    <>
+      <Head info={<p>夥伴每個班次賣出多少共享座位。「接不上」是指沒有你的航班在可轉機的時間內到達或出發，調整你航班的時刻就能接上。</p>}
+        right={<small className={linked < deps.length ? 'warn' : 'muted'}>{linked}/{deps.length} 班接得上</small>}>夥伴班次</Head>
+      {dirs.map((dir) => {
+        const [from, to] = dir.split('>');
+        const every = deps.filter((d) => d.from === from && d.to === to);
+        const list = all || every.length <= DEPS_SHOWN + 1 ? every : every.slice(0, DEPS_SHOWN);
+        return (
+          <div key={dir} className="cs-dir">
+            <div className="cs-dir-head"><b>{from} → {to}</b><small>{name(from)} → {name(to)}</small></div>
+            <ul className="cs-deps">
+              {list.map((d, i) => {
+                const use = d.seats ? d.pax / d.seats : 0;
+                const full = d.pax >= d.seats - 0.5 && d.wanted > d.pax + 0.5;
+                return (
+                  <li key={i} className={d.links ? '' : 'off'}>
+                    <span className="t"><b>{at(d.from, d.dep)}</b><small>→ {at(d.to, d.arr)}</small></span>
+                    {d.links
+                      ? <span className="m"><Meter value={use} tone={full ? 'accent' : use >= 0.5 ? 'good' : 'warn'} label={`賣出 ${pct(use)}`} /><small>{count(d.pax)}/{d.seats}{d.perWeek < 6.5 ? ` · ${count(d.perWeek)}/週` : ''}</small></span>
+                      : <span className="m"><small>接不上</small></span>}
+                    <span className="l">{d.top ? <small>接 {d.top.from}→{d.top.to} {at(d.top.from, d.top.dep)}</small> : d.links ? <small>{d.links} 班可接</small> : null}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            {list.length < every.length && <button className="cs-more" onClick={() => setAll(true)}>再顯示 {every.length - list.length} 班</button>}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -207,7 +394,7 @@ function MoneySteps({ imp }: { imp: CodeshareImpact }) {
   return (
     <div className="cs-steps" role="table" aria-label="每週損益變化">
       <div className={`cs-net ${imp.gain >= 0 ? 'good' : 'bad'}`}>
-        <small>{imp.active ? '這條共享每週帶來' : '共享後每週'}</small>
+        <small>{imp.active ? '每週帶來' : '共享後每週'}</small>
         <b>{signed(imp.gain)}</b>
         <Badge n={imp.gain >= 0 ? 'up' : 'down'} tone={imp.gain >= 0 ? 'good' : 'bad'}>{imp.gain >= 0 ? '划算' : '虧錢'}</Badge>
       </div>
@@ -218,6 +405,25 @@ function MoneySteps({ imp }: { imp: CodeshareImpact }) {
           <b className={x.value >= 0 ? 'good' : x.tone === 'warn' ? 'warn' : 'bad'}>{signed(x.value)}</b>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The route sheet's note: codeshare travellers on this route, each partner a tap away. */
+export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number }) {
+  const open = useContext(CodeshareLink);
+  const fedBy = Object.values(net?.codeshares ?? {}).flatMap((c) => c.feeds.filter((f) => f.key === routeKey && f.pax >= 1).map((f) => ({ airline: c.airline, key: c.key, pax: f.pax })))
+    .sort((x, y) => y.pax - x.pax);
+  if (!fedBy.length) return null;
+  const total = fedBy.reduce((s, f) => s + f.pax, 0);
+  return (
+    <div className="cs-feed-note">
+      <span><Icon n="link" /> 共享帶進 <b>{count(total)}</b> 人/週 · 占 {pct(total / Math.max(1, routePax))}</span>
+      <div className="chips">{fedBy.map((f) => (
+        <button key={`${f.airline}|${f.key}`} className="chip" onClick={() => open?.(f.airline, f.key)}>
+          <i className="dash" style={{ borderColor: colorOf(f.airline) }} />{airlineName(f.airline)} {f.key.replace('-', '⇄')} · {count(f.pax)} 人
+        </button>
+      ))}</div>
     </div>
   );
 }
