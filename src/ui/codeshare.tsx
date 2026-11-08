@@ -434,7 +434,7 @@ export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '
 
 const FED_SHOWN = 3;
 
-/** The route sheet's note: codeshare travellers on this route. A share bar shows each partner's part; the top few are listed and the rest sit behind a toggle. */
+/** The route sheet's note: travellers partners bring onto this route. One total, one share bar, one row of partner chips. */
 export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number }) {
   const open = useContext(CodeshareLink);
   const [all, setAll] = useState(false);
@@ -446,25 +446,80 @@ export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | nu
   return (
     <div className="cs-feed-note">
       <div className="cs-feed-head">
-        <span><Icon n="link" /> 共享帶進 <b>{count(total)}</b> 人/週 · 占 {pct(total / Math.max(1, routePax))}</span>
-        {fedBy.length > FED_SHOWN && <button className="cs-feed-more" aria-expanded={all} onClick={() => setAll((v) => !v)}>{all ? '收起' : `全部 ${fedBy.length} 家`}</button>}
+        <span><b>{count(total)}</b> 人/週 由夥伴帶來</span>
+        <small>{pct(total / Math.max(1, routePax))}</small>
       </div>
       <div className="cs-feed-bar" role="img" aria-label={fedBy.map((f) => `${airlineName(f.airline)} ${count(f.pax)} 人`).join('，')}>
         {fedBy.map((f) => <i key={`${f.airline}|${f.key}`} style={{ width: `${(100 * f.pax) / total}%`, background: colorOf(f.airline) }} />)}
       </div>
-      <ul className="cs-feed-list">
+      <div className="cs-feed-chips">
         {shown.map((f) => (
-          <li key={`${f.airline}|${f.key}`}>
-            <button onClick={() => open?.(f.airline, f.key)}>
-              <i className="dash" style={{ borderColor: colorOf(f.airline) }} />
-              <span className="nm">{airlineName(f.airline)}</span>
-              <small className="rt">{f.key.replace('-', '⇄')}</small>
-              <b>{count(f.pax)} 人</b>
-              <small className="sh">{pct(f.pax / total)}</small>
-            </button>
-          </li>
+          <button key={`${f.airline}|${f.key}`} className="chip" onClick={() => open?.(f.airline, f.key)}>
+            <i className="dot" style={{ background: colorOf(f.airline) }} />{airlineName(f.airline)} <b>{pct(f.pax / total)}</b>
+          </button>
         ))}
-      </ul>
+        {fedBy.length > FED_SHOWN && <button className="chip" aria-expanded={all} onClick={() => setAll((v) => !v)}>{all ? '收起' : `+${fedBy.length - FED_SHOWN}`}</button>}
+      </div>
+    </div>
+  );
+}
+
+/** Same ideas hook as the hub, limited to partner routes that start or end at this route's airports. Worked out only when opened. */
+function useNearIdeas(plan: Plan, near: string[], enabled: boolean) {
+  const [state, setState] = useState<{ plan: Plan; key: string; ideas: CodeshareIdea[] } | null>(null);
+  const worker = useRef<Worker | null>(null);
+  const seq = useRef(0);
+  const key = near.join('|');
+  useEffect(() => {
+    if (!enabled || !plan.fleet.length) return;
+    const w = worker.current ??= createComputeClient('codeshare');
+    const id = ++seq.current;
+    const onMessage = (e: MessageEvent<{ id: number; ideas?: CodeshareIdea[] }>) => { if (e.data.id === id && e.data.ideas) setState({ plan, key, ideas: e.data.ideas }); };
+    w.addEventListener('message', onMessage);
+    w.postMessage({ id, plan, near: key.split('|') });
+    return () => w.removeEventListener('message', onMessage);
+  }, [plan, key, enabled]);
+  useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
+  return state && state.plan === plan && state.key === key
+    ? state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null)
+    : null;
+}
+
+/** "Extend this route": partner routes that connect at either end, so their travellers can be sold on yours. */
+export function RouteExtensions({ plan, a, b }: { plan: Plan; a: string; b: string }) {
+  const open = useContext(CodeshareLink);
+  const [on, setOn] = useState(false);
+  const ideas = useNearIdeas(plan, [a, b], on);
+  return (
+    <div className="ext">
+      <button className="ext-toggle" aria-expanded={on} onClick={() => setOn((v) => !v)}>
+        <span><Icon n="link" /> 延伸這條航線</span>
+        <small>{ideas ? `${ideas.length} 條可接` : '夥伴的航線'}</small>
+        <span className="chev" aria-hidden="true">›</span>
+      </button>
+      {on && !ideas && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較夥伴航線</div>}
+      {on && ideas && ideas.length === 0 && <div className="hint center">這兩端接不上夥伴的航線</div>}
+      {on && ideas && ideas.length > 0 && (
+        <ul className="ext-list">
+          {ideas.slice(0, 5).map((i) => {
+            const [x, y] = i.route.key.split('-');
+            const hub = [a, b].find((c) => i.route.a === c || i.route.b === c) ?? a;
+            return (
+              <li key={`${i.airline}|${i.route.key}`}>
+                <button onClick={() => open?.(i.airline, i.route.key)}>
+                  <i className="dash" style={{ borderColor: colorOf(i.airline) }} />
+                  <span className="grow">
+                    <b>{x} ⇄ {y}</b>
+                    <small>{airlineName(i.airline)} · 在 {hub} 接上</small>
+                  </span>
+                  <span className="ext-gain good">{signed(i.gain)}<small>/週</small></span>
+                  <span className="chev" aria-hidden="true">›</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

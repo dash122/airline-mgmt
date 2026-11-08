@@ -140,6 +140,14 @@ describe('codeshare', () => {
     expect(codeshareIdeas(withCs, 50).some((i) => i.airline === partner.id && i.route.key === key)).toBe(false);
   });
 
+  it('extensions: near limits ideas to partner routes that touch those airports', () => {
+    const [a, b] = key.split('-');
+    const near = codeshareIdeas(plan, 50, [a, b]);
+    for (const i of near) expect([i.route.a, i.route.b].some((c) => c === a || c === b)).toBe(true);
+    const all = codeshareIdeas(plan, 50);
+    expect(near.length).toBeLessThanOrEqual(all.length);
+  });
+
   describe('partners selling your routes', () => {
     const route = 'BKK-TPE';
     const host = hostedOptions(plan, route)[0];

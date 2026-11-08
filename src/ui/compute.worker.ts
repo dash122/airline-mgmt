@@ -12,11 +12,11 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     // Collapse superseded edits before doing expensive work.
     await yieldTask();
     if (current !== version) return;
-    const { id, request, kind, plan, result, code, transfer, from, to, choices } = event.data;
+    const { id, request, kind, plan, result, code, transfer, from, to, choices, near } = event.data;
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
-      else if (scope === 'codeshare') port.postMessage({ id, ideas: kind === 'hosted' ? hostedIdeas(plan) : codeshareIdeas(plan) });
+      else if (scope === 'codeshare') port.postMessage({ id, ideas: kind === 'hosted' ? hostedIdeas(plan) : codeshareIdeas(plan, 12, near) });
       else if (kind === 'destinations') port.postMessage({ request, destinations: destinationsFrom(plan, from) });
       else {
         const previews = [];
