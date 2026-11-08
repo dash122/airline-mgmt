@@ -2227,3 +2227,14 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
 .board-blk.clash .board-tip { background: var(--bad); color: #fff; }
 .board-now { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad); pointer-events: none; z-index: 0; opacity: .8; }
 .board-blk { z-index: 1; }
+
+/* The money in the header opens the finance report. */
+.money-btn { display: flex; align-items: stretch; gap: inherit; flex: 1 1 auto; min-width: 0; padding: 0; background: none; border: 0; text-align: left; color: inherit; border-radius: var(--r-sm); cursor: pointer; }
+.money-btn:disabled { cursor: default; opacity: 1; }
+.money-btn .money-chev { color: var(--accent); font-weight: 700; }
+.money-btn.on .money-chev { display: inline-block; transform: rotate(90deg); }
+@media (max-width: 819px) {
+  .hud .money-btn { grid-column: 1 / 3; grid-row: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; position: relative; }
+  .hud .money-btn .kpi { grid-area: auto !important; }
+  .hud .money-btn::after { content: ''; position: absolute; inset: -6px -4px; }
+}
