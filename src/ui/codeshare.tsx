@@ -11,13 +11,14 @@ import {
 import type { AirlineNetwork } from '../sim/networks';
 import { airlineName, hhmm, localMinutes, simulate, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
 import { createComputeClient } from './compute-client';
+import { HostedHub } from './hosted';
 import { count, money, pct } from './format';
 import { Head, routeName, Sheet } from './sheets';
 import { Badge, IN, Icon, Meter, ProfitBar, Ring, type Tone } from './viz';
 
 const name = (c: string) => AIRPORT_BY_CODE[c]?.name ?? c;
-const signed = (n: number) => `${n >= 0 ? '+' : '−'}${money(Math.abs(n))}`;
-const colorOf = (id: string) => airlines().find((a) => a.id === id)?.color ?? '#888';
+export const signed = (n: number) => `${n >= 0 ? '+' : '−'}${money(Math.abs(n))}`;
+export const colorOf = (id: string) => airlines().find((a) => a.id === id)?.color ?? '#888';
 const at = (code: string, utc: number) => hhmm(localMinutes(code, utc));
 const SHOWN = 6;
 const DEPS_SHOWN = 4;
@@ -63,7 +64,23 @@ function useActive(plan: Plan) {
 }
 
 /** The 航線 tab's 共享 view: what you share, then the best new ones across all partners. */
-export function CodeshareHub({ plan, onOpen, onShare, onPartners }: {
+export function CodeshareHub({ plan, onOpen, onShare, onPartners, onOpenHosted, onHost }: {
+  plan: Plan; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
+  onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void;
+}) {
+  const [dir, setDir] = useState<'out' | 'in'>('out');
+  return (
+    <>
+      <div className="seg two cs-dir-seg" role="tablist" aria-label="共享方向">
+        <button role="tab" aria-selected={dir === 'out'} className={dir === 'out' ? 'on' : ''} onClick={() => setDir('out')}>你賣夥伴航線{plan.codeshares?.length ? ` ${plan.codeshares.length}` : ''}</button>
+        <button role="tab" aria-selected={dir === 'in'} className={dir === 'in' ? 'on' : ''} onClick={() => setDir('in')}>夥伴賣你航線{plan.hosted?.length ? ` ${plan.hosted.length}` : ''}</button>
+      </div>
+      {dir === 'out' ? <OutHub plan={plan} onOpen={onOpen} onShare={onShare} onPartners={onPartners} /> : <HostedHub plan={plan} onOpen={onOpenHosted} onShare={onHost} />}
+    </>
+  );
+}
+
+function OutHub({ plan, onOpen, onShare, onPartners }: {
   plan: Plan; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
 }) {
   const active = useActive(plan);
@@ -269,7 +286,7 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
       </div>
 
       <Head info={<p>想訂：選這個共享行程的旅客。賣出：真的坐上的（共享座位或你的航班客滿時會少一些）。座位：每週夥伴留給你的位子。</p>}>需求</Head>
-      <DemandBar s={s} />
+      <DemandBar s={s} tone={seatTone(s)} />
       {away.block > 0 && (
         <div className="cs-tip">
           <Badge n="spill" tone="accent">座位賣光 · {count(away.block)} 人沒訂到</Badge>
@@ -324,20 +341,21 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
 }
 
 /** Wanted, sold and seats on one bar: sold fills it, a tick marks how many wanted. */
-function DemandBar({ s }: { s: CodeshareResult }) {
-  const top = Math.max(s.seats, s.wanted, 1);
+export function DemandBar({ s, tone }: { s: { pax: number; wanted: number; seats: number }; tone: Tone }) {
+  // Demand far above the seats would squash the bar: past twice the seats, the tick sits at the end.
+  const top = Math.max(s.seats, Math.min(s.wanted, s.seats * 2), 1);
   return (
     <div className="cs-demand">
       <div className="cs-demand-nums">
         <span><small>想訂</small><b>{count(s.wanted)}</b></span>
-        <span><small>賣出</small><b className={seatTone(s)}>{count(s.pax)}</b></span>
+        <span><small>賣出</small><b className={tone}>{count(s.pax)}</b></span>
         <span><small>座位</small><b>{count(s.seats)}</b></span>
         <small className="muted">每週</small>
       </div>
       <div className="cs-demand-bar" role="img" aria-label={`想訂 ${count(s.wanted)}，賣出 ${count(s.pax)}，座位 ${count(s.seats)}`}>
         <i className="seats" style={{ width: `${(100 * s.seats) / top}%` }} />
-        <i className={`sold ${seatTone(s)}`} style={{ width: `${(100 * s.pax) / top}%` }} />
-        <i className="want" style={{ left: `calc(${(100 * s.wanted) / top}% - 1px)` }} />
+        <i className={`sold ${tone}`} style={{ width: `${(100 * s.pax) / top}%` }} />
+        <i className="want" style={{ left: `calc(${(100 * Math.min(s.wanted, top)) / top}% - 2px)` }} />
       </div>
     </div>
   );
@@ -383,12 +401,14 @@ function Departures({ deps }: { deps: CodeshareDeparture[] }) {
 }
 
 /** The week's profit change as steps: fares it brings, fares it pushes out, extra service cost, the fee, and what is left. */
-function MoneySteps({ imp }: { imp: CodeshareImpact }) {
+export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '共享費' }: {
+  imp: Pick<CodeshareImpact, 'active' | 'gain' | 'feedRevenue' | 'ownRevenue' | 'paxCost' | 'fee'>; feedLabel?: string; feeLabel?: string;
+}) {
   const steps: { key: string; label: string; value: number; tone: Tone }[] = [
-    { key: 'feed', label: '共享旅客票價', value: imp.feedRevenue, tone: 'good' },
+    { key: 'feed', label: feedLabel, value: imp.feedRevenue, tone: 'good' },
     ...(Math.abs(imp.ownRevenue) >= 1000 ? [{ key: 'own', label: imp.ownRevenue < 0 ? '擠掉自家旅客' : '自家旅客增加', value: imp.ownRevenue, tone: (imp.ownRevenue < 0 ? 'warn' : 'good') as Tone }] : []),
     ...(Math.abs(imp.paxCost) >= 1000 ? [{ key: 'cost', label: '多載客成本', value: -imp.paxCost, tone: (imp.paxCost > 0 ? 'bad' : 'good') as Tone }] : []),
-    { key: 'fee', label: '共享費', value: -imp.fee, tone: 'bad' },
+    { key: 'fee', label: feeLabel, value: -imp.fee, tone: 'bad' },
   ];
   const max = Math.max(1, ...steps.map((x) => Math.abs(x.value)), Math.abs(imp.gain));
   return (

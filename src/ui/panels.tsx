@@ -26,13 +26,14 @@ const dur = hm;
 
 export type RoutesView = 'own' | 'share';
 
-export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onClose }: {
+export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
   plan: Plan; result: NetworkResult | null; view: RoutesView; onView: (v: RoutesView) => void;
   onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
-  onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void; onClose: () => void;
+  onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
+  onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void; onClose: () => void;
 }) {
   const [only, setOnly] = useState<'all' | 'todo'>('all');
-  const shared = plan.codeshares?.length ?? 0;
+  const shared = (plan.codeshares?.length ?? 0) + (plan.hosted?.length ?? 0);
   const rows = routePairs(plan)
     .map((r) => {
       const res = result?.routes[r.key];
@@ -55,7 +56,7 @@ export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, 
           <button role="tab" aria-selected={view === 'share'} className={view === 'share' ? 'on' : ''} onClick={() => onView('share')}><Icon n="link" /> 代碼共享{shared ? ` ${shared}` : ''}</button>
         </div>
       )}
-      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} />}
+      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} onOpenHosted={onOpenHosted} onHost={onHost} />}
       {view === 'own' && <>
       {rows.length === 0 && (
         <div className="empty-cta">

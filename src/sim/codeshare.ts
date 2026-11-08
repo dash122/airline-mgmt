@@ -2,9 +2,9 @@
 // Every number comes from running the whole week's simulation with and without the codeshare (about 1 ms each).
 import { airlines } from './competitors';
 import { airlineNetwork, type AirlineRoute } from './networks';
-import { canCodeshare, CODESHARE_SHARES, codeshareShare, hasCodeshare, routePairs, setCodeshareShare, simulate, toggleCodeshare, type CodeshareResult, type NetworkResult, type Plan } from './simulate';
+import { canCodeshare, CODESHARE_SHARES, codeshareShare, hasCodeshare, hostedShare, isHosted, routePairs, setCodeshareShare, setHostedShare, simulate, toggleCodeshare, toggleHosted, type CodeshareResult, type HostedResult, type NetworkResult, type Plan } from './simulate';
 
-export { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, canCodeshare, codeshareFee, codeshareShare, hasCodeshare, setCodeshareShare, toggleCodeshare } from './simulate';
+export { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, HOSTED_FEE_PER_WEEK, canCodeshare, codeshareFee, codeshareShare, hasCodeshare, hostedShare, isHosted, setCodeshareShare, setHostedShare, toggleCodeshare, toggleHosted } from './simulate';
 
 export interface CodeshareOption {
   route: AirlineRoute;
@@ -153,4 +153,96 @@ export function codeshareIdeas(plan: Plan, limit = 12): CodeshareIdea[] {
     for (const o of codeshareOptions(plan, a.id)) if (!o.active && o.gain > 0) out.push({ ...o, airline: a.id });
   }
   return out.sort((x, y) => y.gain - x.gain).slice(0, limit);
+}
+
+// ---------- Partners selling your routes ----------
+
+/** What a partner selling one of your routes does, from a full simulation with and without it. Terms add up to `gain`. */
+export interface HostedImpact {
+  active: boolean;
+  stats: HostedResult;
+  gain: number;
+  /** Your part of the partner's travellers' fares (= stats.revenue). */
+  revenue: number;
+  /** Change in fares from your own travellers: negative when the partner's travellers take their seats. */
+  ownRevenue: number;
+  /** Extra per-traveller and sales costs. */
+  paxCost: number;
+  fee: number;
+  /** Load factor on the route, without and with. */
+  lfBefore: number;
+  lfAfter: number;
+  /** Your own travellers it pushes off the route. */
+  displacedPax: number;
+}
+
+export function hostedImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult, share?: number): HostedImpact | null {
+  const active = isHosted(plan, airlineId, key);
+  const cur = now ?? simulate(plan);
+  const without = active ? simulate(toggleHosted(plan, airlineId, key)) : cur;
+  const withIt = share !== undefined && share !== hostedShare(plan, airlineId, key) ? simulate(setHostedShare(plan, airlineId, key, share))
+    : active ? cur : simulate(toggleHosted(plan, airlineId, key));
+  const stats = withIt.hosted[`${airlineId}|${key}`];
+  if (!stats) return null;
+  const a = withIt.routes[key], b = without.routes[key];
+  return {
+    active, stats, gain: profit(withIt) - profit(without), revenue: stats.revenue,
+    ownRevenue: withIt.revenue - without.revenue - stats.revenue, paxCost: withIt.cost - without.cost - stats.fee, fee: stats.fee,
+    lfBefore: b?.loadFactor ?? 0, lfAfter: a?.loadFactor ?? 0,
+    displacedPax: Math.max(0, stats.pax - ((a?.pax ?? 0) - (b?.pax ?? 0))),
+  };
+}
+
+/** What each seat block would add if this partner sold your route. */
+export function hostedChoices(plan: Plan, airlineId: string, key: string): ShareChoice[] {
+  const without = simulate(isHosted(plan, airlineId, key) ? toggleHosted(plan, airlineId, key) : plan);
+  return CODESHARE_SHARES.map((share) => {
+    const r = simulate(setHostedShare(plan, airlineId, key, share));
+    const s = r.hosted[`${airlineId}|${key}`];
+    return { share, gain: profit(r) - profit(without), pax: s?.pax ?? 0, wanted: s?.wanted ?? 0, seats: s?.seats ?? 0 };
+  });
+}
+
+/** One partner that could sell (or sells) one of your routes. */
+export interface HostedOption { airline: string; key: string; active: boolean; gain: number; pax: number; sources: number }
+
+/** Airlines that fly to either end of your route and can codeshare, busiest there first. */
+function partnersAt(key: string): string[] {
+  const [a, b] = key.split('-');
+  const count = new Map<string, number>();
+  for (const al of airlines()) {
+    if (!canCodeshare(al)) continue;
+    const net = airlineNetwork(al.id);
+    const n = net?.routes.filter((r) => r.key !== key && (r.a === a || r.b === a || r.a === b || r.b === b)).length ?? 0;
+    if (n) count.set(al.id, n);
+  }
+  return [...count].sort((x, y) => y[1] - x[1]).map(([id]) => id);
+}
+
+/** Partners that could sell one of your routes, most profit first (active ones first). */
+export function hostedOptions(plan: Plan, key: string, limit = 24): HostedOption[] {
+  if (!routePairs(plan).some((r) => r.key === key)) return [];
+  const now = simulate(plan);
+  const out: HostedOption[] = [];
+  for (const id of partnersAt(key).slice(0, limit)) {
+    const active = isHosted(plan, id, key);
+    const other = simulate(toggleHosted(plan, id, key));
+    const withIt = active ? now : other;
+    const s = withIt.hosted[`${id}|${key}`];
+    if (!active && (!s || s.pax < 1)) continue;
+    out.push({ airline: id, key, active, gain: active ? profit(now) - profit(other) : profit(other) - profit(now), pax: s?.pax ?? 0, sources: s?.sources.length ?? 0 });
+  }
+  for (const h of plan.hosted ?? []) {
+    if (h.key === key && !out.some((o) => o.airline === h.airline)) {
+      const imp = hostedImpact(plan, h.airline, key, now);
+      if (imp) out.push({ airline: h.airline, key, active: true, gain: imp.gain, pax: imp.stats.pax, sources: imp.stats.sources.length });
+    }
+  }
+  return out.sort((x, y) => Number(y.active) - Number(x.active) || y.gain - x.gain);
+}
+
+/** The best partners to sell any of your routes, not yet doing so. */
+export function hostedIdeas(plan: Plan, limit = 12, perRoute = 12): HostedOption[] {
+  return routePairs(plan).flatMap((r) => hostedOptions(plan, r.key, perRoute).filter((o) => !o.active && o.gain > 0))
+    .sort((x, y) => y.gain - x.gain).slice(0, limit);
 }
