@@ -1,4 +1,4 @@
-import { CodeshareSection } from './codeshare';
+import { CodeshareHub } from './codeshare';
 import { ScheduleBoard, shiftText } from './ScheduleBoard';
 import { useMemo, useState } from 'react';
 import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
@@ -27,13 +27,16 @@ const dur = hm;
 
 type RouteSort = 'need' | 'profit' | 'load' | 'share';
 const SORTS: [RouteSort, string][] = [['need', '建議'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']];
+export type RoutesView = 'own' | 'share';
 
-export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, onPartner, onCodeshare, onClose }: {
-  plan: Plan; result: NetworkResult | null; onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
-  onPartner: (airline: string) => void; onCodeshare: (airline: string, key: string) => void; onClose: () => void;
+export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onClose }: {
+  plan: Plan; result: NetworkResult | null; view: RoutesView; onView: (v: RoutesView) => void;
+  onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
+  onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void; onClose: () => void;
 }) {
   const [only, setOnly] = useState(false);
   const [sort, setSort] = useState<RouteSort>('need');
+  const shared = plan.codeshares?.length ?? 0;
   const pairs = routePairs(plan);
   // Which end a route hangs from: the hub, then the base, then whichever end has more of your routes.
   const degree = new Map<string, number>();
@@ -67,6 +70,14 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
       info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。損益是每週航段損益，不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
+      {rows.length > 0 && (
+        <div className="seg two routes-view" role="tablist" aria-label="航線類別">
+          <button role="tab" aria-selected={view === 'own'} className={view === 'own' ? 'on' : ''} onClick={() => onView('own')}>自己飛 {rows.length}</button>
+          <button role="tab" aria-selected={view === 'share'} className={view === 'share' ? 'on' : ''} onClick={() => onView('share')}><Icon n="link" /> 代碼共享{shared ? ` ${shared}` : ''}</button>
+        </div>
+      )}
+      {rows.length > 0 && view === 'share' && <CodeshareHub plan={plan} onOpen={onOpenCodeshare} onShare={onShare} onPartners={onPartners} />}
+      {view === 'own' && <>
       {rows.length === 0 && (
         <div className="empty-cta">
           <div className="empty-flight" aria-hidden="true"><span>✈</span></div>
@@ -111,7 +122,7 @@ export function RoutesPanel({ plan, result, onOpen, onNew, onAdd, onRemoveOne, o
         );
       })}
       {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">← 滑動減一班 · 加一班 →</p>}
-      <CodeshareSection plan={plan} result={result} onPick={onPartner} onToggle={onCodeshare} onOpenRoute={onOpen} />
+      </>}
     </Sheet>
   );
 }
