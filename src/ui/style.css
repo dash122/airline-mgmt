@@ -477,27 +477,16 @@ table.cmp tr.dim { opacity: 0.4; cursor: default; }
 .ac-group:last-child { border-right: 0; }
 .ac-group-label { font-size: var(--fs-3xs); font-weight: 650; color: var(--muted); white-space: nowrap; }
 .ac-group-tiles { display: flex; gap: 6px; }
-.ac-tile { flex: 0 0 104px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 4px; min-height: 84px; padding: 8px 9px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
+.ac-tile { position: relative; flex: 0 0 96px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 76px; padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }
 .ac-tile.on { border-color: var(--accent); background: var(--accent-soft); }
 .ac-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.ac-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 16px; font-size: var(--fs-3xs); font-weight: 650; color: var(--muted); }
-.ac-tile.owned .ac-tile-top > span:first-child { color: var(--accent); }
+.ac-tile small { font-size: var(--fs-3xs); color: var(--muted); }
+.ac-tile strong { margin-top: auto; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ac-tile strong.good { color: var(--good); }
+.ac-tile strong.bad { color: var(--bad); }
 .ac-best { font-style: normal; padding: 1px 5px; border-radius: var(--r-pill); background: var(--good); color: var(--accent-text); font-size: var(--fs-3xs); font-weight: 700; line-height: 1.4; }
-.ac-tile-name { font-size: var(--fs-sm); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ac-bar { display: block; height: 4px; margin-top: auto; border-radius: 2px; background: var(--line); overflow: hidden; }
-.ac-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
-.ac-tile-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: var(--fs-3xs); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ac-tile-foot .good { color: var(--good); font-weight: 700; }
-.ac-tile-foot .bad { color: var(--bad); font-weight: 700; }
-.ac-hero { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--accent-tint); border: 1px solid var(--accent-line); }
-.ac-hero-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.ac-hero-head small { display: block; font-size: var(--fs-xs); color: var(--muted); }
-.ac-hero-head b { display: block; font-size: var(--fs-lg); line-height: 1.2; }
-.ac-hero-delta { flex: none; text-align: right; }
-.ac-hero-delta strong { display: block; font-size: var(--fs-xl); line-height: 1.1; font-variant-numeric: tabular-nums; }
-.ac-hero-delta strong.good { color: var(--good); }
-.ac-hero-delta strong.bad { color: var(--bad); }
-.ac-hero-delta small { font-size: var(--fs-3xs); color: var(--muted); }
+.ac-tile .ac-best { position: absolute; top: 7px; right: 7px; }
+.ac-tile-name { font-size: var(--fs-sm); line-height: 1.2; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timepick { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .timepick button { min-width: 48px; height: 40px; border-radius: var(--r-sm); background: var(--line); font-weight: 600; font-variant-numeric: tabular-nums; }
 .timepick output { flex: 1; text-align: center; font-size: var(--fs-2xl); font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -1588,10 +1577,12 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .plan-summary-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
 .plan-summary-meta span { padding: 0; border-radius: var(--r-xs); background: color-mix(in srgb, var(--panel) 75%, transparent); color: var(--muted); font-size: var(--fs-2xs); }
 .plan-summary-meta b { color: var(--text); font-size: var(--fs-xs); }
-.route-selection { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; font-size: var(--fs-xs); }
-.route-selection > span:first-child { padding: 4px 7px; border-radius: var(--r-xs); color: var(--accent); background: var(--accent-soft); font-size: var(--fs-3xs); font-weight: 800; }
-.route-selection b { color: var(--text); }
-.route-selection small, .route-selection-dot { color: var(--muted); }
+.plan-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-summary-head > span { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .03em; color: var(--muted); }
+.plan-tag { font-style: normal; padding: 1px 6px; border-radius: var(--r-pill); background: var(--line); color: var(--muted); font-size: var(--fs-3xs); font-weight: 700; line-height: 1.4; }
+.plan-note { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--muted); }
+.plan-note.warn { color: var(--warn); }
+.plan-note.bad { color: var(--bad); }
 .opt.aircraft-option { min-height: 128px; border-radius: var(--r-md); }
 .aircraft-option .delta small::before { content: ''; }
 .trip { gap: 10px; padding: 13px; background: var(--accent-soft); }

@@ -18,7 +18,6 @@ describe('aircraft picker', () => {
     expect(html.match(/<button[^>]*class="ac-tile[ "]/g)?.length).toBe(choices.length);
     expect(html.match(/aria-checked="true"/g)?.length).toBe(1);
     expect(html).toContain('aria-label="飛機方案"');
-    expect(html).toContain('ac-hero');
     expect(html).toContain('建議');
     expect(html).toContain(AIRCRAFT[best.type].name);
   });
@@ -29,7 +28,7 @@ describe('aircraft picker', () => {
     const previews = new Map<string, RoutePreview>(choices.map((c) => [c.id, preview(0)]));
     const html = renderToStaticMarkup(<AircraftPicker plan={plan} choices={choices} previews={previews} best={choices[0]} chosen={choices[0]} onPick={() => {}} />);
     for (const t of ['A388', 'B779', 'A35K', 'B78X', 'A339'] as const) {
-      expect(html, t).toContain(`title="租用 · ${AIRCRAFT[t].name}"`);
+      expect(html, t).toContain(`title="${AIRCRAFT[t].name}"`);
     }
   });
 
