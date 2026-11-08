@@ -9,7 +9,7 @@ import { CodeshareLink, CodeshareSheet } from './codeshare';
 import { HostedLink, HostedSheet } from './hosted';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
 import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
-import { AircraftSheet, ResultsSheet, RouteSheet, Sheet, routeName } from './sheets';
+import { AircraftSheet, ResultsSheet, RouteSheet, Sheet, SheetNavContext, routeName, type SheetNav, type SheetSize } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
 import { AirlineLink, AirlineSheet, AirlinesPanel, type Section as AirlineSection } from './airlines';
@@ -43,7 +43,11 @@ function save(key: string, value: unknown) {
   }
 }
 
-type Panel = 'routes' | 'airports' | 'airlines' | 'schedule' | 'fleet' | 'report' | null;
+type Panel = 'routes' | 'airports' | 'airlines' | 'schedule' | 'fleet';
+/** A page pushed over the home sheet: a route, airport, aircraft or airline, or the money report. */
+type Page = (Selection & { full?: boolean }) | { kind: 'report' };
+/** How the last page change should move: slide in, slide back, rise from the map, or not at all. */
+type NavMove = 'push' | 'back' | 'rise' | 'none';
 type Overlay =
   | { kind: 'edit'; acId: string; leg: number }
   | { kind: 'add'; key: string; prefer?: { from: string; dep: number; acId?: string; gap?: number }; returnGap?: { acId: string; t: number } }
@@ -65,8 +69,13 @@ export default function App() {
       fleet: p.fleet.map(ac => ({ ...ac, legs: ac.legs.filter(l => AIRPORT_BY_CODE[l.from] && AIRPORT_BY_CODE[l.to]) })) };
   });
   const [theme, setTheme] = useState<Theme>(() => load<Theme>(THEME_KEY) ?? 'day');
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [routeFull, setRouteFull] = useState(false);
+  const [stack, setStack] = useState<Page[]>([]);
+  const [navMove, setNavMove] = useState<NavMove>('none');
+  const top = stack.at(-1) ?? null;
+  const selection: Selection | null = top && top.kind !== 'report' ? top : null;
+  const reportOpen = top?.kind === 'report';
+  /** A route opened from a list shows in full; one tapped on the map is a small preview. */
+  const routeFull = !!(top && top.kind === 'route' && top.full);
   const [game, setGame] = useState<GameState | null>(() => {
     const g = load<GameState>(GAME_KEY);
     return g && g.version === 1 ? g : null;
@@ -100,13 +109,13 @@ export default function App() {
   const liveRouteResult = useMemo(() => marketsBuilt && plan && selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey) ? simulate(plan) : null, [plan, selectedRouteKey, marketsBuilt]);
   const resultRef = useRef(result);
   resultRef.current = result;
-  const [panel, setPanel] = useState<Panel>(null);
+  const [panel, setPanel] = useState<Panel>('routes');
+  /** The home sheet's height. It starts small, so the map is home. */
+  const [detent, setDetent] = useState<SheetSize>(() => (typeof matchMedia === 'function' && matchMedia('(min-width: 820px)').matches ? 'full' : 'compact'));
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [transitHint, setTransitHint] = useState<[string, string][] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [schedAirport, setSchedAirport] = useState<{ airport: string } | null>(null);
-  /** Where the airline profile was opened from, for its back button. */
-  const [back, setBack] = useState<Selection | null>(null);
   const [airlineRoute, setAirlineRoute] = useState<string | null>(null);
   const [airlineTab, setAirlineTab] = useState<AirlineSection | undefined>(undefined);
   const [routesView, setRoutesView] = useState<RoutesView>('own');
@@ -200,21 +209,23 @@ export default function App() {
   const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
 
   const update = (next: Plan) => setPlan(next);
-  const select = (s: Selection | null) => { setSelection(s); setOverlay(null); setBack(null); setAirlineRoute(null); setAirlineTab(undefined); setRouteFull(false); };
-  /** From a list the player wants the details, so the route opens full; a tap on the map only previews it. */
-  const openRoute = (key: string) => { select({ kind: 'route', id: key }); setRouteFull(true); };
-  const openAirline = (id: string, tab?: AirlineSection) => {
-    const from = selection && selection.kind !== 'airline' ? selection : null;
-    select({ kind: 'airline', id });
-    setBack(from);
-    setAirlineTab(tab);
+  const reset = () => { setOverlay(null); setAirlineRoute(null); setAirlineTab(undefined); };
+  /** From the map: a fresh page rises over the home sheet (or, with null, back to the map). */
+  const select = (s: Selection | null) => { reset(); setStack(s ? [s] : []); setNavMove(s ? 'rise' : 'back'); };
+  /** From a list or another page: push a page, with ‹ back to where it came from. */
+  const push = (p: Page) => {
+    reset(); setNavMove('push');
+    setStack((st) => { const i = st.findIndex((x) => x.kind === p.kind && ('id' in x ? x.id : '') === ('id' in p ? p.id : '')); return i >= 0 ? [...st.slice(0, i), p] : [...st, p]; });
   };
-  /** From the airline profile to an airport or route, with a way back to the airline. */
-  const fromAirline = (s: Selection) => { const prev = selection; select(s); setBack(prev); };
-  const openTab = (p: Panel) => { setSelection(null); setOverlay(null); setPanel(p); if (p !== 'schedule') setSchedAirport(null); };
+  const pop = () => { reset(); setNavMove('back'); setStack((st) => st.slice(0, -1)); };
+  /** Swap the page in place, for ‹ › through a list. */
+  const swap = (p: Page) => { reset(); setNavMove('none'); setStack((st) => [...st.slice(0, -1), p]); };
+  const openRoute = (key: string) => push({ kind: 'route', id: key, full: true });
+  const openAirline = (id: string, tab?: AirlineSection) => { push({ kind: 'airline', id }); setAirlineTab(tab); };
+  const openTab = (p: Panel) => { setStack([]); setNavMove('none'); setOverlay(null); setPanel(p); if (detent === 'compact') setDetent('half'); if (p !== 'schedule') setSchedAirport(null); };
   /** The new-route planner: pick two airports, see what the route would earn, confirm. */
   const planRoute = (from: string, to: string | null = null) => {
-    setSelection(null);
+    setStack([]);
     setOverlay({ kind: 'new', from, to: to === from ? null : to, pick: to && to !== from ? null : 'to' });
   };
   const newRoute = overlay?.kind === 'new' ? overlay : null;
@@ -255,12 +266,29 @@ export default function App() {
   const aircraft = selection?.kind === 'aircraft' ? plan.fleet.find((a) => a.id === selection.id) : undefined;
   const airport = selection?.kind === 'airport' ? selection.id : undefined;
   const airlineId = selection?.kind === 'airline' ? selection.id : undefined;
-  const backToAirline = back?.kind === 'airline' ? <button className="back" onClick={() => openAirline(back.id)}>‹ {airlineLabel(back.id)}</button> : undefined;
-  const backLabel = (s: Selection) => (s.kind === 'airport' ? s.id : s.kind === 'route' ? s.id.replace('-', '⇄') : s.kind === 'aircraft' ? plan.fleet.find((a) => a.id === s.id)?.reg ?? '飛機' : '航空');
+  /** A short name for a page, for the ‹ back button of the page above it. */
+  const pageLabel = (p: Page) => (p.kind === 'report' ? '報表' : p.kind === 'airport' ? AIRPORT_BY_CODE[p.id].name : p.kind === 'route' ? p.id.replace('-', '⇄') : p.kind === 'aircraft' ? plan.fleet.find((a) => a.id === p.id)?.reg ?? '飛機' : airlineLabel(p.id));
+  const homeLabel = detent === 'compact' ? '地圖' : SECTION_LABEL[panel];
+  const pageNav: SheetNav = { back: { label: stack.length > 1 ? pageLabel(stack[stack.length - 2]) : homeLabel, go: pop } };
+  /** Codeshare sheets open over the page they came from; their back closes them. */
+  const overNav: SheetNav = { back: { label: top ? pageLabel(top) : SECTION_LABEL[panel], go: () => setOverlay(null) } };
+  const section: Section = panel === 'fleet' || panel === 'schedule' ? 'fleet' : panel === 'airports' || panel === 'airlines' ? 'market' : 'routes';
+  const homeNav: SheetNav = {
+    detent, onDetent: setDetent,
+    switcher: <div className="seg three switcher" role="tablist" aria-label="主要導覽">
+      {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-selected={section === id} className={section === id ? 'on' : ''}
+        onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} />{label}</button>)}
+    </div>,
+    menu: section === 'fleet' ? { items: [['fleet', '飛機'], ['schedule', '班表']], value: panel, onPick: (id) => openTab(id as Panel) }
+      : section === 'market' ? { items: [['airports', '機場'], ['airlines', '航空公司']], value: panel, onPick: (id) => openTab(id as Panel) }
+      : undefined,
+  };
   const editing = overlay?.kind === 'edit' ? plan.fleet.find((a) => a.id === overlay.acId) : undefined;
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
-  const showPanel = !selection && !newRoute && panel;
+  /** The home sheet stays mounted under pages, hidden, so it comes back where it was. */
+  const homeCovered = stack.length > 0 || !!newRoute;
+  const showPanel = panel;
   /** Previous / next item in a list, for swiping across route and airport sheets. */
   const pagerFor = (list: string[], id: string, go: (id: string) => void) => {
     const i = list.indexOf(id);
@@ -270,7 +298,6 @@ export default function App() {
   const routeOrder = routePairs(plan).map((r) => r.key);
   const airportOrder = [...new Set(routePairs(plan).flatMap((r) => [r.a, r.b]))]
     .sort((x, y) => (x === plan.base ? -1 : y === plan.base ? 1 : x === plan.hub ? -1 : y === plan.hub ? 1 : AIRPORT_BY_CODE[x].name.localeCompare(AIRPORT_BY_CODE[y].name)));
-  const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'airports' || panel === 'airlines');
   // A codeshare sheet opens over whatever sheet it came from (a route, a partner, the routes list). Hide that one
   // while it is open, so only one sheet ever shows; it comes back as it was when the codeshare sheet closes.
   const stacked = overlay?.kind === 'codeshare' || overlay?.kind === 'hosted';
@@ -281,8 +308,8 @@ export default function App() {
     : airlineId ? '航空公司'
     : newRoute ? '開新航線'
     : overlay?.kind === 'codeshare' || overlay?.kind === 'hosted' ? '共享航班'
-    : showPanel === 'airlines' ? '航空公司'
-    : showPanel === 'airports' ? '市場'
+    : !homeCovered && showPanel === 'airlines' ? '航空公司'
+    : !homeCovered && showPanel === 'airports' ? '市場'
     : null;
   marketsWanted.current = waiting !== null;
 
@@ -290,7 +317,7 @@ export default function App() {
     <AirlineLink.Provider value={openAirline}>
     <CodeshareLink.Provider value={openCodeshare}>
     <HostedLink.Provider value={openHosted}>
-    <div className={`app${hasSubnav ? ' has-subnav' : ''}${stacked ? ' sheet-stacked' : ''}`}>
+    <div className={`app${stacked ? ' sheet-stacked' : ''}${homeCovered ? ' home-covered' : ''}${detent === 'compact' && !homeCovered ? ' map-mode' : ''}`} data-nav={navMove}>
       <MapCanvas
         plan={plan}
         result={result}
@@ -310,20 +337,18 @@ export default function App() {
           else select({ kind: 'airport', id: code });
         }}
         onTapRoute={(key) => select({ kind: 'route', id: key })}
-        onTapEmpty={() => { if (newRoute) return; if (selection) select(null); else openTab(null); }}
+        onTapEmpty={() => { if (newRoute) return; if (stack.length) select(null); else setDetent('compact'); }}
         onDragRoute={(a, b) => planRoute(a, b)}
       />
 
-      <header className="hud">
-      <TopBar onMoney={() => openTab(panel === 'report' ? null : 'report')} moneyOpen={panel === 'report' && !selection} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
+      <Island clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} note={toast}
+        theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
+        onReport={() => { if (!reportOpen) push({ kind: 'report' }); }}
         onReset={() => {
-          if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
+          if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel('routes'); setDetent('compact'); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
-      <ClockBar clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} />
-      </header>
 
-      {toast && <div className="toast">{toast}</div>}
-      {result && !selection && !overlay && !panel && (
+      {result && !stack.length && !overlay && detent === 'compact' && (
         <div className="map-legend" aria-label="地圖圖例：航線顏色是載客率，越粗旅客越多">
           <span><i style={{ background: LF_COLORS.good }} />80%+</span>
           <span><i style={{ background: LF_COLORS.ok }} />60%</span>
@@ -334,30 +359,34 @@ export default function App() {
       )}
 
       {waiting && (
-        <Sheet title={waiting} size={routeKey && routeFull ? 'full' : 'compact'} onClose={() => { if (newRoute || stacked) setOverlay(null); else if (selection) select(null); else openTab(null); }}>
+        <Sheet title={waiting} size={routeKey && routeFull ? 'full' : 'half'} onClose={() => { if (newRoute || stacked) setOverlay(null); else if (stack.length) pop(); else setDetent('compact'); }}>
           <p className="hint" role="status">正在準備全球市場資料…</p>
         </Sheet>
       )}
       {marketsBuilt && routeKey && routeExists && (
-        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => { const full = routeFull; select({ kind: 'route', id: k }); setRouteFull(full); })} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
+        <SheetNavContext.Provider value={pageNav}>
+        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => swap({ kind: 'route', id: k, full: routeFull }))} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}
           onEditFlight={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
-          onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛'); select(null); }}
-          action={backToAirline}
+          onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛'); pop(); }}
           onClose={() => select(null)} />
+        </SheetNavContext.Provider>
       )}
       {aircraft && (
+        <SheetNavContext.Provider value={pageNav}>
         <AircraftSheet key={aircraft.id} plan={plan} ac={aircraft} result={result?.aircraft[aircraft.id]}
           onChange={(ac) => update({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) })}
-          onRemove={() => { update({ ...plan, fleet: plan.fleet.filter((x) => x.id !== aircraft.id) }); setToast(`已退租 ${aircraft.reg}`); select(null); }}
+          onRemove={() => { update({ ...plan, fleet: plan.fleet.filter((x) => x.id !== aircraft.id) }); setToast(`已退租 ${aircraft.reg}`); pop(); }}
           onEditFlight={(leg) => setOverlay({ kind: 'edit', acId: aircraft.id, leg })}
           onAddHere={() => setOverlay({ kind: 'gap', acId: aircraft.id, t: aircraft.legs.length ? aircraft.legs[aircraft.legs.length - 1].dep + 60 : utcMorning(plan.base) })}
           onClose={() => select(null)} />
+        </SheetNavContext.Provider>
       )}
       {marketsBuilt && airport && (
-        <AirportSheet key={airport} pager={pagerFor(airportOrder, airport, (c) => select({ kind: 'airport', id: c }))} plan={plan} result={result} code={airport}
+        <SheetNavContext.Provider value={pageNav}>
+        <AirportSheet key={airport} pager={pagerFor(airportOrder, airport, (c) => swap({ kind: 'airport', id: c }))} plan={plan} result={result} code={airport}
           onConnect={() => planRoute(airport)}
           onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
@@ -370,46 +399,52 @@ export default function App() {
             update({ ...plan, hub: on ? undefined : airport });
             setToast(on ? '已取消轉運站' : `${AIRPORT_BY_CODE[airport].name}設為轉運站`);
           }}
-          onShowSchedule={() => { setSchedAirport({ airport }); setSelection(null); setPanel('schedule'); }}
-          onPickAirport={(code) => select({ kind: 'airport', id: code })}
+          onShowSchedule={() => { openTab('schedule'); setSchedAirport({ airport }); }}
+          onPickAirport={(code) => push({ kind: 'airport', id: code })}
           onPickAirline={openAirline}
           onHint={setTransitHint}
-          action={backToAirline}
           onClose={() => select(null)} />
+        </SheetNavContext.Provider>
       )}
       {marketsBuilt && airlineId && (
+        <SheetNavContext.Provider value={pageNav}>
         <AirlineSheet key={airlineId} plan={plan} result={result} id={airlineId} focus={airlineRoute} onFocus={setAirlineRoute} initialTab={airlineTab}
           onCodeshare={(key) => toggleShare(airlineId, key)}
-          onPickAirport={(code) => fromAirline({ kind: 'airport', id: code })}
-          onOpenRoute={(key) => fromAirline({ kind: 'route', id: key })}
+          onPickAirport={(code) => push({ kind: 'airport', id: code })}
+          onOpenRoute={(key) => push({ kind: 'route', id: key })}
           onOpen={(a, b) => planRoute(a, b)}
-          back={back ? { label: backLabel(back), go: () => { const b = back; select(b); } } : undefined}
           onClose={() => select(null)} />
+        </SheetNavContext.Provider>
       )}
+      {reportOpen && result && (
+        <SheetNavContext.Provider value={pageNav}>
+          <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={openRoute} onClose={pop} />
+        </SheetNavContext.Provider>
+      )}
+
+      <SheetNavContext.Provider value={homeNav}>
       {marketsBuilt && showPanel === 'airlines' && (
-        <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => openTab(null)} />
+        <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} history={game?.history ?? []} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
-          onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => openTab(null)} />
+          onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => setDetent('compact')} />
       )}
       {marketsBuilt && showPanel === 'airports' && (
-        <AirportsPanel plan={plan} result={result} onPick={(code) => select({ kind: 'airport', id: code })} onClose={() => openTab(null)} />
+        <AirportsPanel plan={plan} result={result} onPick={(code) => push({ kind: 'airport', id: code })} onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'schedule' && (
         <SchedulePanel key={schedAirport?.airport ?? 'all'} plan={plan} result={result} now={clock.now()} selected={schedSel} preset={schedAirport}
           onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
           onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
           onChange={(next, msg) => { update(next); setToast(msg); }}
-          onClose={() => openTab(null)} />
+          onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'fleet' && (
-        <FleetPanel plan={plan} result={result} onPick={(id) => select({ kind: 'aircraft', id })} onLease={() => setOverlay({ kind: 'lease' })} onClose={() => openTab(null)} />
+        <FleetPanel plan={plan} result={result} onPick={(id) => push({ kind: 'aircraft', id })} onLease={() => setOverlay({ kind: 'lease' })} onClose={() => setDetent('compact')} />
       )}
-      {showPanel === 'report' && result && (
-        <ResultsSheet result={result} history={game?.history ?? []} balance={game?.balance ?? 0} onPick={openRoute} onClose={() => openTab(null)} />
-      )}
+      </SheetNavContext.Provider>
 
       {overlay?.kind === 'edit' && (
         <FlightEditor plan={plan} result={result} acId={overlay.acId} leg={overlay.leg}
@@ -426,7 +461,7 @@ export default function App() {
         <NewRouteSheet plan={plan} result={result} state={newRoute}
           onState={(s) => setOverlay({ kind: 'new', ...s })}
           onHint={setTransitHint}
-          onDone={(next, msg, key) => { update(next); setToast(msg); setOverlay(null); setTransitHint(null); setSelection({ kind: 'route', id: key }); }}
+          onDone={(next, msg, key) => { update(next); setToast(msg); setTransitHint(null); select({ kind: 'route', id: key }); }}
           onClose={() => { setOverlay(null); setTransitHint(null); }} />
       )}
       {overlay?.kind === 'gap' && (
@@ -435,6 +470,7 @@ export default function App() {
           onClose={() => setOverlay(null)} />
       )}
       {marketsBuilt && overlay?.kind === 'codeshare' && (
+        <SheetNavContext.Provider value={overNav}>
         <CodeshareSheet key={`${overlay.airline}|${overlay.key}`} plan={plan} airline={overlay.airline} routeKey={overlay.key}
           onShare={(share) => {
             const was = hasCodeshare(plan, overlay.airline, overlay.key);
@@ -445,8 +481,10 @@ export default function App() {
           onOpenRoute={openRoute}
           onPartner={() => openAirline(overlay.airline, 'share')}
           onClose={() => setOverlay(null)} />
+        </SheetNavContext.Provider>
       )}
       {marketsBuilt && overlay?.kind === 'hosted' && (
+        <SheetNavContext.Provider value={overNav}>
         <HostedSheet key={overlay.key} plan={plan} routeKey={overlay.key} airline={overlay.airline}
           onSet={(airline, share) => {
             const was = plan.hosted?.some((h) => h.airline === airline && h.key === overlay.key);
@@ -457,6 +495,7 @@ export default function App() {
           onOpenRoute={() => openRoute(overlay.key)}
           onPartner={(airline) => openAirline(airline)}
           onClose={() => setOverlay(null)} />
+        </SheetNavContext.Provider>
       )}
       {overlay?.kind === 'lease' && (
         <LeaseSheet plan={plan} onClose={() => setOverlay(null)}
@@ -474,23 +513,6 @@ export default function App() {
           }} />
       )}
 
-      {hasSubnav && (
-        <nav className="subnav" aria-label="分類">
-          {(panel === 'fleet' || panel === 'schedule'
-            ? [['fleet', '飛機'], ['schedule', '班表']]
-            : [['airports', '機場'], ['airlines', '對手']]).map(([p, label]) => (
-              <button key={p} className={panel === p ? 'on' : ''} onClick={() => openTab(p as Panel)}>{label}</button>
-            ))}
-        </nav>
-      )}
-      <nav className="tabbar" aria-label="主要導覽">
-        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['airports', '市場']] as [Panel, string][]).map(([p, label]) => {
-          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : p === 'airports' ? panel === 'airports' || panel === 'airlines' : panel === p);
-          return <button key={label} className={active ? 'on' : ''} onClick={() => openTab(p)} aria-current={active ? 'page' : undefined}>
-            <TabIcon tab={p} /><span>{label}</span>
-          </button>;
-        })}
-      </nav>
     </div>
     </HostedLink.Provider>
     </CodeshareLink.Provider>
@@ -499,9 +521,13 @@ export default function App() {
 }
 
 const airlineLabel = (id: string) => airlines().find((a) => a.id === id)?.name ?? '航空';
+type Section = 'routes' | 'fleet' | 'market';
+/** The home sheet's three sections, each with the view it opens first. */
+const SECTIONS: [Section, string, Panel][] = [['routes', '航線', 'routes'], ['fleet', '機隊', 'fleet'], ['market', '市場', 'airports']];
+const SECTION_LABEL: Record<Panel, string> = { routes: '航線', fleet: '機隊', schedule: '班表', airports: '市場', airlines: '航空公司' };
 const utcMorning = (code: string) => utcFromLocal(code, 7 * 60);
 
-function TabIcon({ tab }: { tab: Panel }) {
+function TabIcon({ tab }: { tab: Panel | null }) {
   const d = {
     map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14',
     routes: 'M5 18c4-10 10-10 14-12 M5 18a2 2 0 1 0 0.01 0 M19 6a2 2 0 1 0 0.01 0',
@@ -512,50 +538,62 @@ function TabIcon({ tab }: { tab: Panel }) {
     airlines: 'M4 20h16 M6 20l4-16h3l-1 8h6l2 8',
     market: 'M12 3a5 5 0 0 1 5 5c0 4-5 10-5 10S7 12 7 8a5 5 0 0 1 5-5z M12 6.5a1.6 1.6 0 1 0 0.01 0 M5 21h14',
   }[tab ?? 'map'];
-  return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-function ClockBar({ clock, base, speed, onSpeed }: { clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void }) {
+/**
+ * The status pill at the top of the map: money and the clock, with play/pause. Tap it for speed, the report, the
+ * theme and restarting. Notes (a day's result, "added a flight") show inside it for a moment, so nothing lands on a
+ * sheet.
+ */
+function Island({ clock, base, speed, onSpeed, result, balance, history, note, theme, onTheme, onReport, onReset }: {
+  clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void; result: NetworkResult | null; balance: number; history: DayRecord[];
+  note: string | null; theme: Theme; onTheme: () => void; onReport: () => void; onReset: () => void;
+}) {
+  const [open, setOpen] = useState(false);
   const [, setTick] = useState(0);
   const lastRun = useRef<Exclude<Speed, 0>>(speed === 0 ? 1 : speed);
   if (speed !== 0) lastRun.current = speed;
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), 500); return () => clearInterval(id); }, []);
   const now = clock.now();
+  const estimate = result ? (result.revenue - result.cost) / 7 : null;
+  const last = history.at(-1);
+  const toneOf = (v: number | null) => (v === null ? '' : v >= 0 ? 'good' : 'bad');
+  const close = () => setOpen(false);
   return (
-    <div className="clockbar">
-      <span className="when"><span className="day-n">第 {dayAt(base, now)} 天</span> <b>{hhmm(localMinutes(base, now))}</b></span>
-      <div className="speed-compact" role="group" aria-label="時間速度">
-        <button className={speed === 0 ? 'on' : ''} onClick={() => { if (speed === 0) onSpeed(lastRun.current); else { lastRun.current = speed; onSpeed(0); } }} aria-label={speed === 0 ? '繼續' : '暫停'}>{speed === 0 ? '▶' : '❚❚'}</button>
-        <button onClick={() => onSpeed(nextSpeed(speed === 0 ? lastRun.current : speed))} aria-label={`速度 ${speed === 0 ? lastRun.current : speed} 倍，點選切換`}>{speed === 0 ? lastRun.current : speed}×</button>
+    <>
+    {open && <div className="island-scrim" onClick={close} />}
+    <header className={`island${open ? ' open' : ''}`}>
+      <div className="island-bar">
+        <button className="island-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="狀態與設定">
+          <span className="i-kpi"><small>累計</small><b className={toneOf(balance)}>{money(balance)}</b></span>
+          <span className="i-kpi"><small>每日</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
+          <span className="i-kpi"><small>第 {dayAt(base, now)} 天</small><b>{hhmm(localMinutes(base, now))}</b></span>
+        </button>
+        <button className={`island-play${speed === 0 ? ' paused' : ''}`} onClick={() => onSpeed(speed === 0 ? lastRun.current : 0)} aria-label={speed === 0 ? '繼續' : '暫停'}>
+          {speed === 0 ? <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor" /></svg>
+            : <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5h2.6v11H4zM9.4 2.5H12v11H9.4z" fill="currentColor" /></svg>}
+        </button>
       </div>
-      <div className="speed" role="group" aria-label="時間速度">
-        {SPEEDS.map((sp) => (
-          <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>
-            {sp === 0 ? '❚❚' : `${sp}×`}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const RUN_SPEEDS = SPEEDS.filter((s): s is Exclude<Speed, 0> => s !== 0);
-const nextSpeed = (s: Exclude<Speed, 0>) => RUN_SPEEDS[(RUN_SPEEDS.indexOf(s) + 1) % RUN_SPEEDS.length];
-
-/** Phone header overflow: theme and restart live behind one ⋯ button. */
-function MoreMenu({ theme, onTheme, onReset }: { theme: Theme; onTheme: () => void; onReset: () => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="more-menu">
-      <button className="more-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="更多">⋯</button>
+      {note && !open && <div className="island-note" role="status" key={note}>{note}</div>}
       {open && <>
-        <div className="more-scrim" onClick={() => setOpen(false)} />
-        <div className="more-pop" role="menu">
-          <button role="menuitem" onClick={() => { onTheme(); setOpen(false); }}>{theme === 'day' ? '夜間模式' : '日間模式'}</button>
-          <button role="menuitem" className="danger-text" onClick={() => { setOpen(false); onReset(); }}>重新開始</button>
+        <div className="island-card">
+          <div className="seg four island-speed" role="group" aria-label="時間速度">
+            {SPEEDS.map((sp) => <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>{sp === 0 ? '暫停' : `${sp}×`}</button>)}
+          </div>
+          <div className="island-list">
+            <button onClick={() => { close(); onReport(); }} disabled={!result}>
+              <span className="grow">報表</span>
+              <span className="island-val">{last ? <>上日 <b className={toneOf(last.revenue - last.cost)}>{money(last.revenue - last.cost)}</b></> : '尚未結算'}</span>
+              <span className="chev" aria-hidden="true">›</span>
+            </button>
+            <button onClick={() => { onTheme(); }}><span className="grow">{theme === 'day' ? '夜間模式' : '日間模式'}</span></button>
+            <button className="danger-text" onClick={() => { close(); onReset(); }}><span className="grow">重新開始</span></button>
+          </div>
         </div>
       </>}
-    </div>
+    </header>
+    </>
   );
 }
 
@@ -588,21 +626,3 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
   );
 }
 
-function TopBar({ result, balance, history, theme, onTheme, onReset, onMoney, moneyOpen }: { result: NetworkResult | null; balance: number; history: DayRecord[]; theme: Theme; onTheme: () => void; onReset: () => void; onMoney: () => void; moneyOpen: boolean }) {
-  const estimate = result ? (result.revenue - result.cost) / 7 : null;
-  const last = history.at(-1);
-  return (
-    <div className="topbar">
-      <div className="dashboard-brand"><span className="dashboard-mark" aria-hidden="true">✳</span><span><strong>航點</strong><small>WAYPOINT AIRLINES</small></span></div>
-      <button className={`money-btn${moneyOpen ? ' on' : ''}`} onClick={onMoney} disabled={!result} aria-expanded={moneyOpen} aria-label="財務報表">
-        <span className="kpi main"><span className="label">累計損益</span><span className={`value ${balance >= 0 ? 'good' : 'bad'}`}>{money(balance)}</span></span>
-        <span className="kpi" title={last ? `上日已結算 ${money(last.revenue - last.cost)}` : '尚未結算'}><span className="label">預估損益／日 <span className="money-chev" aria-hidden="true">›</span></span><span className={`value ${estimate === null ? '' : estimate >= 0 ? 'good' : 'bad'}`}>{estimate === null ? '—' : money(estimate)}</span></span>
-      </button>
-      <div className="top-actions">
-        <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>
-        <button onClick={onReset} aria-label="重新開始">↺</button>
-      </div>
-      <MoreMenu theme={theme} onTheme={onTheme} onReset={onReset} />
-    </div>
-  );
-}

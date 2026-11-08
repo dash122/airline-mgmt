@@ -2511,6 +2511,116 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
   .dir-bar, .directory-search { margin: 0; }
 }
 
+/* ───────────── Maps-style shell (2026-11-08) ─────────────
+   One sheet over the map: the home sheet carries the 航線 / 機隊 / 市場 switcher and sits at three heights
+   (title only, half, full); routes, airports, aircraft and airlines push over it with ‹ back. No tab bar.
+   The header is one floating status pill. No backdrop blur anywhere here: it repaints badly on iPhone Safari. */
+:root { --tabbar: 0px; --subnav-h: 0px; --hud-h: 44px; --ease-ios: cubic-bezier(.32, .72, 0, 1); }
+.app.has-subnav { --subnav-h: 0px; }
+@media (max-width: 819px) {
+  :root { --tabbar: 0px; --hud-h: 44px; }
+  .sheet { bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .sheet.over { padding-bottom: env(safe-area-inset-bottom); }
+  .sheet.full, .airport-sheet.full { top: calc(env(safe-area-inset-top) + var(--hud-top) + var(--hud-h) + 8px); }
+  .airport-sheet .sheet-body { padding-bottom: calc(env(safe-area-inset-bottom) + 18px); }
+  .sheet { transition: max-height .34s var(--ease-ios), top .34s var(--ease-ios); }
+}
+@media (min-width: 820px) {
+  .sheet, .sheet.full { top: calc(env(safe-area-inset-top) + 72px); bottom: 16px; }
+  .sheet.compact { top: auto; }
+}
+
+/* The status pill. */
+.island { position: absolute; z-index: 25; top: calc(env(safe-area-inset-top) + var(--hud-top)); left: 50%; transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 24px); border-radius: 22px; background: var(--panel); box-shadow: 0 4px 18px rgba(0, 0, 0, .14), 0 0 0 var(--hairline, .5px) var(--line);
+  transition: border-radius .3s var(--ease-ios); }
+.island.open { width: calc(100% - 24px); max-width: 420px; border-radius: 20px; }
+.island-bar { display: flex; align-items: center; gap: 2px; padding: 3px 3px 3px 6px; min-height: var(--hud-h); }
+.island-main { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 14px; padding: 0 8px; min-height: 38px; border: 0; background: none; color: inherit; font: inherit; text-align: left; border-radius: 18px; }
+.i-kpi { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; }
+.i-kpi small { font-size: var(--fs-3xs); color: var(--muted); font-weight: 600; }
+.i-kpi b { font-size: var(--fs-md); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.i-kpi b.good { color: var(--good-ink, var(--good)); }
+.i-kpi b.bad { color: var(--bad-ink, var(--bad)); }
+.island-play { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--fill-2, var(--surface-2)); color: var(--text); position: relative; }
+.island-play::after { content: ''; position: absolute; inset: -3px; }
+.island-play.paused { background: var(--warn-soft); color: var(--warn-ink); }
+.island-note { padding: 0 16px 10px; font-size: var(--fs-sm); font-weight: 600; text-align: center; max-width: 340px; margin: 0 auto; animation: island-note .32s var(--ease-ios); }
+@keyframes island-note { from { opacity: 0; transform: translateY(-6px) scale(.96); } }
+.island-scrim { position: absolute; inset: 0; z-index: 24; background: rgba(0, 0, 0, .18); animation: fade-in .2s ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+.island-card { padding: 4px 10px 10px; display: grid; gap: 10px; animation: island-note .28s var(--ease-ios); }
+.island-speed { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.island-list { display: grid; border-radius: 12px; background: var(--bg); overflow: hidden; }
+.island-list button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 0; background: none; color: inherit; font: inherit; font-size: var(--fs-base); text-align: left; position: relative; }
+.island-list button + button::before { content: ''; position: absolute; top: 0; left: 14px; right: 0; border-top: var(--hairline, .5px) solid var(--line-strong); }
+.island-list .danger-text { color: var(--bad); }
+.island-list .island-val { color: var(--muted); font-size: var(--fs-sm); }
+.island-list .island-val b.good { color: var(--good); } .island-list .island-val b.bad { color: var(--bad); }
+.island-list .chev { color: var(--line-strong); font-size: var(--fs-lg); }
+
+/* The map legend sits under the pill, out of the sheet's way. */
+.map-legend { top: calc(env(safe-area-inset-top) + var(--hud-top) + var(--hud-h) + 10px); bottom: auto; left: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, .1); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* The home sheet: section switcher above the title. */
+.sheet-switcher { padding: 2px 16px 4px; }
+.seg.switcher { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg.switcher button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.seg.switcher button svg { flex: none; opacity: .8; }
+.seg.switcher button.on svg { opacity: 1; color: var(--accent); }
+.sheet.nav-root .sheet-head { padding-top: 6px; }
+.sheet.nav-root.compact { max-height: none; }
+.sheet.nav-root.compact .sheet-head { border-bottom: 0; }
+.app.home-covered .sheet.nav-root { visibility: hidden; pointer-events: none; }
+.app.sheet-stacked .sheet.nav-root { visibility: hidden; pointer-events: none; }
+
+/* Title pull-down (飛機 / 班表, 機場 / 航空公司). */
+.sheet-head .grow { position: relative; }
+.title-menu { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; min-height: 32px; position: relative; }
+.title-menu::after { content: ''; position: absolute; inset: -6px -8px; }
+.title-menu-chev { width: 7px; height: 7px; margin-top: -4px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(45deg); }
+.title-menu[aria-expanded='true'] .title-menu-chev { transform: rotate(225deg); margin-top: 4px; }
+.menu-scrim { position: fixed; inset: 0; z-index: 30; }
+.pull-menu { position: absolute; z-index: 31; top: calc(100% + 6px); left: -4px; min-width: 190px; display: grid; padding: 4px 0; border-radius: 13px; background: var(--panel); box-shadow: 0 10px 40px rgba(0, 0, 0, .22), 0 0 0 var(--hairline, .5px) var(--line); animation: pull-menu .22s var(--ease-ios); transform-origin: top left; }
+@keyframes pull-menu { from { opacity: 0; transform: scale(.9); } }
+.pull-menu button { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px 0 10px; border: 0; background: none; color: var(--text); font: inherit; font-size: var(--fs-md); font-weight: 500; text-align: left; position: relative; }
+.pull-menu button + button::before { content: ''; position: absolute; top: 0; left: 34px; right: 0; border-top: var(--hairline, .5px) solid var(--line-strong); }
+.pull-check { width: 18px; color: var(--accent); font-weight: 700; text-align: center; }
+
+/* Pushed pages: ‹ back above the title, and a left-edge strip to swipe back. */
+.nav-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; margin: 0 0 -2px 10px; min-height: 30px; padding: 0 8px 0 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: var(--fs-base); font-weight: 600; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.nav-back::after { content: ''; position: absolute; inset: -7px -4px; }
+.nav-back-chev { flex: none; width: 9px; height: 9px; border-left: 2.2px solid currentColor; border-bottom: 2.2px solid currentColor; transform: rotate(45deg); margin-left: 4px; }
+.sheet-top { display: flex; flex-direction: column; }
+.edge-back { position: absolute; z-index: 6; left: 0; top: 0; bottom: 0; width: 16px; touch-action: none; }
+@media (min-width: 820px) { .edge-back { display: none; } }
+
+/* Motion: pages slide in from the right, slide back from the left, or rise from the map. Transform and opacity only. */
+.app[data-nav='push'] .sheet.nav-page:not(.compact) { animation: nav-push .38s var(--ease-ios); }
+.app[data-nav='back'] .sheet:not(.over) { animation: nav-back .34s var(--ease-ios); }
+.app[data-nav='rise'] .sheet.nav-page { animation: nav-rise .36s var(--ease-ios); }
+@keyframes nav-push { from { transform: translateX(100%); } }
+@keyframes nav-back { from { transform: translateX(-24%); opacity: .4; } }
+@keyframes nav-rise { from { transform: translateY(36%); opacity: 0; } }
+button:active { transition: transform .08s; }
+.island-main:active, .island-play:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  .app .sheet, .island, .island-note, .island-card, .pull-menu { animation: none !important; transition: none !important; }
+}
+
+/* Room for the grab handle above the switcher and the back button. */
+@media (max-width: 819px) {
+  .sheet.nav-root .sheet-switcher { padding-top: 18px; }
+  .sheet.nav-page .nav-back { margin-top: 14px; }
+}
+/* Bug: the 基地 / 轉運站 tag in the airport list took the chip's 34px height and showed as a grey blob. */
+.st-title .chip { display: inline-flex; align-items: center; min-height: 0; height: 18px; margin-left: 6px; padding: 0 6px; border-radius: 5px; font-size: var(--fs-3xs); font-weight: 700; vertical-align: 2px; background: var(--accent-soft); color: var(--accent); }
+.st-title .chip::after { display: none; }
+/* Bug: the sticky airport section bar used a see-through fill, so rows showed through it while scrolling. */
+@media (max-width: 819px) {
+  .airport-sheet .sheet-body > .ap-tiles { background: linear-gradient(var(--seg-track), var(--seg-track)), var(--bg); box-shadow: 0 0 0 8px var(--bg); }
+}
+
 /* Codeshare dashboard */
 .cs-dash { display: flex; flex-direction: column; gap: 8px; margin: 0 0 10px; }
 .cs-dash .routes-summary b { font-size: var(--fs-md); }
