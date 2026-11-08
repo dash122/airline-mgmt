@@ -2832,3 +2832,56 @@ button.danger.solid, .confirm button.danger.solid {
 }
 /* Partner tools close the route sheet instead of crowding the numbers above the tabs. */
 .route-partners { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+/* ---------- Market section: size -> how people travel -> who carries them ---------- */
+.ms { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin-top: 8px; }
+.ms .sec-head { margin-top: 0; }
+.ms-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-radius: var(--r-md); background: var(--accent-tint); border: 1px solid var(--accent-line); }
+.ms-size { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-size small { color: var(--muted); font-size: var(--fs-2xs); font-weight: 600; }
+.ms-size b { font-size: var(--fs-3xl); line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ms-size span { color: var(--muted); font-size: var(--fs-xs); }
+.ms-own { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
+.ms-own small { color: var(--muted); font-size: var(--fs-3xs); font-weight: 600; }
+.ms-own .ring b { font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ms-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: var(--r-md); background: var(--panel); border: 1px solid var(--line); }
+.ms-label { color: var(--muted); font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .04em; }
+.ms-card > .ms-label { margin-bottom: -2px; }
+.ms > .ms-label { margin: 8px 2px -4px; }
+.ms-note { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.55; }
+.ms-note.lead { padding: 0 2px; }
+.ms-cmp { display: grid; grid-template-columns: 56px minmax(0, 1fr) 44px; align-items: center; gap: 12px; }
+.ms-cmp-label { display: flex; flex-direction: column; }
+.ms-cmp-label b { font-size: var(--fs-sm); }
+.ms-cmp-label small { color: var(--muted); font-size: var(--fs-3xs); }
+.ms-cmp-val { text-align: right; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ms-bar { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.ms-bar i { display: block; height: 100%; border-radius: inherit; }
+.ms-bar.thin { height: 5px; }
+.ms-split { display: flex; gap: 3px; height: 10px; }
+.ms-split i { min-width: 4px; border-radius: 5px; }
+.ms i.direct { background: var(--accent); }
+.ms i.transit { background: var(--sel); }
+.ms-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ms-legend span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: var(--fs-xs); color: var(--muted); }
+.ms-legend span > i { width: 8px; height: 8px; border-radius: 3px; align-self: center; }
+.ms-legend b { color: var(--text); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.ms-legend small { flex-basis: 100%; padding-left: 14px; font-size: var(--fs-3xs); }
+.ms-group { margin: 4px 2px -2px; font-size: var(--fs-xs); font-weight: 700; }
+.ms-list { list-style: none; margin: 0; padding: 4px 16px; border-radius: var(--r-md); background: var(--panel); border: 1px solid var(--line); }
+.ms-row { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.ms-row:last-child { border-bottom: 0; }
+.ms-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ms-name { min-width: 0; font-size: var(--fs-sm); font-weight: 600; }
+.ms-name .airline { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.ms-name .airline > i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.ms-name .airline em { font-style: normal; font-weight: 400; font-size: var(--fs-3xs); color: var(--muted); padding: 1px 6px; border-radius: var(--r-pill); background: var(--line); }
+.ms-pct { font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.ms-row.own .ms-pct, .ms-row.own .ms-name { color: var(--accent); }
+.ms-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: var(--fs-2xs); }
+.ms-meta .ins { display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+.ms-meta small { flex: none; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.ms-turned { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border: 1px dashed var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft); font-size: var(--fs-sm); }
+.ms-turned span { color: var(--muted); font-size: var(--fs-2xs); }
+.ms .share-more { width: 100%; }
+.ms .share-more-details { background: var(--panel); border: 1px solid var(--line); }
