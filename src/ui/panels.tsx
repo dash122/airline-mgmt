@@ -13,7 +13,6 @@ import {
   blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, simulate, topMarketsFrom, utcFromLocal,
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
-import { marketBetween } from '../sim/markets';
 import { count, money, pct } from './format';
 import { arrival, at, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
@@ -111,10 +110,9 @@ export function RoutesPanel({ plan, result, view, onView, onOpen, onNew, onAdd, 
             </div>
             <ul className="route-rows">
               {g.rows.map((r) => {
-                const market = marketBetween(r.a, r.b);
                 return (
                   <RouteRow key={r.key} name={AIRPORT_BY_CODE[r.other].name} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
-                    sub={[r.other, r.types.join('、'), market?.distKm ? `${count(market.distKm)} 公里` : ''].filter(Boolean).join(' · ')}
+                    sub={[r.other, r.types.join('、')].filter(Boolean).join(' · ')}
                     onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
                 );
               })}
