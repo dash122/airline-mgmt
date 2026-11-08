@@ -227,7 +227,16 @@ export default function App() {
   const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   const showPanel = !selection && !newRoute && panel;
-  const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'report' || panel === 'airports' || panel === 'airlines');
+  /** Previous / next item in a list, for swiping across route and airport sheets. */
+  const pagerFor = (list: string[], id: string, go: (id: string) => void) => {
+    const i = list.indexOf(id);
+    if (i < 0 || list.length < 2) return undefined;
+    return { label: `${i + 1}/${list.length}`, prev: i > 0 ? () => go(list[i - 1]) : undefined, next: i < list.length - 1 ? () => go(list[i + 1]) : undefined };
+  };
+  const routeOrder = routePairs(plan).map((r) => r.key);
+  const airportOrder = [...new Set(routePairs(plan).flatMap((r) => [r.a, r.b]))]
+    .sort((x, y) => (x === plan.base ? -1 : y === plan.base ? 1 : x === plan.hub ? -1 : y === plan.hub ? 1 : AIRPORT_BY_CODE[x].name.localeCompare(AIRPORT_BY_CODE[y].name)));
+  const hasSubnav = !selection && (panel === 'fleet' || panel === 'schedule' || panel === 'airports' || panel === 'airlines');
 
   return (
     <AirlineLink.Provider value={openAirline}>
@@ -258,7 +267,7 @@ export default function App() {
       />
 
       <header className="hud">
-      <TopBar result={result} balance={game?.balance ?? 0} history={game?.history ?? []} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
+      <TopBar onMoney={() => openTab(panel === 'report' ? null : 'report')} moneyOpen={panel === 'report' && !selection} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReset={() => {
           if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel(null); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
@@ -277,7 +286,7 @@ export default function App() {
       )}
 
       {routeKey && routeExists && (
-        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
+        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => { const full = routeFull; select({ kind: 'route', id: k }); setRouteFull(full); })} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
           onRemoveOne={() => removeOne(routeKey)}
@@ -295,7 +304,7 @@ export default function App() {
           onClose={() => select(null)} />
       )}
       {airport && (
-        <AirportSheet key={airport} plan={plan} result={result} code={airport}
+        <AirportSheet key={airport} pager={pagerFor(airportOrder, airport, (c) => select({ kind: 'airport', id: c }))} plan={plan} result={result} code={airport}
           onConnect={() => planRoute(airport)}
           onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
@@ -339,6 +348,7 @@ export default function App() {
         <SchedulePanel key={schedAirport?.airport ?? 'all'} plan={plan} result={result} now={clock.now()} selected={schedSel} preset={schedAirport}
           onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
           onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
+          onChange={(next, msg) => { update(next); setToast(msg); }}
           onClose={() => openTab(null)} />
       )}
       {showPanel === 'fleet' && (
@@ -415,14 +425,14 @@ export default function App() {
         <nav className="subnav" aria-label="分類">
           {(panel === 'fleet' || panel === 'schedule'
             ? [['fleet', '飛機'], ['schedule', '班表']]
-            : [['report', '報表'], ['airports', '機場'], ['airlines', '對手']]).map(([p, label]) => (
-              <button key={p} className={panel === p ? 'on' : ''} disabled={p === 'report' && !result} onClick={() => openTab(p as Panel)}>{label}</button>
+            : [['airports', '機場'], ['airlines', '對手']]).map(([p, label]) => (
+              <button key={p} className={panel === p ? 'on' : ''} onClick={() => openTab(p as Panel)}>{label}</button>
             ))}
         </nav>
       )}
       <nav className="tabbar" aria-label="主要導覽">
-        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['airlines', '對手']] as [Panel, string][]).map(([p, label]) => {
-          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : panel === p);
+        {([[null, '地圖'], ['routes', '航線'], ['fleet', '機隊'], ['airports', '市場']] as [Panel, string][]).map(([p, label]) => {
+          const active = !selection && (p === 'fleet' ? panel === 'fleet' || panel === 'schedule' : p === 'airports' ? panel === 'airports' || panel === 'airlines' : panel === p);
           return <button key={label} className={active ? 'on' : ''} onClick={() => openTab(p)} aria-current={active ? 'page' : undefined}>
             <TabIcon tab={p} /><span>{label}</span>
           </button>;
@@ -447,6 +457,7 @@ function TabIcon({ tab }: { tab: Panel }) {
     fleet: 'M2 13l8-2 2-7h2l-1 7 8 1v2l-8 1 1 4-2 1-3-4-7-1z',
     report: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
     airlines: 'M4 20h16 M6 20l4-16h3l-1 8h6l2 8',
+    market: 'M12 3a5 5 0 0 1 5 5c0 4-5 10-5 10S7 12 7 8a5 5 0 0 1 5-5z M12 6.5a1.6 1.6 0 1 0 0.01 0 M5 21h14',
   }[tab ?? 'map'];
   return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
@@ -524,14 +535,16 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
   );
 }
 
-function TopBar({ result, balance, history, theme, onTheme, onReset }: { result: NetworkResult | null; balance: number; history: DayRecord[]; theme: Theme; onTheme: () => void; onReset: () => void }) {
+function TopBar({ result, balance, history, theme, onTheme, onReset, onMoney, moneyOpen }: { result: NetworkResult | null; balance: number; history: DayRecord[]; theme: Theme; onTheme: () => void; onReset: () => void; onMoney: () => void; moneyOpen: boolean }) {
   const estimate = result ? (result.revenue - result.cost) / 7 : null;
   const last = history.at(-1);
   return (
     <div className="topbar">
       <div className="dashboard-brand"><span className="dashboard-mark" aria-hidden="true">✳</span><span><strong>航點</strong><small>WAYPOINT AIRLINES</small></span></div>
-      <div className="kpi main"><span className="label">累計損益</span><span className={`value ${balance >= 0 ? 'good' : 'bad'}`}>{money(balance)}</span></div>
-      <div className="kpi" title={last ? `上日已結算 ${money(last.revenue - last.cost)}` : '尚未結算'}><span className="label">預估損益／日</span><span className={`value ${estimate === null ? '' : estimate >= 0 ? 'good' : 'bad'}`}>{estimate === null ? '—' : money(estimate)}</span></div>
+      <button className={`money-btn${moneyOpen ? ' on' : ''}`} onClick={onMoney} disabled={!result} aria-expanded={moneyOpen} aria-label="財務報表">
+        <span className="kpi main"><span className="label">累計損益</span><span className={`value ${balance >= 0 ? 'good' : 'bad'}`}>{money(balance)}</span></span>
+        <span className="kpi" title={last ? `上日已結算 ${money(last.revenue - last.cost)}` : '尚未結算'}><span className="label">預估損益／日 <span className="money-chev" aria-hidden="true">›</span></span><span className={`value ${estimate === null ? '' : estimate >= 0 ? 'good' : 'bad'}`}>{estimate === null ? '—' : money(estimate)}</span></span>
+      </button>
       <div className="top-actions">
         <button onClick={onTheme} aria-label="切換主題">{theme === 'day' ? '夜' : '日'}</button>
         <button onClick={onReset} aria-label="重新開始">↺</button>

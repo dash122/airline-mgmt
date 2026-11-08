@@ -4,12 +4,12 @@ import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { rivalsBetween } from '../sim/competitors';
 
-import { units } from '../sim/schedule';
-import { bestFare, clampFare, fareCurve, FARE_MAX, FARE_MIN, FARE_STEP } from '../sim/fares';
+import { removeOneRoundTrip, units } from '../sim/schedule';
+import { bestFare, clampFare, fareCurve, FARE_STEP } from '../sim/fares';
 import { dayMark, dayShiftBetween } from '../sim/airports';
 import {
-  blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
-  type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
+  addRoundTrip, blockMinutes, competitionFor, DAY, flightsOn, hhmm, localMinutes, rotationInfo, routeProblem, utcFromLocal,
+  simulate, type Aircraft, type AircraftResult, type NetworkResult, type Plan, type RouteResult,
 } from '../sim/simulate';
 import { count, money, pct, short } from './format';
 import { frequencyLabel, routeHealth } from './route-health';
@@ -50,28 +50,41 @@ export function routeColor(key: string) {
 
 export type SheetSize = 'compact' | 'half' | 'full';
 
-export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className }: {
+/** Step through a list of things (your routes, your airports) without going back to the list. */
+export type Pager = { label: string; prev?: () => void; next?: () => void };
+
+export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className, pager }: {
   title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode; summary?: ReactNode; className?: string;
+  /** Swipe the top of the sheet sideways (or use the arrows) to move to the previous or next item. */
+  pager?: Pager;
 }) {
   const [s, setS] = useState<SheetSize>(size);
   const [showInfo, setShowInfo] = useState(false);
   // Drag the top of a sheet: up to expand, down to shrink, down from the smallest size to close.
-  const drag = useRef<{ y: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; moved: boolean; axis: 'x' | 'y' | null } | null>(null);
   const [pull, setPull] = useState(0);
+  const [slide, setSlide] = useState(0);
   const onDown = (e: RPointerEvent) => {
     if ((e.target as HTMLElement).closest('button:not(.grab), a, input, select, summary')) return;
-    drag.current = { y: e.clientY, moved: false };
+    drag.current = { x: e.clientX, y: e.clientY, moved: false, axis: null };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onMove = (e: RPointerEvent) => {
     const d = drag.current; if (!d) return;
-    const dy = e.clientY - d.y;
-    if (Math.abs(dy) > 6) d.moved = true;
-    setPull(Math.max(0, dy));
+    const dy = e.clientY - d.y, dx = e.clientX - d.x;
+    if (!d.axis && Math.hypot(dx, dy) > 6) { d.moved = true; d.axis = pager && Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y'; }
+    if (d.axis === 'x') setSlide((dx < 0 && pager?.next) || (dx > 0 && pager?.prev) ? dx : dx / 4);
+    else if (d.axis === 'y') setPull(Math.max(0, dy));
   };
   const onUp = (e: RPointerEvent) => {
-    const d = drag.current; drag.current = null; setPull(0);
+    const d = drag.current; drag.current = null; setPull(0); setSlide(0);
     if (!d || !d.moved) return;
+    if (d.axis === 'x') {
+      const dx = e.clientX - d.x;
+      if (dx < -60) pager?.next?.();
+      else if (dx > 60) pager?.prev?.();
+      return;
+    }
     const dy = e.clientY - d.y;
     if (Math.abs(dy) < 36) return;
     if (dy < 0) setS(s === 'compact' ? 'half' : 'full');
@@ -85,7 +98,8 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
       {over && <div className="scrim" onClick={onClose} />}
       <div className={`sheet ${s}${over ? ' over' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-label={title}
         style={pull ? { transform: `translateY(${pull}px)`, transition: 'none' } : undefined}>
-        <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); }}>
+        <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
+          style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
         <div className="sheet-head">
           <div className="grow">
@@ -93,6 +107,11 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
             {sub && <div className="sub">{sub}</div>}
           </div>
           {action}
+          {pager && (pager.prev || pager.next) && <span className="pager" role="group" aria-label="上一個或下一個">
+            <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個">‹</button>
+            <small>{pager.label}</small>
+            <button onClick={pager.next} disabled={!pager.next} aria-label="下一個">›</button>
+          </span>}
           <button className="close" onClick={onClose} aria-label="關閉">✕</button>
         </div>
         </div>
@@ -199,9 +218,9 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 type RouteTab = 'fare' | 'flights' | 'market' | 'times';
 
-export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net, size = 'compact' }: {
+export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne, onClose, onEditFlight, onCloseRoute, action, net, size = 'compact', pager }: {
   plan: Plan; routeKey: string; result?: RouteResult; net?: NetworkResult | null; onFare: (mult: number) => void; onAdd: () => void; onRemoveOne: () => void;
-  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode; size?: SheetSize;
+  onClose: () => void; onEditFlight: (acId: string, leg: number) => void; onCloseRoute: () => void; action?: ReactNode; size?: SheetSize; pager?: Pager;
 }) {
   const [a, b] = routeKey.split('-');
   const airlineLink = useContext(AirlineLink);
@@ -241,9 +260,18 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     : health.key === 'empty' ? { text: '座位比旅客多很多', acts: [...(daily > 1 ? [{ label: '減一班', icon: 'seat' as IconName, run: onRemoveOne }] : []), { label: '降價 5%', icon: 'down', run: () => setFare(fareMult - FARE_STEP) }] }
     : betterFare ? { text: '還有更賺的票價', acts: [{ label: `改成 NT$${count((m?.refFare ?? 0) * betterFare.mult)}`, icon: 'fare', run: () => setFare(betterFare.mult) }] }
     : { text: '載客和損益都不錯', acts: [] };
+  // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
+  const freqWhatIf = useMemo(() => {
+    if (!net) return null;
+    const base = net.revenue - net.cost;
+    const more = addRoundTrip(plan, a, b);
+    const fewer = removeOneRoundTrip(plan, routeKey, localMinutes);
+    const delta = (p: Plan) => { const r = simulate(p); return r.revenue - r.cost - base; };
+    return { add: 'error' in more ? null : delta(more.plan), remove: fewer ? delta(fewer) : null };
+  }, [plan, net, a, b, routeKey]);
   const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場'], ['times', '時刻']];
   return (
-    <Sheet size={size} className="route-sheet" summary={<div className="route-preview-summary">
+    <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
       <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
       <div className="route-preview-meta"><b>{frequencyLabel(daily)}</b><span>{result ? `${Math.round(result.pax).toLocaleString()} / ${Math.round(result.seats).toLocaleString()} 人／週` : '正在更新旅客數'}</span></div>
       <div className="route-preview-profit"><span>每週航段損益</span><b className={result && profit < 0 ? 'bad' : 'good'}>{result ? money(profit) : '—'}</b></div>
@@ -254,7 +282,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       </>}
       footer={<div className="route-freq">
         <span><small>班次</small><b>{frequencyLabel(daily)}</b></span>
-        <span className="pm"><button onClick={onRemoveOne} disabled={daily < 1} aria-label="減一班來回">−</button><button onClick={onAdd} aria-label="加一班來回">＋</button></span>
+        <span className="pm freq-pm">
+          <button onClick={onRemoveOne} disabled={daily < 1} aria-label={`減一班來回${freqWhatIf?.remove != null ? `，週損益 ${signed(freqWhatIf.remove)}` : ''}`}>−{freqWhatIf?.remove != null && <small className={freqWhatIf.remove >= 0 ? 'good' : 'bad'}>{signed(freqWhatIf.remove)}</small>}</button>
+          <button onClick={onAdd} aria-label={`加一班來回${freqWhatIf?.add != null ? `，週損益 ${signed(freqWhatIf.add)}` : ''}`}>＋{freqWhatIf?.add != null && <small className={freqWhatIf.add >= 0 ? 'good' : 'bad'}>{signed(freqWhatIf.add)}</small>}</button>
+        </span>
       </div>}>
       {advice && (
         <div className={`route-advice ${health.key}`}>
@@ -282,19 +313,10 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'fare' && <>
-        <div className="fare route-fare">
-          <div className="grow">
-            <div className="label">單程票價</div>
-            <div className="price">NT${count(fareNow)} <small>市場價 {pct(fareMult)}</small></div>
-          </div>
-          <div className="pm small">
-            <button onClick={() => setFare(fareMult - FARE_STEP)} disabled={fareMult <= FARE_MIN} aria-label="降價 5%">−5%</button>
-            <button onClick={() => setFare(fareMult + FARE_STEP)} disabled={fareMult >= FARE_MAX} aria-label="漲價 5%">+5%</button>
-          </div>
-        </div>
-        {curve.length > 2 && now && best && <Head info={<p>每個票價下整個航網的每週損益。圓點是現在的票價，★ 是最賺的。點或拖曲線就能改票價。</p>}>票價與損益</Head>}
-        {curve.length > 2 && now && best && <FareCurve curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare} />}
-        {betterFare && (health.key === 'full' || health.key === 'empty') && <button className="secondary" onClick={() => setFare(betterFare.mult)}>★ 改成最賺票價 NT${count((m?.refFare ?? 0) * betterFare.mult)}</button>}
+        {curve.length > 2 && now && best
+          ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
+              info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
+          : <div className="fare route-fare"><div className="grow"><div className="label">單程票價</div><div className="price">NT${count(fareNow)} <small>市場價 {pct(fareMult)}</small></div></div></div>}
       </>}
       {tab === 'flights' && <>
         {result && <DemandBar seats={result.seats} pax={result.pax} local={result.localPax} spill={result.spill} onSpill={tap('spill')} />}
@@ -317,46 +339,79 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   );
 }
 
+const signed = (n: number) => `${n >= 0 ? '+' : ''}${money(n)}`;
+
 /**
- * Weekly profit at every fare step, as a hill: the dot is today's fare, the flag the most profitable one.
- * Tap or drag along it to set the fare.
+ * The fare as something you drag. The readout and the change in profit, load and spill follow your finger;
+ * nothing is applied until you let go. Arrow keys step 5%.
  */
-function FareCurve({ curve, now, best, refFare, onPick }: { curve: FarePoint[]; now: FarePoint; best: FarePoint; refFare: number; onPick: (mult: number) => void }) {
-  const W = 320, H = 72, PAD = 6;
+function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FarePoint[]; now: FarePoint; best: FarePoint; refFare: number; onPick: (mult: number) => void; info?: ReactNode }) {
+  const [scrub, setScrub] = useState<FarePoint | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+  const W = 320, H = 112, PAD = 10;
   const lo = Math.min(...curve.map((p) => p.profit));
   const hi = Math.max(...curve.map((p) => p.profit));
   const span = hi - lo || 1;
   const x = (i: number) => PAD + ((W - 2 * PAD) * i) / (curve.length - 1);
-  const y = (v: number) => PAD + 4 + (H - 2 * PAD - 8) * (1 - (v - lo) / span);
+  const y = (v: number) => PAD + 6 + (H - 2 * PAD - 12) * (1 - (v - lo) / span);
   const pts = curve.map((p, i) => `${x(i).toFixed(1)},${y(p.profit).toFixed(1)}`);
   const iNow = curve.indexOf(now);
   const iBest = curve.indexOf(best);
-  const pick = (e: RPointerEvent<SVGSVGElement>) => {
+  const shown = scrub ?? now;
+  const iShown = curve.indexOf(shown);
+  const pointAt = (e: RPointerEvent<SVGSVGElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
     const fx = ((e.clientX - box.left) / box.width) * W;
     const i = Math.round(((fx - PAD) / (W - 2 * PAD)) * (curve.length - 1));
-    const p = curve[Math.max(0, Math.min(curve.length - 1, i))];
-    if (p !== now) onPick(p.mult);
+    return curve[Math.max(0, Math.min(curve.length - 1, i))];
   };
+  const commit = (p: FarePoint | null) => { setScrub(null); if (p && p !== now) onPick(p.mult); };
+  const step = (d: number) => { const p = curve[Math.max(0, Math.min(curve.length - 1, iNow + d))]; if (p !== now) onPick(p.mult); };
+  const dProfit = shown.profit - now.profit;
+  const changed = shown !== now;
   return (
-    <div className="fare-curve">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="slider" aria-label="票價與每週損益"
-        aria-valuemin={curve[0].mult * 100} aria-valuemax={curve[curve.length - 1].mult * 100} aria-valuenow={now.mult * 100}
-        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); pick(e); }}
-        onPointerMove={(e) => { if (e.buttons) pick(e); }}>
-        {lo < 0 && hi > 0 && <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="zero" />}
-        <polygon points={`${x(0)},${H} ${pts.join(' ')} ${x(curve.length - 1)},${H}`} className="area" />
-        <polyline points={pts.join(' ')} className="line" />
-        <line x1={x(iBest)} x2={x(iBest)} y1={y(best.profit)} y2={H} className="best-line" />
-        <circle cx={x(iBest)} cy={y(best.profit)} r={4} className="best" />
-        <line x1={x(iNow)} x2={x(iNow)} y1={0} y2={H} className="now-line" />
-        <circle cx={x(iNow)} cy={y(now.profit)} r={5.5} className="now" />
-      </svg>
-      <div className="fare-axis">
-        <span>NT${count(refFare * curve[0].mult)}</span>
-        <span className="best-label" style={{ left: `${Math.min(80, Math.max(20, (100 * x(iBest)) / W))}%` }}>★ NT${count(refFare * best.mult)}</span>
-        <span>NT${count(refFare * curve[curve.length - 1].mult)}</span>
+    <div className={`fare-control${scrub ? ' scrubbing' : ''}`}>
+      <div className="fare-read">
+        <div className="fare-price">
+          <small>單程票價{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</small>
+          <b>NT${count(refFare * shown.mult)}</b>
+          <small>市場價 {pct(shown.mult)}{shown === best && <span className="good"> · ★ 最賺</span>}</small>
+        </div>
+        <div className="fare-deltas" aria-live="polite">
+          <span><small>{changed ? '週損益變化' : '網路週損益'}</small><b className={!changed ? '' : dProfit >= 0 ? 'good' : 'bad'}>{changed ? signed(dProfit) : money(now.profit)}</b></span>
+          <span><small>載客率</small><b className={tone(shown.loadFactor)}>{changed ? `${pct(now.loadFactor)}→${pct(shown.loadFactor)}` : pct(shown.loadFactor)}</b></span>
+          <span><small>溢出</small><b>{short(shown.spill)}</b></span>
+        </div>
       </div>
+      {info && showInfo && <div className="info-note" onClick={() => setShowInfo(false)}>{info}</div>}
+      <div className="fare-curve">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="slider" tabIndex={0} aria-label="票價，拖動試算每週損益"
+          aria-valuemin={curve[0].mult * 100} aria-valuemax={curve[curve.length - 1].mult * 100} aria-valuenow={Math.round(shown.mult * 100)}
+          aria-valuetext={`NT$${count(refFare * shown.mult)}`}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); step(-1); }
+            if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); step(1); }
+          }}
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); setScrub(pointAt(e)); }}
+          onPointerMove={(e) => { if (scrub) setScrub(pointAt(e)); }}
+          onPointerUp={(e) => { if (scrub) commit(pointAt(e)); }}
+          onPointerCancel={() => setScrub(null)}>
+          {lo < 0 && hi > 0 && <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="zero" />}
+          <polygon points={`${x(0)},${H} ${pts.join(' ')} ${x(curve.length - 1)},${H}`} className="area" />
+          <polyline points={pts.join(' ')} className="line" />
+          <line x1={x(iBest)} x2={x(iBest)} y1={y(best.profit)} y2={H} className="best-line" />
+          <circle cx={x(iBest)} cy={y(best.profit)} r={4} className="best" />
+          {changed && <circle cx={x(iNow)} cy={y(now.profit)} r={4.5} className="was" />}
+          <line x1={x(iShown)} x2={x(iShown)} y1={0} y2={H} className="now-line" />
+          <circle cx={x(iShown)} cy={y(shown.profit)} r={scrub ? 9 : 7} className="now" />
+        </svg>
+        <div className="fare-axis">
+          <span style={{ visibility: iBest / (curve.length - 1) < 0.3 ? 'hidden' : undefined }}>NT${count(refFare * curve[0].mult)}</span>
+          <span className="best-label" style={{ left: `${Math.min(86, Math.max(14, (100 * x(iBest)) / W))}%` }}>★ NT${count(refFare * best.mult)}</span>
+          <span style={{ visibility: iBest / (curve.length - 1) > 0.7 ? 'hidden' : undefined }}>NT${count(refFare * curve[curve.length - 1].mult)}</span>
+        </div>
+      </div>
+      {best !== now && !scrub && <button className="secondary fare-best" onClick={() => onPick(best.mult)}>★ 改成最賺票價 NT${count(refFare * best.mult)} <b className="good">{signed(best.profit - now.profit)}</b></button>}
     </div>
   );
 }

@@ -112,6 +112,7 @@ const PATHS = {
   lock: 'M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3',
   calendar: 'M4 6h16v14H4z M4 10h16 M8 3.5V7 M16 3.5V7',
   link: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1 M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
+  filter: 'M4 6h16 M7 12h10 M10 18h4',
 } as const;
 export type IconName = keyof typeof PATHS;
 

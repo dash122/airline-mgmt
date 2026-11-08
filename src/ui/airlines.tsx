@@ -57,6 +57,8 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
   const [continent, setContinent] = useState('all');
   const [sort, setSort] = useState<SortBy>('relevance');
   const [q, setQ] = useState('');
+  const [more, setMore] = useState(false);
+  const activeFilters = (continent !== 'all' ? 1 : 0) + (kind !== 'any' ? 1 : 0) + (sort !== 'relevance' ? 1 : 0);
   const query = q.trim().toUpperCase();
   const match = (net: AirlineNetwork) => (kind === 'any' || net.airline.kind === kind)
     && (continent === 'all' || CONTINENT_COUNTRIES[continent]?.includes(net.airline.country)) && (!query
@@ -76,25 +78,35 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
   });
   const homeLabel = CONTINENTS.find((c) => CONTINENT_COUNTRIES[c.id].includes(AIRPORT_BY_CODE[plan.base].country))?.label ?? '全球';
   return (
-    <Sheet size="full" className="airlines-directory" title="航空公司" sub={<span className="ins">{list.length} 家符合 · {homeLabel}航空市場</span>} onClose={onClose} info={<p>瀏覽航空公司的航線網、樞紐和估算機隊。選擇航空公司即可開啟完整資料。</p>}>
+    <Sheet size="full" className="airlines-directory" title={`航空公司 · ${list.length}`} sub={<span className="ins">{homeLabel}航空市場</span>} onClose={onClose} info={<p>瀏覽航空公司的航線網、樞紐和估算機隊。選擇航空公司即可開啟完整資料。</p>}>
       <div className="directory-search"><span aria-hidden="true">⌕</span><input className="search" type="search" placeholder="搜尋航空公司、國家或機場" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜尋航空公司" />{q && <button onClick={() => setQ('')} aria-label="清除搜尋">清除</button>}</div>
-      <div className="directory-section-heading"><span>快速篩選</span><small>{list.length} / {filter === 'mine' ? mine.length : all.length}</small></div>
-      <div className="seg two directory-scope" role="tablist" aria-label="航空公司範圍">
-        <button role="tab" aria-selected={filter === 'mine'} className={filter === 'mine' ? 'on' : ''} onClick={() => setFilter('mine')}>與我重疊 <b>{mine.length}</b></button>
-        <button role="tab" aria-selected={filter === 'all'} className={filter === 'all' ? 'on' : ''} onClick={() => setFilter('all')}>全部航空 <b>{all.length}</b></button>
+      <div className="chips scroll dir-bar" role="toolbar" aria-label="篩選">
+        <button className={`chip${filter === 'mine' ? ' strong' : ''}`} aria-pressed={filter === 'mine'} onClick={() => setFilter('mine')}>與我重疊 {mine.length}</button>
+        <button className={`chip${filter === 'all' ? ' strong' : ''}`} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>全部 {all.length}</button>
+        <span className="sep" aria-hidden="true" />
+        <button className={`chip filter-chip${more || activeFilters ? ' on' : ''}`} aria-expanded={more} onClick={() => setMore(!more)}>
+          <Icon n="filter" /> 篩選{activeFilters ? ` ${activeFilters}` : ''}
+        </button>
+        {continent !== 'all' && <button className="chip strong" onClick={() => setContinent('all')} aria-label="清除地區">{CONTINENTS.find((c) => c.id === continent)?.label} ✕</button>}
+        {kind !== 'any' && <button className="chip strong" onClick={() => setKind('any')} aria-label="清除類型">{KIND_NAMES[kind]} ✕</button>}
       </div>
-      <div className="directory-filter-label">地區</div>
-      <div className="chips scroll kind-chips directory-chips">
-        <button className={`chip${continent === 'all' ? ' strong' : ''}`} onClick={() => setContinent('all')} aria-pressed={continent === 'all'}>全球</button>
-        {CONTINENTS.map((c) => <button key={c.id} className={`chip${continent === c.id ? ' strong' : ''}`} onClick={() => setContinent(c.id)} aria-pressed={continent === c.id}>{c.label}</button>)}
-      </div>
-      <div className="directory-toolbar"><div className="chips scroll kind-chips">
-        {(['any', 'full', 'low', 'regional'] as KindFilter[]).map((k) => <button key={k} className={`chip${kind === k ? ' strong' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}>{k === 'any' ? '全部類型' : KIND_NAMES[k]}</button>)}
-      </div><label>排序<select value={sort} onChange={(e) => setSort(e.target.value as SortBy)} aria-label="排序方式">
-        <option value="relevance">相關性</option><option value="flights">班次最多</option><option value="routes">航線最多</option><option value="name">名稱 A–Z</option>
-      </select></label></div>
+      {more && <div className="dir-filters">
+        <div className="directory-filter-label">地區</div>
+        <div className="chips wrap">
+          <button className={`chip${continent === 'all' ? ' strong' : ''}`} onClick={() => setContinent('all')} aria-pressed={continent === 'all'}>全球</button>
+          {CONTINENTS.map((c) => <button key={c.id} className={`chip${continent === c.id ? ' strong' : ''}`} onClick={() => setContinent(c.id)} aria-pressed={continent === c.id}>{c.label}</button>)}
+        </div>
+        <div className="directory-filter-label">類型</div>
+        <div className="chips wrap">
+          {(['any', 'full', 'low', 'regional'] as KindFilter[]).map((k) => <button key={k} className={`chip${kind === k ? ' strong' : ''}`} onClick={() => setKind(k)} aria-pressed={kind === k}>{k === 'any' ? '全部' : KIND_NAMES[k]}</button>)}
+        </div>
+        <div className="directory-filter-label">排序</div>
+        <div className="chips wrap">
+          {([['relevance', '相關性'], ['flights', '班次最多'], ['routes', '航線最多'], ['name', '名稱']] as [SortBy, string][]).map(([k, label]) => <button key={k} className={`chip${sort === k ? ' strong' : ''}`} onClick={() => setSort(k)} aria-pressed={sort === k}>{label}</button>)}
+        </div>
+        <button className="secondary" onClick={() => setMore(false)}>看 {list.length} 家</button>
+      </div>}
       {filter === 'mine' && !query && !flown && mine.length > 0 && <div className="hint"><Icon n="base" /> {plan.base}</div>}
-      <div className="directory-results-label">{continent === 'all' ? '所有地區' : CONTINENTS.find((c) => c.id === continent)?.label} <small>{list.length} 家</small></div>
       <div className="airline-list">{list.map(({ net, routes, airports }) => (
         <button className="airline-card" key={net.airline.id} onClick={() => onPick(net.airline.id)}>
           <Tail net={net} size={42} /><span className="airline-card-main">
