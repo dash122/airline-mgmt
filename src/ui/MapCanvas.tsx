@@ -94,8 +94,7 @@ export default function MapCanvas(props: Props) {
   const viewRef = useRef<View | null>(null);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const dragRef = useRef<{ from: string; x: number; y: number } | null>(null);
-  const landCache = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
-  const panTarget = useRef<{ cx: number; cy: number; scale?: number } | null>(null);
+    const panTarget = useRef<{ cx: number; cy: number; scale?: number } | null>(null);
   const aircraftCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Fit a competitor's whole network (or its picked route) into the part of the map the sheet leaves free.
@@ -158,7 +157,8 @@ export default function MapCanvas(props: Props) {
       if (!rect.width || !rect.height) return;
       // A 5K Retina display has far more pixels than this animated map needs.
       // Keeping its backing store near 1440p cuts map fill and copy work sharply.
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.25, 2560 / rect.width, 1440 / rect.height);
+      // Gestures only blit a cached bitmap, so phones can afford a sharp 2x.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2, 2560 / rect.width, 1440 / rect.height);
       sizeRef.current = { w: rect.width, h: rect.height, dpr };
       const width = Math.round(rect.width * dpr), height = Math.round(rect.height * dpr);
       if (canvas.width === width && canvas.height === height) return;
@@ -182,37 +182,36 @@ export default function MapCanvas(props: Props) {
     };
 
     let worldOffset = 0;
-    const screen = (lat: number, lon: number) => toScreen(viewRef.current!, sizeRef.current.w, sizeRef.current.h, lat, lon + worldOffset);
+    // Coordinate frame of whatever is being drawn: the viewport, or the larger cached scene.
+    let curW = sizeRef.current.w, curH = sizeRef.current.h;
+    const screen = (lat: number, lon: number) => toScreen(viewRef.current!, curW, curH, lat, lon + worldOffset);
+    // The scene (land, routes, airports, labels) is rendered into an off-screen bitmap
+    // with a margin around the viewport. While the camera moves, that bitmap is just
+    // scaled and translated onto the map, which costs one drawImage per frame. The
+    // crisp scene is rebuilt once the camera settles (or the bitmap stops covering it).
+    const SCENE_MARGIN = 0.2;
+    const sceneCanvas = document.createElement('canvas');
+    const sceneContext = sceneCanvas.getContext('2d')!;
 
-    const drawLand = (pal: (typeof PALETTE)['day']) => {
-      const { w, h, dpr } = sizeRef.current;
+    const drawLand = (c: CanvasRenderingContext2D, pal: (typeof PALETTE)['day'], w: number, h: number, dpr: number) => {
       const v = viewRef.current!;
-      const key = `${w}x${h}@${dpr}:${v.cx.toFixed(4)},${v.cy.toFixed(4)},${v.scale.toFixed(4)}:${propsRef.current.theme}`;
-      if (landCache.current?.key === key) return landCache.current.canvas;
-      const off = landCache.current?.canvas ?? document.createElement('canvas');
-      const width = Math.round(w * dpr), height = Math.round(h * dpr);
-      if (off.width !== width) off.width = width;
-      if (off.height !== height) off.height = height;
-      const c = off.getContext('2d')!;
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.fillStyle = pal.sea;
       c.fillRect(0, 0, w, h);
       const paths = geographyPaths();
       for (const offset of worldCopies(v, w)) {
-      c.setTransform(dpr * v.scale, 0, 0, dpr * v.scale,
-        dpr * (w / 2 + (offset - v.cx) * v.scale), dpr * (h / 2 + v.cy * v.scale));
-      c.fillStyle = pal.land;
-      c.fill(paths.land);
-      c.strokeStyle = pal.coast;
-      c.lineWidth = 0.8 / v.scale;
-      c.stroke(paths.land);
-      c.setLineDash([3 / v.scale, 3 / v.scale]);
-      c.strokeStyle = pal.border;
-      c.stroke(paths.borders);
-      c.setLineDash([]);
+        c.setTransform(dpr * v.scale, 0, 0, dpr * v.scale,
+          dpr * (w / 2 + (offset - v.cx) * v.scale), dpr * (h / 2 + v.cy * v.scale));
+        c.fillStyle = pal.land;
+        c.fill(paths.land);
+        c.strokeStyle = pal.coast;
+        c.lineWidth = 0.8 / v.scale;
+        c.stroke(paths.land);
+        c.setLineDash([3 / v.scale, 3 / v.scale]);
+        c.strokeStyle = pal.border;
+        c.stroke(paths.borders);
+        c.setLineDash([]);
       }
-      landCache.current = { key, canvas: off };
-      return off;
     };
 
     // Keep labels, airports and routes out of the aircraft animation hot path.
@@ -225,10 +224,14 @@ export default function MapCanvas(props: Props) {
     let flights: { acId: string; cycle: number; dep: number; block: number; points: [number, number][] }[] = [];
     let lastPaint = -Infinity;
     let lastFrame = 0;
+    let lastMove = 0;
+    let lastRebuild = -Infinity;
+    let seenView: View | null = null;
     const draw = (time: number) => {
       raf = requestAnimationFrame(draw);
       if (document.hidden || !viewRef.current) return;
       const v0 = viewRef.current!;
+      if (!seenView || v0.cx !== seenView.cx || v0.cy !== seenView.cy || v0.scale !== seenView.scale) { lastMove = time; seenView = { ...v0 }; }
       const viewChanged = !sceneView || v0.cx !== sceneView.cx || v0.cy !== sceneView.cy || v0.scale !== sceneView.scale;
       // Gestures and automatic nudges follow the display refresh rate. Only
       // aircraft animation is capped to 30 fps when the camera is stationary.
@@ -257,16 +260,31 @@ export default function MapCanvas(props: Props) {
         } else viewRef.current = { cx: nx, cy: ny, scale: ns };
       }
       const v = viewRef.current!;
-      const key = JSON.stringify([w, h, dpr, v.cx, v.cy, v.scale, p.theme, p.selection, p.connectFrom, p.airline, p.hint, !!dragRef.current]);
-      const rebuild = key !== sceneKey || p.plan !== scenePlan || p.result !== sceneResult || analysisRef.current !== sceneAnalysis || !!dragRef.current;
-      if (!rebuild && (p.clock.speed === 0 || !p.plan.fleet.some(ac => ac.legs.length))) return;
-      ctx = mapContext;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const key = JSON.stringify([w, h, dpr, p.theme, p.selection, p.connectFrom, p.airline, p.hint]);
+      const mx = Math.round(w * SCENE_MARGIN), my = Math.round(h * SCENE_MARGIN);
+      const W = w + 2 * mx, H = h + 2 * my;
+      const viewMoved = !sceneView || v.cx !== sceneView.cx || v.cy !== sceneView.cy || v.scale !== sceneView.scale;
+      let rebuild = key !== sceneKey || p.plan !== scenePlan || p.result !== sceneResult || analysisRef.current !== sceneAnalysis;
+      let covered = true;
+      if (!rebuild && viewMoved) {
+        const r = v.scale / sceneView!.scale;
+        const x = w / 2 + (sceneView!.cx - v.cx) * v.scale - W * r / 2, y = h / 2 + (v.cy - sceneView!.cy) * v.scale - H * r / 2;
+        covered = x <= 0 && y <= 0 && x + W * r >= w && y + H * r >= h;
+        if (time - lastMove > 100) rebuild = true;
+        else if (time - lastRebuild > 200 && (!covered || r < 0.5 || r > 2)) rebuild = true;
+      }
+      if (!rebuild && !viewMoved && !dragRef.current && (p.clock.speed === 0 || !p.plan.fleet.some(ac => ac.legs.length))) return;
       if (rebuild) {
-        ctx.drawImage(drawLand(pal), 0, 0);
+        const sw = Math.round(W * dpr), sh = Math.round(H * dpr);
+        if (sceneCanvas.width !== sw) sceneCanvas.width = sw;
+        if (sceneCanvas.height !== sh) sceneCanvas.height = sh;
+        ctx = sceneContext;
+        curW = W; curH = H;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        drawLand(ctx, pal, W, H, dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        for (const offset of worldCopies(v, w)) {
+        for (const offset of worldCopies(v, W)) {
         worldOffset = offset;
         // Competitor routes from the selected airport, in each airline's colour (busiest airline wins).
         const rivalFocus = p.selection?.kind === 'airport' && !p.hint?.length ? p.selection.id : null;
@@ -294,7 +312,7 @@ export default function MapCanvas(props: Props) {
           for (const r of net.routes) {
             const picked = p.airline?.route === r.key;
             const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
-            if (!picked && pts.every(([x, y]) => x < -20 || y < -20 || x > w + 20 || y > h + 20)) continue;
+            if (!picked && pts.every(([x, y]) => x < -20 || y < -20 || x > W + 20 || y > H + 20)) continue;
             ctx.beginPath();
             pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
             ctx.lineCap = 'round';
@@ -386,21 +404,6 @@ export default function MapCanvas(props: Props) {
           }
         }
 
-        // Rubber band while dragging a new route
-        const drag = dragRef.current;
-        if (drag && AIRPORT_BY_CODE[drag.from].lon + worldOffset === nearestLongitude(AIRPORT_BY_CODE[drag.from].lon, v.cx)) {
-          const A = AIRPORT_BY_CODE[drag.from];
-          const [ax, ay] = screen(A.lat, A.lon);
-          ctx.beginPath();
-          ctx.moveTo(ax, ay);
-          ctx.lineTo(drag.x, drag.y);
-          ctx.strokeStyle = pal.sel;
-          ctx.lineWidth = 3;
-          ctx.setLineDash([6, 5]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-
         // Airports
         const inPlan = new Set([...pairs.flatMap((r) => [r.a, r.b]), ...(p.plan.codeshares ?? []).flatMap((c) => c.key.split('-'))]);
         const hinted = new Set((p.hint ?? []).flat());
@@ -412,7 +415,7 @@ export default function MapCanvas(props: Props) {
         const labels: { prio: number; text: string; x: number; y: number }[] = [];
         for (const a of AIRPORTS) {
           const [x, y] = screen(a.lat, a.lon);
-          if (x < -40 || y < -40 || x > w + 40 || y > h + 40) continue;
+          if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
           const r = airportMarkerRadius(a);
           const isBase = a.code === p.plan.base;
           const selected = (p.selection?.kind === 'airport' && p.selection.id === a.code) || p.connectFrom === a.code;
@@ -459,11 +462,25 @@ export default function MapCanvas(props: Props) {
           ctx.fillText(l.text, l.x, l.y);
         }
         }
+        curW = w; curH = h;
+        worldOffset = 0;
         sceneKey = key;
         scenePlan = p.plan;
         sceneResult = p.result;
         sceneAnalysis = analysisRef.current;
         sceneView = { ...v };
+        lastRebuild = time;
+      }
+      if (rebuild || viewMoved) {
+        const sv = sceneView!, r = v.scale / sv.scale;
+        const dw = W * r, dh = H * r;
+        mapContext.setTransform(1, 0, 0, 1, 0, 0);
+        if (!covered) {
+          mapContext.fillStyle = pal.sea;
+          mapContext.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        mapContext.drawImage(sceneCanvas, 0, 0, sceneCanvas.width, sceneCanvas.height,
+          (w / 2 + (sv.cx - v.cx) * v.scale - dw / 2) * dpr, (h / 2 + (v.cy - sv.cy) * v.scale - dh / 2) * dpr, dw * dpr, dh * dpr);
       }
       ctx = aircraftContext;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -471,6 +488,21 @@ export default function MapCanvas(props: Props) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       for (const offset of worldCopies(v, w)) {
         worldOffset = offset;
+    // Rubber band while dragging a new route
+    const drag = dragRef.current;
+    if (drag && AIRPORT_BY_CODE[drag.from].lon + worldOffset === nearestLongitude(AIRPORT_BY_CODE[drag.from].lon, v.cx)) {
+      const A = AIRPORT_BY_CODE[drag.from];
+      const [ax, ay] = screen(A.lat, A.lon);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(drag.x, drag.y);
+      ctx.strokeStyle = pal.sel;
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
         // Aircraft, placed by the game clock.
         const now = p.clock.now();
         for (const flight of flights) {
@@ -485,6 +517,7 @@ export default function MapCanvas(props: Props) {
             const i = Math.min(ARC_STEPS - 1, Math.floor(f));
             const [x0, y0] = screen(pts[i][0], pts[i][1]), [x1, y1] = screen(pts[i + 1][0], pts[i + 1][1]);
             const x = x0 + (x1 - x0) * (f - i), y = y0 + (y1 - y0) * (f - i);
+            if (x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
