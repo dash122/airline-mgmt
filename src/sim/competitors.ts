@@ -371,8 +371,13 @@ function departureTimes(key: string, freq: number): number[] {
 const DAY_MIN = 24 * 60;
 const wrap = (min: number) => ((Math.round(min) % DAY_MIN) + DAY_MIN) % DAY_MIN;
 const round5 = (min: number) => Math.round(min / 5) * 5;
-/** Earliest and latest local departure a rival schedules. */
-const FIRST_DEP = 6 * 60, LAST_DEP = 23 * 60 + 30;
+/**
+ * Earliest and latest local departure a rival schedules: any time in the day, so long-haul flights can leave in the
+ * small hours when that lands well (`departureQuality` already marks those departures down, so they are rare).
+ */
+const FIRST_DEP = 0, LAST_DEP = 23 * 60 + 55;
+/** Local times a feeder flight into a hub is allowed to leave at: ordinary hours, not the middle of the night. */
+const FEED_FIRST = 6 * 60 + 30, FEED_LAST = 22 * 60 + 30;
 /**
  * Departure waves at an airline's hubs and bases (local time). Flights in arrive about an hour before a wave and
  * flights out leave in it, so travellers can connect, as at real hubs.
@@ -429,7 +434,7 @@ function scheduleTimes(al: Airline, from: Airport, to: Airport, distKm: number, 
   if (al.bases.includes(to.code)) {
     // Times at `from` that land about an hour before each wave at the hub, where those are sensible local times.
     const block = flightMinutes(from, to, RIVAL_JET_KMH) + to.utcOffset - from.utcOffset;
-    const feeds = HUB_WAVES.map((w) => wrap(w - WAVE_FEED_MIN - block)).filter((d) => d >= FIRST_DEP + 30 && d <= LAST_DEP - 60).sort((x, y) => x - y);
+    const feeds = HUB_WAVES.map((w) => wrap(w - WAVE_FEED_MIN - block)).filter((d) => d >= FEED_FIRST && d <= FEED_LAST).sort((x, y) => x - y);
     if (feeds.length >= Math.min(perDay, 3)) return within(spread(feeds, perDay).map((d, i) => d - jitter(i, 20)));
   }
   return departureTimes(key, freq);

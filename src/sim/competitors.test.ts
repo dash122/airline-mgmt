@@ -88,14 +88,21 @@ describe('competitor airlines', () => {
   });
 
   test('existing service in each market is split between airlines without losing flights', () => {
+    let early = 0;
     for (const m of markets().values()) {
       if (m.rivalFreq <= 0) continue;
       const out = rivalsFrom(m.a, m.b);
       expect(out.length).toBeGreaterThan(0);
       const total = out.reduce((s, x) => s + x.freq, 0);
       expect(Math.abs(total - m.rivalFreq)).toBeLessThanOrEqual(out.length);
-      for (const s of out) for (const t of s.times) expect(t).toBeGreaterThanOrEqual(6 * 60);
+      for (const s of out) for (const t of s.times) {
+        expect(t).toBeGreaterThanOrEqual(0);
+        expect(t).toBeLessThan(24 * 60);
+        if (t < 6 * 60) early++;
+      }
     }
+    // Departures are no longer held to 06:00 or later: some long-haul flights leave in the small hours.
+    expect(early).toBeGreaterThan(0);
   });
 
   test('a busy route has several airlines, low-cost ones cheaper than full-service', () => {
