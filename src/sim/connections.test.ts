@@ -27,3 +27,20 @@ describe('route connections', () => {
     expect(routeConnections(null, 'HKG', 'YVR')).toEqual([]);
   });
 });
+
+describe('route connections over two stops', () => {
+  // A CAN→HKG→JFK→MIA trip is listed at both of its transfer airports, with the same stops.
+  const stops = ['CAN', 'HKG', 'JFK', 'MIA'];
+  const flow = { from: 'CAN', to: 'MIA', pax: 12, long: 0, stopover: 0, stops };
+  const net2 = (transfers: Record<string, typeof flow[]>) => ({
+    transfers: Object.fromEntries(Object.entries(transfers).map(([via, flows]) => [via, { pax: 0, long: 0, stopover: 0, flows }])),
+  }) as unknown as NetworkResult;
+
+  test('lists a two-stop journey once, under the stop on the route it rides', () => {
+    const n = net2({ HKG: [flow], JFK: [flow] });
+    expect(routeConnections(n, 'HKG', 'CAN')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', pax: 12 }]);
+    expect(routeConnections(n, 'HKG', 'JFK')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', pax: 12 }]);
+    expect(routeConnections(n, 'JFK', 'MIA')).toEqual([{ from: 'CAN', to: 'MIA', via: 'JFK', pax: 12 }]);
+    expect(routeConnections(n, 'CAN', 'MIA')).toEqual([]);
+  });
+});
