@@ -2448,3 +2448,58 @@ b, strong, .value, .price { font-variant-numeric: tabular-nums; }
   .base-grid button:hover { transform: none; }
   .start-choice .fine { margin: 10px 4px 0; font-size: var(--fs-2xs); }
 }
+
+/* ---------- Compact, Mac-like density (2026-11-08, second pass) ----------
+   Controls are 32px with a 44px touch area (::after); lists are single-line rows with the secondary
+   facts on one grey line; section headers are small grey text; chrome (sub-tabs, sheet head) is thinner. */
+@media (max-width: 819px) {
+  .app.has-subnav { --subnav-h: 42px; }
+  .subnav { padding: 5px 12px; }
+  .subnav::before { inset: 5px 12px; }
+  .subnav button { min-height: 32px; font-size: var(--fs-sm); }
+  .subnav button::after { inset: -6px 0; }
+
+  .seg button, .seg.two button, .seg.three button, .seg.route-tabs button { min-height: 32px; padding: 0 4px; font-size: var(--fs-sm); position: relative; }
+  .seg button::after { content: ''; position: absolute; inset: -6px 0; }
+  .chip, .directory-chips .chip, .airport-route-filters .chip, .route-tools .chip, .chips .chip { min-height: 32px; padding: 0 12px; font-size: var(--fs-sm); position: relative; }
+  .chip::after { content: ''; position: absolute; inset: -6px -2px; }
+  .chips.scroll { gap: 6px; }
+
+  .sheet-head, .airport-sheet .sheet-head { padding: 10px 8px 2px 16px; }
+  .sheet-head h3, .airport-sheet .sheet-head h3 { font-size: 20px; }
+  .sheet-body, .airport-sheet .sheet-body { gap: 8px; padding: 4px 12px 12px; }
+  .viewopts { gap: 8px; }
+
+  /* Timetable rows: time, route, one grey line of facts, load pill. */
+  .timetable li { gap: 10px; padding: 6px 0; min-height: 46px; }
+  .timetable .t { min-width: 46px; font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; }
+  .timetable .name b { font-size: var(--fs-base); font-weight: 600; line-height: 1.25; }
+  .timetable .name small { display: flex; flex-wrap: nowrap; gap: 0 8px; overflow: hidden; white-space: nowrap; line-height: 1.3; }
+  .timetable .name small > * { flex: none; }
+  .timetable .name small > :last-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .timetable .pill { flex: none; }
+  .timetable .chev { color: var(--line-strong); }
+
+  /* Airport/group headers: small grey section label with the count on the right. */
+  .group { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .group-head { padding: 8px 4px 0; border: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
+  .group-head .grow { color: var(--text); font-weight: 700; }
+  .group-head small { font-size: var(--fs-xs); }
+  .group-head .chev { font-size: var(--fs-2xs); }
+
+  /* Route rows and tiles: a little tighter. */
+  .route-row-main { padding: 7px 6px 7px 12px; }
+  .route-kpis button { min-height: 62px; padding: 8px 11px; }
+  .airport-glance > div { padding: 7px 10px; }
+  .route-advice { padding: 8px 10px; gap: 6px; }
+  button.primary, .primary.wide, .airport-cta { min-height: 40px; }
+  .stat { padding: 8px 10px; }
+  .markets li, .report li, .fleet li { padding-top: 7px; padding-bottom: 7px; }
+  .stations li { padding: 6px 0; }
+  .airline-card { padding: 7px 0; }
+  .airline-card { min-height: 0; padding: 8px 0; gap: 10px; }
+  .airline-card-main { gap: 2px; }
+  .airline-card-title em { border: 0; background: var(--fill-2); }
+  .airline-card-stats { gap: 2px 10px; }
+  .dir-bar, .directory-search { margin: 0; }
+}

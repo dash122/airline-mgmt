@@ -109,7 +109,7 @@ export function AirlinesPanel({ plan, onPick, onClose }: { plan: Plan; onPick: (
       {filter === 'mine' && !query && !flown && mine.length > 0 && <div className="hint"><Icon n="base" /> {plan.base}</div>}
       <div className="airline-list">{list.map(({ net, routes, airports }) => (
         <button className="airline-card" key={net.airline.id} onClick={() => onPick(net.airline.id)}>
-          <Tail net={net} size={42} /><span className="airline-card-main">
+          <Tail net={net} size={36} /><span className="airline-card-main">
             <span className="airline-card-title"><b>{net.airline.name}</b><em>{KIND_NAMES[net.airline.kind]}</em></span>
             <small>{countryName(net.airline.country)} <span>·</span> 樞紐 {hubCodes(net) || '—'}</small>
             <span className="airline-card-stats"><span><b>{short(net.flights)}</b> 班/週</span><span><b>{net.routes.length}</b> 條航線</span>{partnerCount(net.airline.id) > 0 ? <i className="partner"><Icon n="link" /> 共享 {partnerCount(net.airline.id)} 條</i> : routes.length > 0 ? <i>{routes.length} 條同線</i> : airports.length > 0 ? <i>{airports.length} 個同機場</i> : null}</span>
