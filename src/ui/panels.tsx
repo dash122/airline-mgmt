@@ -2,7 +2,7 @@ import { CodeshareHub } from './codeshare';
 import type { DayRecord } from './clock';
 import { ScheduleBoard, shiftText } from './ScheduleBoard';
 import { useMemo, useState } from 'react';
-import { AIRCRAFT, classRank, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
+import { AIRCRAFT, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from '../sim/markets';
 import { byAirport, dayMark, timeline, zoneDiffHours, type ClockBasis } from '../sim/airports';
@@ -11,7 +11,7 @@ import {
   unitOf, type Placement, type Unit,
 } from '../sim/schedule';
 import {
-  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, simulate, topMarketsFrom, utcFromLocal,
+  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, runwayFits, simulate, topMarketsFrom, utcFromLocal,
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
 import { count, money, pct } from './format';
@@ -279,7 +279,7 @@ const seatKmCost = (t: AircraftModel) => {
 export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (type: AircraftModel, to: string | null) => void; onClose: () => void }) {
   const routes = routePairs(plan);
   const base = AIRPORT_BY_CODE[plan.base];
-  const fitsBase = (t: AircraftModel) => classRank(AIRCRAFT[t].cls) <= classRank(base.maxClass);
+  const fitsBase = (t: AircraftModel) => runwayFits(AIRCRAFT[t], base);
   const [pick, setPick] = useState<AircraftModel>(() => MODEL_ORDER.find((t) => t === 'A20N' && fitsBase(t)) ?? MODEL_ORDER.find(fitsBase)!);
   const dests = topMarketsFrom(plan.base, plan, 40).filter((m) => !routeProblem(plan.base, m.to, pick)).slice(0, 8);
   const flyable = (t: AircraftModel) => routes.filter((r) => !routeProblem(r.a, r.b, t)).length;

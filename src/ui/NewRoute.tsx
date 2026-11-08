@@ -1,6 +1,6 @@
 import { createComputeClient } from './compute-client';
-import { useEffect, useMemo, useState } from 'react';
-import { AIRCRAFT } from '../data/aircraft';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AIRCRAFT, CLASS_NAMES, CLASS_ORDER, type AircraftClass } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { marketBetween, pairKey } from '../sim/markets';
 import { marketSplit } from '../sim/share';
@@ -171,6 +171,88 @@ function DestRow({ from, d, onPick }: { from: string; d: Destination; onPick: ()
   );
 }
 
+// ---------- Aircraft choice ----------
+
+/**
+ * The aircraft as one strip of tiles (fleet first, then leases by size, best first within each size) and one panel for
+ * the chosen aircraft. Arrow keys step through the tiles, so 20-odd types take a single row instead of a tall list.
+ */
+export function AircraftPicker({ plan, choices, previews, best, chosen, onPick }: {
+  plan: Plan; choices: RouteChoice[]; previews: Map<string, RoutePreview>; best: RouteChoice | null; chosen: RouteChoice | null;
+  onPick: (c: RouteChoice) => void;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  if (choices.length === 0) return null;
+  const delta = (c: RouteChoice) => previews.get(c.id)!.networkDelta;
+  const byDelta = (x: RouteChoice, y: RouteChoice) => delta(y) - delta(x);
+  const fleet = choices.filter((c) => c.kind === 'fleet').sort(byDelta);
+  const groups = CLASS_ORDER
+    .map((cls: AircraftClass) => ({ cls, items: choices.filter((c) => c.kind === 'lease' && AIRCRAFT[c.type].cls === cls).sort(byDelta) }))
+    .filter((g) => g.items.length > 0);
+  const ordered = [...fleet, ...groups.flatMap((g) => g.items)];
+  const maxSeats = Math.max(...choices.map((c) => AIRCRAFT[c.type].seats));
+
+  const step = (e: React.KeyboardEvent) => {
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!dir || !chosen) return;
+    e.preventDefault();
+    const next = ordered[(ordered.indexOf(chosen) + dir + ordered.length) % ordered.length];
+    onPick(next);
+    railRef.current?.querySelector<HTMLElement>(`[data-id="${next.id}"]`)?.focus();
+  };
+
+  const tile = (c: RouteChoice) => {
+    const s = AIRCRAFT[c.type];
+    const ac = c.acId ? plan.fleet.find((x) => x.id === c.acId) : undefined;
+    const on = chosen?.id === c.id;
+    const d = delta(c);
+    return (
+      <button key={c.id} data-id={c.id} role="radio" aria-checked={on} tabIndex={on ? 0 : -1} title={`${ac ? `${ac.reg} · ` : '租用 · '}${s.name}`}
+        className={`ac-tile${on ? ' on' : ''}${ac ? ' owned' : ''}`} onClick={() => onPick(c)}>
+        <span className="ac-tile-top"><span>{ac ? ac.reg : '租用'}</span>{best?.id === c.id && <i className="ac-best">建議</i>}</span>
+        <b className="ac-tile-name">{shortType(c.type)}</b>
+        <span className="ac-bar" aria-hidden><i style={{ width: `${(s.seats / maxSeats) * 100}%` }} /></span>
+        <span className="ac-tile-foot"><span>{s.seats} 座</span><span className={d >= 0 ? 'good' : 'bad'}>{signed(d)}</span></span>
+      </button>
+    );
+  };
+
+  const s = AIRCRAFT[chosen?.type ?? ordered[0].type];
+  const p = chosen ? previews.get(chosen.id)! : null;
+  const ac = chosen?.acId ? plan.fleet.find((x) => x.id === chosen.acId) : undefined;
+
+  return (
+    <>
+      <div className="ac-rail" role="radiogroup" aria-label="飛機方案" ref={railRef} onKeyDown={step}>
+        {fleet.length > 0 && <div className="ac-group"><span className="ac-group-label">現有機隊</span><div className="ac-group-tiles">{fleet.map(tile)}</div></div>}
+        {groups.map((g) => <div className="ac-group" key={g.cls}><span className="ac-group-label">{CLASS_NAMES[g.cls]}</span><div className="ac-group-tiles">{g.items.map(tile)}</div></div>)}
+      </div>
+      {chosen && p && (
+        <div className="ac-hero" aria-live="polite">
+          <div className="ac-hero-head">
+            <div>
+              <small>{ac ? `現有 · ${ac.reg}` : '租用新機'} · {CLASS_NAMES[s.cls]}</small>
+              <b>{s.name}</b>
+            </div>
+            <div className="ac-hero-delta">
+              <strong className={p.networkDelta >= 0 ? 'good' : 'bad'}>{signed(p.networkDelta)}</strong>
+              <small>預計全網損益／週</small>
+            </div>
+          </div>
+          <div className="ins lg">
+            <IN n="seat" v={s.seats} label="座位" u="座" />
+            <IN n="long" v={`${count(s.rangeKm)}km`} label="航程" />
+            {ac
+              ? <IN n="util" v={`${pct(chosen.utilBefore ?? 0)}→${pct(chosen.utilAfter ?? 0)}`} label="利用率" w="利用率" />
+              : <IN n="lease" v={`${money(s.ownershipPerWeek)}/週`} label="租金" w="租金" />}
+            <span className={`in ${tone(p.loadFactor)}`}>載客率 <Ring value={p.loadFactor} tone={tone(p.loadFactor)} size={12} stroke={3} />{pct(p.loadFactor)}</span>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ---------- Step 2: how to fly it ----------
 
 const startDep = (plan: Plan, c: RouteChoice, from: string, to: string) =>
@@ -217,7 +299,6 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
   // What each choice would earn at its own best-guess time: the whole week is simulated with the route added.
   const best = choices.reduce<RouteChoice | null>((b, c) => (!b || previews.get(c.id)!.networkDelta > previews.get(b.id)!.networkDelta ? c : b), null);
   const [pickId, setPickId] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
   const [fine, setFine] = useState(false);
   const chosen = choices.find((c) => c.id === pickId) ?? best;
   const [depSet, setDep] = useState<number | null>(null);
@@ -248,33 +329,11 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
   }, [from, to]);
   const previewMarket = useMemo(() => marketSplit(from, to), [from, to]);
 
-  const fleetChoices = choices.filter((c) => c.kind === 'fleet');
-  const leaseChoices = choices.filter((c) => c.kind === 'lease').sort((x, y) => previews.get(y.id)!.networkDelta - previews.get(x.id)!.networkDelta);
-  const visibleLease = showAll ? leaseChoices : leaseChoices.filter((c, i) => i < 2 || c.id === chosen?.id);
-
   const confirm = () => {
     if (!applied || !chosen) return;
     const reg = applied.plan.fleet.find((x) => x.id === applied.aircraftId)!.reg;
     const what = `${at(depFrom, dep)} ${depFrom}→${other} 與回程`;
     onDone(applied.plan, chosen.kind === 'lease' ? `${flown ? '加開' : '開航'}！租了 ${reg}（${AIRCRAFT[chosen.type].name}），${what}` : `${flown ? '加開' : '開航'}！由 ${reg} 飛 ${what}`, key);
-  };
-
-  const optRow = (c: RouteChoice) => {
-    const p = previews.get(c.id)!;
-    const s = AIRCRAFT[c.type];
-    const ac = c.acId ? plan.fleet.find((x) => x.id === c.acId) : undefined;
-    return (
-      <button key={c.id} className={`opt aircraft-option${chosen?.id === c.id ? ' pick' : ''}`} aria-pressed={chosen?.id === c.id} onClick={() => { setPickId(c.id); setDep(null); }}>
-        <span className="grow">
-          <b>{ac ? `${ac.reg} · ${shortType(c.type)}` : `租 ${shortType(c.type)}`}{best?.id === c.id && <> <Badge n="hub" tone="good" label="建議" /></>}</b>
-          <span className="ins">{ac
-            ? <IN n="util" v={`${pct(c.utilBefore ?? 0)}→${pct(c.utilAfter ?? 0)}`} label="利用率" w="利用率" />
-            : <><IN n="seat" v={s.seats} label="座位" u="座" /><IN n="lease" v={`${money(s.ownershipPerWeek)}/週`} label="租金" w="租金" /></>}
-            <span className={`in ${tone(p.loadFactor)}`}>載客率 <Ring value={p.loadFactor} tone={tone(p.loadFactor)} size={12} stroke={3} />{pct(p.loadFactor)}</span></span>
-        </span>
-        <span className={`delta ${p.networkDelta >= 0 ? 'good' : 'bad'}`} title="每週">{signed(p.networkDelta)}<small>/週</small></span>
-      </button>
-    );
   };
 
   return (
@@ -304,11 +363,8 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       <summary><span>飛機與時間</span><small>調整方案</small></summary>
       <h4>飛機</h4>
       {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
-      <div className="options aircraft-options" aria-label="飛機方案">
-        {fleetChoices.map(optRow)}
-        {visibleLease.map(optRow)}
-      </div>
-      {leaseChoices.length > 2 && <button className="ghost aircraft-toggle" onClick={() => setShowAll(!showAll)} aria-expanded={showAll}>{showAll ? '收合機型' : `全部 ${leaseChoices.length} 種機型`}</button>}
+      <AircraftPicker plan={plan} choices={choices} previews={previews} best={best} chosen={chosen}
+        onPick={(c) => { setPickId(c.id); setDep(null); }} />
 
       {chosen && (
         <>
