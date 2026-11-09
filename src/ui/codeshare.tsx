@@ -432,34 +432,93 @@ export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '
   );
 }
 
-const FED_SHOWN = 3;
+const FED_AIRLINES = 3;
+const FED_ROUTES = 4;
 
-/** The route sheet's note: travellers partners bring onto this route. One total, one share bar, one row of partner chips. */
+/** One partner airline's feed into a route: what it brings in total and the partner routes that bring it. */
+export interface FeedGroup { airline: string; pax: number; routes: { key: string; pax: number }[] }
+
+/** Partner feeds into one route, grouped by airline, the biggest airline first and each airline's biggest routes first. */
+export function groupFeeds(net: NetworkResult | null | undefined, routeKey: string): FeedGroup[] {
+  const by = new Map<string, FeedGroup>();
+  for (const c of Object.values(net?.codeshares ?? {})) {
+    for (const f of c.feeds) {
+      if (f.key !== routeKey || f.pax < 1) continue;
+      const g = by.get(c.airline) ?? { airline: c.airline, pax: 0, routes: [] };
+      g.pax += f.pax;
+      g.routes.push({ key: c.key, pax: f.pax });
+      by.set(c.airline, g);
+    }
+  }
+  for (const g of by.values()) g.routes.sort((x, y) => y.pax - x.pax);
+  return [...by.values()].sort((x, y) => y.pax - x.pax);
+}
+
+/**
+ * The route sheet's note: travellers partners bring onto this route. One total and one bar with a segment per airline,
+ * then the biggest airlines. An airline opens to the airports its travellers come from (the far end of each partner
+ * route), and each of those opens that codeshare.
+ */
 export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number }) {
   const open = useContext(CodeshareLink);
   const [all, setAll] = useState(false);
-  const fedBy = Object.values(net?.codeshares ?? {}).flatMap((c) => c.feeds.filter((f) => f.key === routeKey && f.pax >= 1).map((f) => ({ airline: c.airline, key: c.key, pax: f.pax })))
-    .sort((x, y) => y.pax - x.pax);
-  if (!fedBy.length) return null;
-  const total = fedBy.reduce((s, f) => s + f.pax, 0);
-  const shown = all ? fedBy : fedBy.slice(0, FED_SHOWN);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const groups = useMemo(() => groupFeeds(net, routeKey), [net, routeKey]);
+  if (!groups.length) return null;
+  const ends = routeKey.split('-');
+  const total = groups.reduce((s, g) => s + g.pax, 0);
+  const shown = all ? groups : groups.slice(0, FED_AIRLINES);
+  const rest = groups.slice(FED_AIRLINES);
   return (
     <div className="cs-feed-note">
       <div className="cs-feed-head">
         <span><b>{count(total)}</b> 人/週 由夥伴帶來</span>
         <small>{pct(total / Math.max(1, routePax))}</small>
       </div>
-      <div className="cs-feed-bar" role="img" aria-label={fedBy.map((f) => `${airlineName(f.airline)} ${count(f.pax)} 人`).join('，')}>
-        {fedBy.map((f) => <i key={`${f.airline}|${f.key}`} style={{ width: `${(100 * f.pax) / total}%`, background: colorOf(f.airline) }} />)}
+      <div className="cs-feed-bar" role="img" aria-label={groups.map((g) => `${airlineName(g.airline)} ${count(g.pax)} 人`).join('，')}>
+        {groups.map((g) => <i key={g.airline} style={{ width: `${(100 * g.pax) / total}%`, background: colorOf(g.airline) }} />)}
       </div>
-      <div className="cs-feed-chips">
-        {shown.map((f) => (
-          <button key={`${f.airline}|${f.key}`} className="chip" onClick={() => open?.(f.airline, f.key)}>
-            <i className="dot" style={{ background: colorOf(f.airline) }} />{airlineName(f.airline)} <b>{pct(f.pax / total)}</b>
-          </button>
-        ))}
-        {fedBy.length > FED_SHOWN && <button className="chip" aria-expanded={all} onClick={() => setAll((v) => !v)}>{all ? '收起' : `+${fedBy.length - FED_SHOWN}`}</button>}
-      </div>
+      <ul className="cs-feed-list">
+        {shown.map((g) => {
+          const on = expanded === g.airline;
+          return (
+            <li key={g.airline}>
+              <button className="cs-feed-row" aria-expanded={on} onClick={() => setExpanded(on ? null : g.airline)}>
+                <i className="dot" style={{ background: colorOf(g.airline) }} />
+                <span className="name">{airlineName(g.airline)}</span>
+                <small>{g.routes.length} 條航線</small>
+                <b>{pct(g.pax / total)}</b>
+                <span className="chev" aria-hidden="true" />
+              </button>
+              {on && (
+                <ul className="cs-feed-routes">
+                  {g.routes.slice(0, FED_ROUTES).map((r) => {
+                    const [x, y] = r.key.split('-');
+                    // The airport the travellers start from is the end of the partner route that isn't one of this route's ends.
+                    const far = ends.includes(x) ? y : x;
+                    const near = far === x ? y : x;
+                    return (
+                      <li key={r.key}>
+                        <button onClick={() => open?.(g.airline, r.key)}>
+                          <span className="name">{AIRPORT_BY_CODE[far]?.name ?? far}<small> 經 {AIRPORT_BY_CODE[near]?.name ?? near}</small></span>
+                          <b>{count(r.pax)}<small> 人</small></b>
+                          <span className="chev" aria-hidden="true" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {g.routes.length > FED_ROUTES && <li className="cs-feed-more-routes">另 {g.routes.length - FED_ROUTES} 條，合計 {count(g.routes.slice(FED_ROUTES).reduce((sum, r) => sum + r.pax, 0))} 人</li>}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {rest.length > 0 && (
+        <button className="cs-feed-all" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+          {all ? '收起' : `其他 ${rest.length} 家 · ${pct(rest.reduce((sum, g) => sum + g.pax, 0) / total)}`}
+        </button>
+      )}
     </div>
   );
 }

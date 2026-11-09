@@ -2199,10 +2199,20 @@ button.danger.solid, .confirm button.danger.solid {
 .cs-feed-note .cs-feed-head b { color: var(--text); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .cs-feed-note .cs-feed-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; background: var(--fill-2, var(--line)); }
 .cs-feed-note .cs-feed-bar i { display: block; height: 100%; min-width: 3px; border-radius: 4px; }
-.cs-feed-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.cs-feed-chips .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; font-size: var(--fs-xs); }
-.cs-feed-chips .chip b { font-weight: 600; color: var(--muted); }
-.cs-feed-chips .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.cs-feed-list, .cs-feed-routes { list-style: none; margin: 0; padding: 0; }
+.cs-feed-row, .cs-feed-routes button, .cs-feed-all { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: var(--text); text-align: left; }
+.cs-feed-row { min-height: 40px; padding: 0 2px; }
+.cs-feed-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.cs-feed-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.cs-feed-row small, .cs-feed-routes small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.cs-feed-row b, .cs-feed-routes b { font-variant-numeric: tabular-nums; }
+.cs-feed-row .chev { flex: none; transition: transform .2s var(--ease-ios, ease); }
+.cs-feed-row[aria-expanded='true'] .chev { transform: rotate(90deg); }
+.cs-feed-routes { margin: 0 0 6px 3px; padding-left: 12px; border-left: 2px solid var(--line); }
+.cs-feed-routes button { min-height: 36px; padding: 0 2px; font-size: var(--fs-sm); }
+.cs-feed-routes .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-feed-more-routes { padding: 6px 2px; color: var(--muted); font-size: var(--fs-xs); }
+.cs-feed-all { justify-content: center; min-height: 36px; border-radius: var(--r-sm); background: var(--line); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 
 /* Extensions: one row to open, then a grouped list. */
 .ext { display: flex; flex-direction: column; gap: 6px; }
