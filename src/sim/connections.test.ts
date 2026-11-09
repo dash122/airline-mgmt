@@ -15,9 +15,9 @@ describe('route connections', () => {
       YVR: [{ from: 'LAX', to: 'HKG', pax: 25 }, { from: 'SFO', to: 'PVG', pax: 99 }],
     });
     expect(routeConnections(n, 'HKG', 'YVR')).toEqual([
-      { from: 'PVG', to: 'YVR', via: 'HKG', pax: 40 },
-      { from: 'LAX', to: 'HKG', via: 'YVR', pax: 25 },
-      { from: 'YVR', to: 'SFO', via: 'HKG', pax: 10 },
+      { from: 'PVG', to: 'YVR', via: 'HKG', stops: ['PVG', 'HKG', 'YVR'], pax: 40 },
+      { from: 'LAX', to: 'HKG', via: 'YVR', stops: ['LAX', 'YVR', 'HKG'], pax: 25 },
+      { from: 'YVR', to: 'SFO', via: 'HKG', stops: ['YVR', 'HKG', 'SFO'], pax: 10 },
     ]);
   });
 
@@ -38,9 +38,9 @@ describe('route connections over two stops', () => {
 
   test('lists a two-stop journey once, under the stop on the route it rides', () => {
     const n = net2({ HKG: [flow], JFK: [flow] });
-    expect(routeConnections(n, 'HKG', 'CAN')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', pax: 12 }]);
-    expect(routeConnections(n, 'HKG', 'JFK')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', pax: 12 }]);
-    expect(routeConnections(n, 'JFK', 'MIA')).toEqual([{ from: 'CAN', to: 'MIA', via: 'JFK', pax: 12 }]);
+    expect(routeConnections(n, 'HKG', 'CAN')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', stops, pax: 12 }]);
+    expect(routeConnections(n, 'HKG', 'JFK')).toEqual([{ from: 'CAN', to: 'MIA', via: 'HKG', stops, pax: 12 }]);
+    expect(routeConnections(n, 'JFK', 'MIA')).toEqual([{ from: 'CAN', to: 'MIA', via: 'JFK', stops, pax: 12 }]);
     expect(routeConnections(n, 'CAN', 'MIA')).toEqual([]);
   });
 });

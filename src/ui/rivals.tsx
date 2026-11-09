@@ -8,7 +8,6 @@ import { count, pct, price } from './format';
 import { useAirlineLink } from './airlines';
 import { Head } from './sheets';
 import { IN, Ring } from './viz';
-import { ConnectionFlow } from './ConnectionFlow';
 
 /** An airline's name; taps open its profile wherever the app provides one. */
 export function AirlineName({ airline }: { airline: Airline }) {
@@ -130,12 +129,6 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         : <p className="ms-note lead">{summary}</p>}
 
       <Modes rows={rows} total={total} />
-      {result && net && (
-        <details className="share-more-details">
-          <summary>轉機從哪來</summary>
-          <ConnectionFlow a={a} b={b} net={net} />
-        </details>
-      )}
 
       <div className="ms-label">航空公司</div>
       {groups.map((group) => group.rows.length > 0 && <Fragment key={group.label}>

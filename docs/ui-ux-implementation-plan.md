@@ -11,7 +11,7 @@ Help players open a viable route, understand its results, and adjust service wit
 - **Shell.** One bottom sheet over the map (a side panel on wide screens) with three sections, 航線 / 機隊 / 市場. A title menu switches views inside a section (機隊: 飛機 / 班表, 市場: 機場 / 航空公司). Routes, airports, aircraft, airlines and the report are pages pushed over the home sheet with a back button. The status pill at the top shows balance, estimated daily profit and the clock.
 - **Sheet sizes.** Compact, half and full, with a drag handle. The home sheet keeps one height per size, so the section switcher does not move between tabs.
 - **Guided route opening.** Pick a destination, see one recommended plan (aircraft, departure, network profit) and one 開航 button. Alternative aircraft, times and market detail sit under two disclosures. The destination picker and the plan step open at half height and the map fits the planned route above the sheet, so the map stays visible.
-- **Route sheet.** Numbers first (load factor, route profit, share), then the tabs and the fare control. Partner and extension rows sit at the bottom.
+- **Route sheet.** Numbers first (load factor, route profit, share), then 旅客怎麼轉 (one row per trip through the route: direct travellers, your connections and partner-flown trips, with this route's leg drawn thick and partner legs dashed), then three tabs (票價 / 航班 / 市場; rival timetables sit under 市場). Partner and extension rows sit at the bottom.
 
 ## Conventions
 

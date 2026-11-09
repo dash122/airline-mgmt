@@ -1207,19 +1207,6 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 
 /* Market share: one denominator, with direct and connecting journeys visible together. */
 /* Connection flow: how connecting travellers get onto this route. */
-.conn-flow { margin: 4px 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
-.conn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; font-size: var(--fs-xs); }
-.conn-head span { color: var(--muted); font-size: var(--fs-3xs); font-variant-numeric: tabular-nums; }
-.conn-svg { display: block; width: 100%; height: auto; overflow: visible; }
-.conn-svg .conn-label { font-size: 12px; font-weight: 650; fill: var(--text); }
-.conn-svg .conn-sub { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
-.conn-legend { display: flex; gap: 12px; margin-top: 4px; color: var(--muted); font-size: var(--fs-3xs); }
-.conn-legend span { display: inline-flex; align-items: center; gap: 4px; }
-.conn-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
-.conn-share { display: grid; gap: 4px; margin-top: 10px; color: var(--muted); font-size: var(--fs-2xs); }
-.conn-share b { color: var(--text); font-variant-numeric: tabular-nums; }
-.conn-share-bar { height: 6px; overflow: hidden; border-radius: 3px; background: var(--line); }
-.conn-share-bar i { display: block; height: 100%; background: var(--accent); }
 /* Carrier rows: one compact line of detail instead of a tall two-line block. */
 
 /* A quieter information hierarchy across the workspace. */
@@ -1260,7 +1247,6 @@ button:focus-visible, summary:focus-visible, select:focus-visible, input:focus-v
 .plan-note.warn { color: var(--warn); }
 .plan-note.bad { color: var(--bad); }
 .trip { gap: 10px; padding: 12px; background: var(--accent-soft); }
-.route-competitors-entry { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-xs); }
 .route-competitor-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .route-competitor-chips .chip { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--accent-tint); color: var(--text); font-size: var(--fs-xs); line-height: 1.2; white-space: nowrap; }
 .route-competitor-chips .chip i { width: 8px; height: 8px; flex: none; border-radius: 50%; }
@@ -1405,16 +1391,6 @@ button:disabled { box-shadow: none; }
 .cs-step b.good { color: var(--good-ink); }
 .cs-step b.warn { color: var(--warn-ink); }
 .cs-step b.bad { color: var(--bad-ink); }
-.cs-feeds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.cs-feeds li > button, .cs-feeds li > div { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: inherit; font: inherit; text-align: left; }
-.cs-feeds .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.cs-feeds .grow .ins { flex-wrap: wrap; row-gap: 4px; }
-.cs-feeds .grow > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cs-feed-note { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--accent-soft); font-size: var(--fs-sm); }
-.cs-feed-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.cs-feed-head > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.cs-feed-bar { display: flex; height: 6px; overflow: hidden; border-radius: 3px; background: var(--line); gap: 1px; }
-.cs-feed-bar i { display: block; min-width: 2px; height: 100%; }
 .swatch.dashed { width: 0; border-left: 4px dashed; border-radius: 0; background: none; }
 .chip.on { background: color-mix(in srgb, var(--good) 16%, var(--line)); color: var(--good); font-weight: 700; }
 .airline-card-stats i.partner { background: color-mix(in srgb, var(--good) 14%, var(--panel)); color: var(--good); display: inline-flex; align-items: center; gap: 3px; }
@@ -1476,7 +1452,7 @@ button:disabled { box-shadow: none; }
 .routes-summary b.bad, .route-row-profit.bad { color: var(--bad); }
 .routes-summary b.warn { color: var(--warn); }
 .seg.two { grid-template-columns: repeat(2, 1fr); }
-.seg.route-tabs { grid-template-columns: repeat(4, 1fr); }
+.seg.route-tabs { grid-template-columns: repeat(3, 1fr); }
 .seg.route-tabs button, .seg.two button { min-height: 40px; justify-content: center; font-size: var(--fs-sm); }
 
 .route-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -2215,27 +2191,6 @@ button.danger.solid, .confirm button.danger.solid {
 /* ---------- Route partners and market (iOS-style, less text) ----------
    Partners: one total, one bar, one row of chips. Extensions: a single disclosure that opens a grouped list.
    Market: one share hero, supply against demand as two bars, connections folded away. */
-.cs-feed-note { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 0; border-radius: var(--r-md); background: var(--group, var(--panel)); }
-.cs-feed-note .cs-feed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: var(--fs-sm); color: var(--muted); }
-.cs-feed-note .cs-feed-head b { color: var(--text); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
-.cs-feed-note .cs-feed-bar { height: 8px; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; background: var(--fill-2, var(--line)); }
-.cs-feed-note .cs-feed-bar i { display: block; height: 100%; min-width: 3px; border-radius: 4px; }
-.cs-feed-list, .cs-feed-routes { list-style: none; margin: 0; padding: 0; }
-.cs-feed-row, .cs-feed-routes button, .cs-feed-all { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: var(--text); text-align: left; }
-.cs-feed-row { min-height: 40px; padding: 0 2px; }
-.cs-feed-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.cs-feed-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.cs-feed-row small, .cs-feed-routes b small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
-.cs-feed-row b, .cs-feed-routes b { font-variant-numeric: tabular-nums; }
-.cs-feed-row .chev { flex: none; transition: transform .2s var(--ease-ios, ease); }
-.cs-feed-row[aria-expanded='true'] .chev { transform: rotate(90deg); }
-.cs-feed-routes { margin: 0 0 6px 3px; padding-left: 12px; border-left: 2px solid var(--line); }
-.cs-feed-routes button { min-height: 56px; padding: 6px 2px; gap: 10px; }
-.cs-feed-routes .jy { flex: 1; min-width: 0; }
-.cs-feed-routes b small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
-.cs-feed-note .jy-legend { margin: 2px 0 8px 3px; }
-.cs-feed-more-routes { padding: 6px 2px; color: var(--muted); font-size: var(--fs-xs); }
-.cs-feed-all { justify-content: center; min-height: 36px; border-radius: var(--r-sm); background: var(--line); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 
 /* Extensions: one row to open, then a grouped list. */
 .ext { display: flex; flex-direction: column; gap: 6px; }
@@ -2256,12 +2211,6 @@ button.danger.solid, .confirm button.danger.solid {
 .ext-list i.dash { width: 16px; height: 0; border-top: 2px dashed; flex: none; }
 
 /* Market: hero, then supply against demand. */
-.share-more-details { border-radius: var(--r-md); background: var(--group, var(--panel)); padding: 0 14px; }
-.share-more-details > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; font-size: var(--fs-sm); list-style: none; }
-.share-more-details > summary::-webkit-details-marker { display: none; }
-.share-more-details > summary::after { content: '›'; margin-left: auto; color: var(--line-strong); font-size: var(--fs-lg); transition: transform .2s var(--ease-ios, ease); }
-.share-more-details[open] > summary::after { transform: rotate(90deg); }
-.share-more-details > :not(summary) { padding-bottom: 12px; }
 .ext .hint.center { margin: 0; padding: 12px 14px; border: 0; border-radius: var(--r-md); background: var(--group, var(--panel)); }
 
 /* ---------- Visual hierarchy and rhythm (consolidated pass; this block wins over the ones above it) ----------
@@ -2398,3 +2347,34 @@ button.danger.solid, .confirm button.danger.solid {
 .ac-tile strong { margin: 0; font-size: var(--fs-xs); }
 .ac-detail { color: var(--muted); font-size: var(--fs-2xs); padding: 0 2px; }
 .cs-dash-wait { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; }
+
+/* 旅客怎麼轉: one row per trip through the route, as in the codeshare sheet. */
+.bridge { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r-md); background: var(--group, var(--panel)); }
+.bridge-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bridge-head h3 { margin: 0; font-size: var(--fs-base); font-weight: 700; }
+.bridge-head span { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.bridge-split { display: flex; height: 8px; gap: 2px; overflow: hidden; border-radius: 4px; background: var(--line); }
+.bridge-split i { display: block; min-width: 3px; height: 100%; border-radius: 4px; }
+.bridge-split .direct, .bridge-split-legend .direct { background: var(--accent); }
+.bridge-split .transit, .bridge-split-legend .transit { background: color-mix(in srgb, var(--accent) 40%, var(--panel, #fff)); }
+.bridge-split-legend { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--muted); font-size: var(--fs-xs); }
+.bridge-split-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.bridge-split-legend i { width: 8px; height: 8px; border-radius: 50%; }
+.bridge-split-legend b { color: var(--text); font-variant-numeric: tabular-nums; }
+.bridge-rows { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 0; padding: 0; list-style: none; }
+.bridge-rows > li > button, .bridge-rows > li > div { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-radius: var(--r-md); background: var(--panel, #fff); color: inherit; font: inherit; text-align: left; }
+.bridge-rows .jy { flex: 1; min-width: 0; }
+.bridge-rows .jy-pax { font-size: var(--fs-md); font-weight: 700; }
+.bridge-more { align-self: center; min-height: 40px; padding: 0 12px; border: 0; background: none; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+.bridge-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: var(--fs-xs); }
+.bridge-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.bridge-legend .jy-leg { display: inline-block; align-self: center; width: 18px; margin: 0; }
+.route-times { border-radius: var(--r-md); background: var(--group, var(--panel)); padding: 0 14px 12px; }
+.route-times > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 600; font-size: var(--fs-sm); list-style: none; }
+.route-times > summary::-webkit-details-marker { display: none; }
+.route-times .route-competitor-chips { margin-top: 10px; }
+.cs-feeds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cs-feeds li > button, .cs-feeds li > div { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: var(--r-md); background: var(--surface-2); color: inherit; font: inherit; text-align: left; }
+.cs-feeds .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cs-feeds .grow .ins { flex-wrap: wrap; row-gap: 4px; }
+.cs-feeds .grow > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

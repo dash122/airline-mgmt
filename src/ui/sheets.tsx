@@ -17,7 +17,8 @@ import { count, hk, hkSigned, money, pct, price, short } from './format';
 import { frequencyLabel, routeHealth } from './route-health';
 import { MarketShare, RouteRivals } from './rivals';
 import { AirlineLink } from './airlines';
-import { FedByNote, RouteExtensions } from './codeshare';
+import { RouteExtensions } from './codeshare';
+import { TravellerBridge } from './bridge';
 import { HostedNote } from './hosted';
 import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
@@ -272,7 +273,7 @@ function Confirm({ label, confirm, onYes, className }: { label: string; confirm:
 
 // ---------- Route ----------
 
-type RouteTab = 'fare' | 'flights' | 'market' | 'times';
+type RouteTab = 'fare' | 'flights' | 'market';
 
 /**
  * False on a sheet's first paint, true from the next task on. The fare curve and the ± previews re-simulate the whole
@@ -337,7 +338,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
   const whatIf = useWorkerAnswer<RouteWhatIf>(plan, painted && !!net, 'what-if', { a, b, routeKey });
   const freqWhatIf = whatIf?.value ?? null;
-  const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場'], ['times', '時刻']];
+  const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場']];
   return (
     <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
       <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
@@ -375,7 +376,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </button>
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
-      {result && <FedByNote net={net} routeKey={routeKey} routePax={result.pax} />}
+      {result && <TravellerBridge net={net} routeKey={routeKey} routePax={result.pax} directPax={result.localPax} />}
       <div className="seg route-tabs" role="tablist" aria-label="航線內容">
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
@@ -394,14 +395,12 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       {tab === 'market' && <>
         <MarketShare a={a} b={b} result={result} net={net} split={split} />
         {(elsewhere || m?.ground) && <div className="ins">{elsewhere}{m?.ground && <span className="in" title="地面交通">🚆 {m.ground.name} {m.ground.hours}h · {price(m.ground.fare)}</span>}</div>}
-      </>}
-      {tab === 'times' && <>
-        <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
-        {routeCompetitors.length > 0 && airlineLink && <div className="route-competitors-entry">
-          <span>{routeCompetitors.length} 家航空公司經營這條航線</span>
-          <div className="route-competitor-chips">{routeCompetitors.slice(0, 4).map((airline) => <button key={airline.id} className="chip" onClick={() => airlineLink(airline.id)}><i style={{ background: airline.color }} />{airline.name}<span className="chev inline" aria-hidden="true" /></button>)}
-            {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>
-        </div>}
+        <details className="route-times">
+          <summary>對手班表{routeCompetitors.length > 0 ? ` · ${routeCompetitors.length} 家` : ''}</summary>
+          <RouteRivals key={routeKey} a={a} b={b} result={result} plan={plan} onEdit={onEditFlight} />
+          {routeCompetitors.length > 0 && airlineLink && <div className="route-competitor-chips">{routeCompetitors.slice(0, 4).map((airline) => <button key={airline.id} className="chip" onClick={() => airlineLink(airline.id)}><i style={{ background: airline.color }} />{airline.name}<span className="chev inline" aria-hidden="true" /></button>)}
+            {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>}
+        </details>
       </>}
       {result && <div className="route-partners"><HostedNote net={net} routeKey={routeKey} /><RouteExtensions plan={plan} a={a} b={b} /></div>}
     </Sheet>

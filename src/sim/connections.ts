@@ -7,6 +7,8 @@ export interface RouteConnection {
   to: string;
   /** The transfer airport: always one of the route's two airports, where the journey changes planes. */
   via: string;
+  /** Every airport of the trip, origin and destination included. */
+  stops: string[];
   /** Weekly travellers, both directions. */
   pax: number;
 }
@@ -33,7 +35,7 @@ export function routeConnections(net: NetworkResult | null | undefined, a: strin
       seen.add(id);
       // The transfer airport is the route's end that is a stop, not the journey's origin or destination.
       const stop = [leg, leg + 1].find((i) => i > 0 && i < stops.length - 1);
-      out.push({ from: stops[0], to: stops[stops.length - 1], via: stops[stop!], pax: f.pax });
+      out.push({ from: stops[0], to: stops[stops.length - 1], via: stops[stop!], stops, pax: f.pax });
     }
   }
   return out.sort((x, y) => y.pax - x.pax);
