@@ -435,7 +435,7 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
     return curve[Math.max(0, Math.min(curve.length - 1, i))];
   };
   const commit = (p: FarePoint | null) => { setScrub(null); if (p && p !== now) onPick(p.mult); };
-  const step = (d: number) => { const p = curve[Math.max(0, Math.min(curve.length - 1, iNow + d))]; if (p !== now) onPick(p.mult); };
+  const step = (d: number) => { const to = clampFare(now.mult + d * FARE_STEP); if (Math.abs(to - now.mult) > 1e-9) onPick(to); };
   const dProfit = shown.profit - now.profit;
   const changed = shown !== now;
   return (

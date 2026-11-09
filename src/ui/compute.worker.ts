@@ -1,8 +1,8 @@
 import { analyzeAirport } from './airport-analysis.worker';
 import { destinationsFrom, previewChoice } from '../sim/newroute';
 import { simulate, type Plan } from '../sim/simulate';
-import { fareCurve } from '../sim/fares';
-import { routeWhatIf } from '../sim/route-whatif';
+import { fareCurveSteps, type FarePoint } from '../sim/fares';
+import { routeWhatIfSteps } from '../sim/route-whatif';
 import { codeshareImpact, codeshareIdeaSteps, hostedImpact, hostedIdeaSteps, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
 import type { Deal } from './deals';
 
@@ -73,8 +73,20 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         port.postMessage({ id, ideas: step.value });
       }
       else if (kind === 'destinations') port.postMessage({ request, destinations: destinationsFrom(plan, from) });
-      else if (kind === 'fare-curve') port.postMessage({ id, value: fareCurve(plan, routeKey) });
-      else if (kind === 'what-if') port.postMessage({ id, value: routeWhatIf(plan, a, b, routeKey) });
+      else if (kind === 'fare-curve' || kind === 'what-if') {
+        // A simulation or two at a time: between them other requests (the main simulation above all) get their turn,
+        // and the rest is dropped the moment a newer plan arrives. The fare curve sends a coarse version first.
+        const out: FarePoint[] = [];
+        const steps = kind === 'fare-curve' ? fareCurveSteps(plan, routeKey, out) : routeWhatIfSteps(plan, a, b, routeKey);
+        let step = steps.next();
+        while (!step.done) {
+          await yieldTask();
+          if (current !== version) return;
+          if (step.value === 'coarse') port.postMessage({ id, value: [...out], partial: true });
+          step = steps.next();
+        }
+        port.postMessage({ id, value: step.value });
+      }
       else {
         const previews = [];
         for (const { choice, dep } of choices as { choice: Parameters<typeof previewChoice>[2]; dep: number }[]) {
