@@ -21,17 +21,15 @@ export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
     const inn = plan.hosted ?? [];
     if (!out.length && !inn.length) return null;
     const alerts: Alert[] = [];
-    let gain = 0, pax = 0, seats = 0, ready = 0;
+    
     const add = (id: string, sev: number, tone: Tone, text: string, sub: string, open: () => void) => alerts.push({ id, sev, tone, text, sub, open });
     for (const c of out) {
       const imp = deals.out.get(dealId(c.airline, c.key));
       if (imp === undefined) continue; // not worked out yet
-      ready++;
       const [a, b] = c.key.split('-');
       const sub = `${airlineName(c.airline)} · ${routeName(a, b)}`;
       const open = () => onOpen(c.airline, c.key);
       if (!imp) { add(`o${c.airline}${c.key}`, 5, 'warn', '夥伴停飛', sub, open); continue; }
-      gain += imp.gain; pax += imp.stats.pax; seats += imp.stats.seats;
       const away = turnedAway(imp.stats);
       if (imp.stats.pax < 1) add(`o${c.airline}${c.key}`, 4, 'bad', '接不上，沒人搭', sub, open);
       else if (imp.gain < 0) add(`o${c.airline}${c.key}`, 3, 'bad', `虧 ${signed(imp.gain)}／週`, sub, open);
@@ -42,35 +40,36 @@ export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
     for (const h of inn) {
       const imp = deals.inn.get(dealId(h.airline, h.key));
       if (imp === undefined) continue;
-      ready++;
       const [a, b] = h.key.split('-');
       const sub = `${airlineName(h.airline)} 賣 · ${routeName(a, b)}`;
       const open = () => onOpenHosted(h.key, h.airline);
       if (!imp) { add(`i${h.airline}${h.key}`, 5, 'warn', '航線停飛', sub, open); continue; }
       const s = imp.stats;
-      gain += imp.gain; pax += s.pax; seats += s.seats;
       if (s.pax < 1) add(`i${h.airline}${h.key}`, 4, 'bad', '夥伴沒帶來人', sub, open);
       else if (imp.gain < 0) add(`i${h.airline}${h.key}`, 3, 'bad', `虧 ${signed(imp.gain)}／週`, sub, open);
       else if (s.seats && s.pax / s.seats < 0.15) add(`i${h.airline}${h.key}`, 1, 'warn', `座位只用 ${pct(s.pax / s.seats)}`, sub, open);
       else if (s.pax >= s.seats - 1 && s.wanted > s.pax + 5) add(`i${h.airline}${h.key}`, 0, 'accent', '座位賣光，可加大', sub, open);
     }
     alerts.sort((x, y) => y.sev - x.sev);
-    return { gain, pax, use: seats ? pax / seats : 0, deals: out.length + inn.length, ready, alerts };
+    return { deals: out.length + inn.length, alerts };
   }, [plan, deals, onOpen, onOpenHosted]);
   if (!d) return null;
-  const wait = d.ready < d.deals;
+  // Totals come from their own two simulations, so they show at once; the previous plan's stay, greyed, until then.
+  const t = deals.totals;
+  const stale = !deals.totalsFresh;
+  const use = t && t.seats ? t.pax / t.seats : 0;
+  const wait = !deals.done;
   const days = history.slice(-TREND_DAYS).filter((r) => r.cs != null);
   const net = days.map((r) => r.cs ?? 0);
   const trav = days.map((r) => r.csPax ?? 0);
   return (
     <div className="cs-dash">
       <div className="routes-summary">
-        {/* The totals need every deal: until then a partial sum would look like the answer. */}
-        <div><small>每週淨賺</small>{wait ? <b className="muted">—</b> : <b className={d.gain >= 0 ? 'good' : 'bad'}>{signed(d.gain)}</b>}</div>
-        <div><small>人/週</small><b className={wait ? 'muted' : undefined}>{wait ? '—' : count(d.pax)}</b></div>
-        <div className="cs-dash-use"><small>座位使用</small>{wait ? <b className="muted">—</b> : <b><Ring value={d.use} tone={d.use >= 0.5 ? 'good' : 'warn'} size={26} stroke={4} label={`座位使用 ${pct(d.use)}`} /> {pct(d.use)}</b>}</div>
+        <div><small>每週淨賺</small>{!t ? <b className="muted">—</b> : <b className={stale ? 'muted' : t.gain >= 0 ? 'good' : 'bad'}>{signed(t.gain)}</b>}</div>
+        <div><small>人/週</small><b className={!t || stale ? 'muted' : undefined}>{t ? count(t.pax) : '—'}</b></div>
+        <div className="cs-dash-use"><small>座位使用</small>{!t ? <b className="muted">—</b> : <b className={stale ? 'muted' : undefined}><Ring value={use} tone={use >= 0.5 ? 'good' : 'warn'} size={26} stroke={4} label={`座位使用 ${pct(use)}`} /> {pct(use)}</b>}</div>
       </div>
-      {wait && <p className="hint cs-dash-wait" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在算每條共享的收益 {d.ready}/{d.deals}</p>}
+      {wait && <p className="hint cs-dash-wait" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在更新每條共享的收益 {deals.fresh}/{d.deals}</p>}
       {net.length >= 2 && (
         <div className="cs-dash-trend" aria-label="近兩週趨勢">
           <span><small>每日淨賺</small><Spark values={net} width={110} height={24} label="每日共享淨賺" /></span>

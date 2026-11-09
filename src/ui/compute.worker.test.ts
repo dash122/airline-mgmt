@@ -49,7 +49,8 @@ it('sends every codeshare and hosted impact, in several batches, simulating the 
     expect(messages.at(-1).partial).toBeUndefined();
     const all = messages.flatMap((m) => m.deals);
     expect(all.map((d) => `${d.side}:${d.airline}|${d.key}`)).toEqual(['out:A|X-Y', 'out:B|X-Z', 'out:C|Y-Z', 'in:D|X-Y']);
-    expect(model.simulate).toHaveBeenCalledOnce();
+    expect(model.simulate).toHaveBeenCalledTimes(2); // the plan, and the plan without any deal (for the totals)
+    expect(messages[0].totals).toBeDefined();
   } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
 });
 

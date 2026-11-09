@@ -24,6 +24,15 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         // sending each batch as soon as it is done and dropping the rest the moment a newer plan arrives.
         const p = plan as Plan;
         const now = simulate(p);
+        // The headline totals first: two simulations (with and without every deal) instead of waiting for all of them.
+        // Pax and seats are the plan's own figures; the net is exact, though not the sum of the per-deal gains, since
+        // deals compete for the same seats.
+        const bare = simulate({ ...p, codeshares: [], hosted: [] });
+        const stats = [...Object.values(now.codeshares ?? {}), ...Object.values(now.hosted ?? {})] as { pax: number; seats: number }[];
+        port.postMessage({
+          id, deals: [], partial: true,
+          totals: { gain: now.revenue - now.cost - (bare.revenue - bare.cost), pax: stats.reduce((s, x) => s + x.pax, 0), seats: stats.reduce((s, x) => s + x.seats, 0) },
+        });
         const work: (() => Deal)[] = [
           ...(p.codeshares ?? []).map((c) => (): Deal => ({ side: 'out', airline: c.airline, key: c.key, imp: codeshareImpact(p, c.airline, c.key, now) })),
           ...(p.hosted ?? []).map((h) => (): Deal => ({ side: 'in', airline: h.airline, key: h.key, imp: hostedImpact(p, h.airline, h.key, now) })),
