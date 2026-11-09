@@ -1361,11 +1361,27 @@ button:disabled { box-shadow: none; }
 .cs-gain b.bad { color: var(--bad); }
 .cs-gain small { font-size: var(--fs-3xs); color: var(--muted); margin-top: -2px; }
 .cs-gain .profit-bar { width: 100%; }
-.cs-markets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.cs-markets li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 8px; font-size: var(--fs-sm); }
-.cs-markets i { font-style: normal; color: var(--muted); }
-.cs-markets small { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cs-markets b { font-variant-numeric: tabular-nums; }
+/* A journey as a line of airports: filled ends, hollow stops, the partner's flight dashed in its colour, yours solid. */
+.jy { display: grid; align-items: start; }
+.jy-node { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 36px; }
+.jy-dot { display: block; width: 10px; height: 10px; box-sizing: border-box; flex: none; border-radius: 50%; border: 2px solid var(--text); background: var(--text); }
+.jy-node.via .jy-dot, .jy-dot.via { background: var(--panel); }
+.jy-node b { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.2; }
+.jy-node small { max-width: 4.6em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-3xs); line-height: 1.2; }
+.jy-leg { display: block; align-self: start; height: 0; margin-top: 4px; border-top: 2px solid var(--accent); }
+.jy-leg.partner { border-top-style: dashed; border-top-color: var(--c); }
+.jy-leg.here { margin-top: 3px; border-top-width: 4px; }
+.jy-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; color: var(--muted); font-size: var(--fs-xs); }
+.jy-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.jy-legend .jy-leg { display: inline-block; align-self: center; width: 18px; margin: 0; }
+.jy-legend .jy-leg.here { width: 18px; }
+.jy-focus { margin: 6px 0 8px; color: var(--muted); font-size: var(--fs-sm); }
+.jy-focus b { color: var(--text); font-variant-numeric: tabular-nums; }
+.cs-journeys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cs-journeys li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
+.cs-journeys .jy { flex: 1; min-width: 0; }
+.cs-journeys b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cs-journeys b small { color: var(--muted); font-size: var(--fs-2xs); font-weight: 400; }
 .cs-steps { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); }
 .cs-net { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .cs-net small { color: var(--muted); font-size: var(--fs-xs); }
@@ -2204,13 +2220,15 @@ button.danger.solid, .confirm button.danger.solid {
 .cs-feed-row { min-height: 40px; padding: 0 2px; }
 .cs-feed-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .cs-feed-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.cs-feed-row small, .cs-feed-routes small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.cs-feed-row small, .cs-feed-routes b small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
 .cs-feed-row b, .cs-feed-routes b { font-variant-numeric: tabular-nums; }
 .cs-feed-row .chev { flex: none; transition: transform .2s var(--ease-ios, ease); }
 .cs-feed-row[aria-expanded='true'] .chev { transform: rotate(90deg); }
 .cs-feed-routes { margin: 0 0 6px 3px; padding-left: 12px; border-left: 2px solid var(--line); }
-.cs-feed-routes button { min-height: 36px; padding: 0 2px; font-size: var(--fs-sm); }
-.cs-feed-routes .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-feed-routes button { min-height: 52px; padding: 4px 2px; }
+.cs-feed-routes .jy { flex: 1; min-width: 0; }
+.cs-feed-routes b small { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+.cs-feed-note .jy-legend { margin: 2px 0 8px 3px; }
 .cs-feed-more-routes { padding: 6px 2px; color: var(--muted); font-size: var(--fs-xs); }
 .cs-feed-all { justify-content: center; min-height: 36px; border-radius: var(--r-sm); background: var(--line); color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
 

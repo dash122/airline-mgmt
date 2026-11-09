@@ -467,6 +467,12 @@ export interface CodeshareResult {
   wanted: number;
   /** Biggest city pairs it connects, weekly travellers both directions. */
   markets: { o: string; d: string; via: string; pax: number }[];
+  /**
+   * The biggest whole journeys that use the partner's flight, weekly travellers both directions. `path` is every airport
+   * from start to finish (both directions are one journey, read it either way). The partner's flight is the leg that
+   * matches `key`; the other legs are the player's own flights.
+   */
+  journeys: { path: string[]; pax: number }[];
   /** The player's own routes these travellers also fly, with how many (weekly, both directions) and the fares they paid for them. */
   feeds: { key: string; pax: number; revenue: number }[];
   /** Seat block in use (share of each partner flight). */
@@ -1053,14 +1059,14 @@ export function simulate(plan: Plan): NetworkResult {
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`, plus `|${stops}` for two-stop trips
-  const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]>; feedMap: Map<string, CodeshareResult['feeds'][number]> }>();
+  const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]>; feedMap: Map<string, CodeshareResult['feeds'][number]>; journeyMap: Map<string, CodeshareResult['journeys'][number]> }>();
   for (const cs of plan.codeshares ?? []) {
     const id = `${cs.airline}|${cs.key}`;
     const fl = partners.filter((f) => f.partner!.airline === cs.airline && f.partner!.key === cs.key);
     if (!fl.length) continue;
     csResults.set(id, {
       key: cs.key, airline: cs.airline, flights: fl.reduce((s, f) => s + f.perWeek, 0), seats: fl.reduce((s, f) => s + f.perWeek * f.seats, 0),
-      pax: 0, wanted: 0, feedRevenue: 0, partnerRevenue: 0, fee: codeshareFee(shareOf(cs)), markets: [], marketMap: new Map(), feeds: [], feedMap: new Map(),
+      pax: 0, wanted: 0, feedRevenue: 0, partnerRevenue: 0, fee: codeshareFee(shareOf(cs)), markets: [], marketMap: new Map(), feeds: [], feedMap: new Map(), journeys: [], journeyMap: new Map(),
       share: shareOf(cs), departures: [],
     });
   }
@@ -1149,6 +1155,13 @@ export function simulate(plan: Plan): NetworkResult {
         const row = cs.marketMap.get(mk) ?? { o, d, via, pax: 0 };
         row.pax += n * it.perWeek;
         cs.marketMap.set(mk, row);
+        // The whole journey, stop by stop. The two directions are one journey: keep whichever way reads first.
+        const stops = [it.flights[0].from, ...it.flights.map((f) => f.to)];
+        const fwd = stops.join('>'), back = [...stops].reverse().join('>');
+        const jk = fwd <= back ? fwd : back;
+        const jr = cs.journeyMap.get(jk) ?? { path: fwd <= back ? stops : [...stops].reverse(), pax: 0 };
+        jr.pax += n * it.perWeek;
+        cs.journeyMap.set(jk, jr);
         revenueWeekly += n * fare * it.perWeek - toPartner;
       } else revenueWeekly += n * fare * it.perWeek;
       for (const f of it.flights) {
@@ -1266,7 +1279,7 @@ export function simulate(plan: Plan): NetworkResult {
   const revenue = revenueWeekly;
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const codeshares: Record<string, CodeshareResult> = {};
-  for (const [id, { marketMap, feedMap, ...r }] of csResults) {
+  for (const [id, { marketMap, feedMap, journeyMap, ...r }] of csResults) {
     const departures: CodeshareDeparture[] = partners.filter((f) => `${f.partner!.airline}|${f.partner!.key}` === id).map((f) => {
       const best = [...(linkPax.get(f) ?? new Map<Flight, number>())].sort((x, y) => y[1] - x[1])[0];
       return {
@@ -1275,7 +1288,7 @@ export function simulate(plan: Plan): NetworkResult {
         top: best && best[1] > 0.05 ? { from: best[0].from, to: best[0].to, dep: best[0].dep, pax: best[1] } : undefined,
       };
     }).sort((x, y) => x.from.localeCompare(y.from) || localMinutes(x.from, x.dep) - localMinutes(y.from, y.dep));
-    codeshares[id] = { ...r, departures, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6), feeds: [...feedMap.values()].sort((x, y) => y.pax - x.pax) };
+    codeshares[id] = { ...r, departures, markets: [...marketMap.values()].sort((x, y) => y.pax - x.pax).slice(0, 6), journeys: [...journeyMap.values()].filter((j) => j.pax >= 0.5).sort((x, y) => y.pax - x.pax).slice(0, 12), feeds: [...feedMap.values()].sort((x, y) => y.pax - x.pax) };
   }
   const hosted: Record<string, HostedResult> = {};
   for (const [id, { marketMap, sourceMap, ...r }] of hsResults) {

@@ -15,6 +15,7 @@ import type { DayRecord } from './clock';
 import { CodeshareDash } from './codeshare-dash';
 import { HostedHub } from './hosted';
 import { count, money, pct } from './format';
+import { JourneyLegend, JourneyPath, journeyUses } from './journey';
 import { Head, routeName, Sheet } from './sheets';
 import { Badge, IN, Icon, Meter, ProfitBar, Ring, type Tone } from './viz';
 
@@ -24,9 +25,10 @@ export const colorOf = (id: string) => airlines().find((a) => a.id === id)?.colo
 const at = (code: string, utc: number) => hhmm(localMinutes(code, utc));
 const SHOWN = 6;
 const DEPS_SHOWN = 4;
+const JOURNEYS_SHOWN = 5;
 
-/** Opens the codeshare sheet for one partner route, from anywhere. */
-export const CodeshareLink = createContext<((airline: string, key: string) => void) | null>(null);
+/** Opens the codeshare sheet for one partner route, from anywhere. `focus` is a route of yours to mark on its journeys. */
+export const CodeshareLink = createContext<((airline: string, key: string, focus?: string) => void) | null>(null);
 
 /** The terms, shown behind the "i". */
 export const CodeshareTerms = () => (
@@ -240,8 +242,10 @@ export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: Airline
  * Everything about one codeshare: what it adds, its seat block (with what each size would add), demand against
  * seats, each partner departure and the flight of yours it connects with, the flights it fills and where travellers go.
  */
-export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpenRoute, onPartner, onClose }: {
+export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop, onOpenRoute, onPartner, onClose }: {
   plan: Plan; airline: string; routeKey: string;
+  /** A route of yours to mark on the journeys: the one the sheet was opened from. */
+  focus?: string;
   onShare: (share: number) => void; onStop: () => void; onOpenRoute: (key: string) => void; onPartner: () => void; onClose: () => void;
 }) {
   const current = codeshareShare(plan, airline, routeKey);
@@ -249,6 +253,7 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
   const choices = useMemo(() => shareChoices(plan, airline, routeKey), [plan, airline, routeKey]);
   const best = bestShare(choices);
   const [pick, setPick] = useState<number | null>(null);
+  const [allJourneys, setAllJourneys] = useState(false);
   const share = active ? current : pick ?? best.share;
   const imp = useMemo(() => codeshareImpact(plan, airline, routeKey, undefined, share), [plan, airline, routeKey, share]);
   const [a, b] = routeKey.split('-');
@@ -276,6 +281,24 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
           : <button className="primary wide" onClick={() => onShare(share)}><Icon n="link" /> 共享 {pct(share)} 座位 · {money(fee)}/週</button>}
       </div>}>
       <MoneySteps imp={imp} />
+
+      {s.journeys.length > 0 && (
+        <>
+          <Head info={<p>旅客從哪裡出發、怎麼轉到終點：每一行是一條完整的行程。虛線是夥伴的航班，實線是你的航班，空心圓是轉機的機場。{focus ? '粗線是你剛才看的航線。' : ''}</p>}
+            right={<small className="muted">{count(s.journeys.reduce((sum, j) => sum + j.pax, 0))} 人/週</small>}>旅客怎麼轉</Head>
+          {focus && <FocusNote journeys={s.journeys} focus={focus} />}
+          <JourneyLegend airline={airlineName(airline)} color={color} here={!!focus && s.journeys.some((j) => journeyUses(j.path, focus))} />
+          <ul className="cs-journeys">
+            {(allJourneys ? s.journeys : s.journeys.slice(0, JOURNEYS_SHOWN)).map((j) => (
+              <li key={j.path.join('>')}>
+                <JourneyPath path={j.path} partnerKey={routeKey} color={color} airline={airlineName(airline)} here={focus} />
+                <b>{count(j.pax)}<small> 人</small></b>
+              </li>
+            ))}
+          </ul>
+          {s.journeys.length > JOURNEYS_SHOWN && <button className="cs-more" onClick={() => setAllJourneys((v) => !v)}>{allJourneys ? '收起' : `再顯示 ${s.journeys.length - JOURNEYS_SHOWN} 條`}</button>}
+        </>
+      )}
 
       <Head info={<p>每班留給你的座位比例。座位越多，賣光的班次越少，但費用越高。每格下面是用那個大小時每週多賺多少（已扣費用），★ 是最賺的。</p>}>共享座位</Head>
       <div className="seg four cs-share-seg" role="radiogroup" aria-label="每班共享座位">
@@ -329,17 +352,21 @@ export function CodeshareSheet({ plan, airline, routeKey, onShare, onStop, onOpe
           </ul>
         </>
       )}
-      {s.markets.length > 0 && (
-        <>
-          <Head>旅客從哪來</Head>
-          <ul className="cs-markets">
-            {s.markets.slice(0, 4).map((m) => (
-              <li key={`${m.o}${m.d}`}><span>{m.o} <i>→ {m.via} →</i> {m.d}</span><small>{name(m.o)}–{name(m.d)}</small><b>{count(m.pax)}<small> 人/週</small></b></li>
-            ))}
-          </ul>
-        </>
-      )}
     </Sheet>
+  );
+}
+
+/** In words, how much of the partner's traffic goes on to the route you came from: the answer to "does it reach my route?". */
+export function FocusNote({ journeys, focus }: { journeys: CodeshareResult['journeys']; focus: string }) {
+  const total = journeys.reduce((sum, j) => sum + j.pax, 0);
+  const through = journeys.filter((j) => journeyUses(j.path, focus)).reduce((sum, j) => sum + j.pax, 0);
+  const [x, y] = focus.split('-');
+  return (
+    <p className="jy-focus">
+      {through >= 1
+        ? <><b>{count(through)}</b> 人/週（{pct(through / Math.max(1, total))}）會再搭你的 {routeName(x, y)}</>
+        : <>沒有旅客再搭你的 {routeName(x, y)}</>}
+    </p>
   );
 }
 
@@ -434,23 +461,32 @@ export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '
 
 const FED_AIRLINES = 3;
 const FED_ROUTES = 4;
+/** Travellers of a group that the journeys listed under it don't account for. */
+const otherPax = (g: FeedGroup) => g.pax - g.journeys.slice(0, FED_ROUTES).reduce((sum, j) => sum + j.pax, 0);
 
-/** One partner airline's feed into a route: what it brings in total and the partner routes that bring it. */
-export interface FeedGroup { airline: string; pax: number; routes: { key: string; pax: number }[] }
+/** A whole journey that flies a route of yours, with the partner route (`key`) it uses. */
+export interface FeedJourney { path: string[]; pax: number; key: string }
+/** One partner airline's feed into a route: what it brings in total, the partner routes that bring it, and the journeys. */
+export interface FeedGroup { airline: string; pax: number; routes: { key: string; pax: number }[]; journeys: FeedJourney[] }
 
-/** Partner feeds into one route, grouped by airline, the biggest airline first and each airline's biggest routes first. */
+/** Partner feeds into one route, grouped by airline, the biggest airline first and each airline's biggest journeys first. */
 export function groupFeeds(net: NetworkResult | null | undefined, routeKey: string): FeedGroup[] {
   const by = new Map<string, FeedGroup>();
   for (const c of Object.values(net?.codeshares ?? {})) {
     for (const f of c.feeds) {
       if (f.key !== routeKey || f.pax < 1) continue;
-      const g = by.get(c.airline) ?? { airline: c.airline, pax: 0, routes: [] };
+      const g = by.get(c.airline) ?? { airline: c.airline, pax: 0, routes: [], journeys: [] };
       g.pax += f.pax;
       g.routes.push({ key: c.key, pax: f.pax });
       by.set(c.airline, g);
     }
+    const g = by.get(c.airline);
+    if (g) for (const j of c.journeys ?? []) if (journeyUses(j.path, routeKey)) g.journeys.push({ path: j.path, pax: j.pax, key: c.key });
   }
-  for (const g of by.values()) g.routes.sort((x, y) => y.pax - x.pax);
+  for (const g of by.values()) {
+    g.routes.sort((x, y) => y.pax - x.pax);
+    g.journeys.sort((x, y) => y.pax - x.pax);
+  }
   return [...by.values()].sort((x, y) => y.pax - x.pax);
 }
 
@@ -465,7 +501,6 @@ export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | nu
   const [expanded, setExpanded] = useState<string | null>(null);
   const groups = useMemo(() => groupFeeds(net, routeKey), [net, routeKey]);
   if (!groups.length) return null;
-  const ends = routeKey.split('-');
   const total = groups.reduce((s, g) => s + g.pax, 0);
   const shown = all ? groups : groups.slice(0, FED_AIRLINES);
   const rest = groups.slice(FED_AIRLINES);
@@ -491,24 +526,21 @@ export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | nu
                 <span className="chev" aria-hidden="true" />
               </button>
               {on && (
-                <ul className="cs-feed-routes">
-                  {g.routes.slice(0, FED_ROUTES).map((r) => {
-                    const [x, y] = r.key.split('-');
-                    // The airport the travellers start from is the end of the partner route that isn't one of this route's ends.
-                    const far = ends.includes(x) ? y : x;
-                    const near = far === x ? y : x;
-                    return (
-                      <li key={r.key}>
-                        <button onClick={() => open?.(g.airline, r.key)}>
-                          <span className="name">{AIRPORT_BY_CODE[far]?.name ?? far}<small> 經 {AIRPORT_BY_CODE[near]?.name ?? near}</small></span>
-                          <b>{count(r.pax)}<small> 人</small></b>
+                <>
+                  <JourneyLegend airline={airlineName(g.airline)} color={colorOf(g.airline)} here />
+                  <ul className="cs-feed-routes">
+                    {g.journeys.slice(0, FED_ROUTES).map((j) => (
+                      <li key={`${j.key}|${j.path.join('>')}`}>
+                        <button onClick={() => open?.(g.airline, j.key, routeKey)}>
+                          <JourneyPath path={j.path} partnerKey={j.key} color={colorOf(g.airline)} airline={airlineName(g.airline)} here={routeKey} />
+                          <b>{count(j.pax)}<small> 人</small></b>
                           <span className="chev" aria-hidden="true" />
                         </button>
                       </li>
-                    );
-                  })}
-                  {g.routes.length > FED_ROUTES && <li className="cs-feed-more-routes">另 {g.routes.length - FED_ROUTES} 條，合計 {count(g.routes.slice(FED_ROUTES).reduce((sum, r) => sum + r.pax, 0))} 人</li>}
-                </ul>
+                    ))}
+                    {otherPax(g) >= 1 && <li className="cs-feed-more-routes">其他 {count(otherPax(g))} 人</li>}
+                  </ul>
+                </>
               )}
             </li>
           );
