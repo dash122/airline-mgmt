@@ -290,7 +290,7 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
             {(allJourneys ? s.journeys : s.journeys.slice(0, JOURNEYS_SHOWN)).map((j) => (
               <li key={j.path.join('>')}>
                 <JourneyPath path={j.path} partnerKey={routeKey} color={color} airline={airlineName(airline)} here={focus} />
-                <b>{count(j.pax)}<small> 人</small></b>
+                <b className="jy-pax">{count(j.pax)}<small> 人</small></b>
               </li>
             ))}
           </ul>
@@ -531,7 +531,7 @@ export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | nu
                       <li key={`${j.key}|${j.path.join('>')}`}>
                         <button onClick={() => open?.(g.airline, j.key, routeKey)}>
                           <JourneyPath path={j.path} partnerKey={j.key} color={colorOf(g.airline)} airline={airlineName(g.airline)} here={routeKey} />
-                          <b>{count(j.pax)}<small> 人</small></b>
+                          <b className="jy-pax">{count(j.pax)}<small> 人</small></b>
                           <span className="chev" aria-hidden="true" />
                         </button>
                       </li>
