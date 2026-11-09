@@ -54,7 +54,7 @@ type Overlay =
   | { kind: 'move'; acId: string; unit: Unit; key: string }
   | { kind: 'gap'; acId: string; t: number }
   | { kind: 'lease' }
-  | { kind: 'codeshare'; airline: string; key: string }
+  | { kind: 'codeshare'; airline: string; key: string; focus?: string }
   | { kind: 'hosted'; key: string; airline?: string }
   | ({ kind: 'new' } & NewRouteState)
   | null;
@@ -232,7 +232,7 @@ export default function App() {
     setOverlay({ kind: 'new', from, to: to === from ? null : to, pick: to && to !== from ? null : 'to' });
   };
   const newRoute = overlay?.kind === 'new' ? overlay : null;
-  const openCodeshare = (airline: string, key: string) => setOverlay({ kind: 'codeshare', airline, key });
+  const openCodeshare = (airline: string, key: string, focus?: string) => setOverlay({ kind: 'codeshare', airline, key, focus });
   const openHosted = (key: string, airline?: string) => setOverlay({ kind: 'hosted', key, airline });
   const toggleHost = (airline: string, key: string) => {
     const on = plan.hosted?.some((h) => h.airline === airline && h.key === key);
@@ -474,7 +474,7 @@ export default function App() {
       )}
       {marketsBuilt && overlay?.kind === 'codeshare' && (
         <SheetNavContext.Provider value={overNav}>
-        <CodeshareSheet key={`${overlay.airline}|${overlay.key}`} plan={plan} airline={overlay.airline} routeKey={overlay.key}
+        <CodeshareSheet key={`${overlay.airline}|${overlay.key}`} plan={plan} airline={overlay.airline} routeKey={overlay.key} focus={overlay.focus}
           onShare={(share) => {
             const was = hasCodeshare(plan, overlay.airline, overlay.key);
             update(setCodeshareShare(plan, overlay.airline, overlay.key, share));
