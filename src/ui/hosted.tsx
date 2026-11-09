@@ -6,9 +6,10 @@ import {
   bestShare, CODESHARE_SEAT_SHARE, HOSTED_FEE_PER_WEEK, hostedChoices, hostedImpact, hostedOptions, hostedShare,
   type HostedImpact, type HostedOption,
 } from '../sim/codeshare';
-import { airlineName, simulate, type NetworkResult, type Plan } from '../sim/simulate';
+import { airlineName, type NetworkResult, type Plan } from '../sim/simulate';
 import { colorOf, DemandBar, MoneySteps, signed } from './codeshare';
 import { createComputeClient } from './compute-client';
+import { dealId, type Deals } from './deals';
 import { count, money, pct } from './format';
 import { Head, routeName, Sheet } from './sheets';
 import { Badge, Icon, IN, Meter, ProfitBar, Ring, type Tone } from './viz';
@@ -45,16 +46,15 @@ const blockTone = (s: { pax: number; seats: number; wanted: number }): Tone =>
   s.pax >= s.seats - 1 && s.wanted > s.pax + 5 ? 'accent' : s.pax / Math.max(1, s.seats) >= 0.5 ? 'good' : 'warn';
 
 /** 代碼共享 → 夥伴賣你航線: who sells which of your routes, then the best partners to add. */
-export function HostedHub({ plan, onOpen, onShare }: { plan: Plan; onOpen: (key: string, airline?: string) => void; onShare: (airline: string, key: string) => void }) {
-  const active = useMemo(() => {
-    const list = plan.hosted ?? [];
-    if (!list.length) return [];
-    const now = simulate(plan);
-    return list.map((h) => ({ ...h, imp: hostedImpact(plan, h.airline, h.key, now) })).sort((x, y) => (y.imp?.gain ?? 0) - (x.imp?.gain ?? 0));
-  }, [plan]);
+export function HostedHub({ plan, deals, onOpen, onShare }: { plan: Plan; deals: Deals; onOpen: (key: string, airline?: string) => void; onShare: (airline: string, key: string) => void }) {
+  // Worked out once for the whole tab (see useDeals); one not done yet (undefined) goes last.
+  const active = useMemo(() => (plan.hosted ?? [])
+    .map((h) => ({ ...h, imp: deals.inn.get(dealId(h.airline, h.key)) }))
+    .sort((x, y) => (x.imp === undefined ? 1 : 0) - (y.imp === undefined ? 1 : 0) || (y.imp?.gain ?? 0) - (x.imp?.gain ?? 0)), [plan, deals]);
   const ideas = useHostedIdeas(plan);
   const [shown, setShown] = useState(SHOWN);
   if (!plan.fleet.length) return <div className="hint center">先開航線，夥伴才有航班可賣</div>;
+  const waiting = active.some((a) => a.imp === undefined);
   const gain = active.reduce((s, a) => s + (a.imp?.gain ?? 0), 0);
   const pax = active.reduce((s, a) => s + (a.imp?.stats.pax ?? 0), 0);
   const max = Math.max(1, ...(ideas?.ideas ?? []).map((i) => i.gain));
@@ -63,8 +63,8 @@ export function HostedHub({ plan, onOpen, onShare }: { plan: Plan; onOpen: (key:
       {active.length > 0 && (
         <>
           <div className="routes-summary">
-            <span><small>每週</small><b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b></span>
-            <span><b>{count(pax)}</b><small>人/週</small></span>
+            <span><small>每週</small>{waiting ? <b className="muted">—</b> : <b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b>}</span>
+            <span><b className={waiting ? 'muted' : undefined}>{waiting ? '—' : count(pax)}</b><small>人/週</small></span>
             <span><b>{active.length}</b><small>個夥伴在賣</small></span>
           </div>
           <Head info={<HostedTerms />}>夥伴在賣</Head>
@@ -80,6 +80,7 @@ export function HostedHub({ plan, onOpen, onShare }: { plan: Plan; onOpen: (key:
                     <span className="route-row-text">
                       <span className="route-row-top"><strong>{routeName(x, y)}</strong>{a.imp && <b className={`route-row-profit ${a.imp.gain < 0 ? 'bad' : 'good'}`}>{signed(a.imp.gain)}<small>／週</small></b>}</span>
                       <span className="route-row-meta">
+                        {a.imp === undefined && <Badge n="clock" tone="accent">計算中…</Badge>}
                         {a.imp && a.imp.gain < 0 && <Badge n="down" tone="bad">虧錢</Badge>}
                         {s && <span className="route-row-load"><Meter value={use} tone={blockTone(s)} label={`夥伴座位賣出 ${pct(use)}`} /><b className={blockTone(s)}>{pct(use)}</b></span>}
                         <small className="route-row-sub">{airlineName(a.airline)} 賣 · {pct(s?.share ?? CODESHARE_SEAT_SHARE)} 座位</small>

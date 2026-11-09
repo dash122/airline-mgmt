@@ -9,12 +9,13 @@ import {
   type CodeshareIdea, type CodeshareImpact, type CodeshareOption,
 } from '../sim/codeshare';
 import type { AirlineNetwork } from '../sim/networks';
-import { airlineName, hhmm, localMinutes, simulate, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
+import { airlineName, hhmm, localMinutes, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
 import { createComputeClient } from './compute-client';
 import type { DayRecord } from './clock';
 import { CodeshareDash } from './codeshare-dash';
 import { HostedHub } from './hosted';
 import { count, money, pct } from './format';
+import { dealId, useDeals, type Deals } from './deals';
 import { JourneyLegend, JourneyPath, journeyUses } from './journey';
 import { Head, routeName, Sheet } from './sheets';
 import { Badge, IN, Icon, Meter, ProfitBar, Ring, type Tone } from './viz';
@@ -56,42 +57,38 @@ function useCodeshareIdeas(plan: Plan) {
   return state ? { ideas: state.ideas.filter((i) => codeshareShare(plan, i.airline, i.route.key) === null), fresh: state.plan === plan && state.done } : null;
 }
 
-/** Each active codeshare with what it adds this week. */
-function useActive(plan: Plan) {
-  return useMemo(() => {
-    const list = plan.codeshares ?? [];
-    if (!list.length) return [];
-    const now = simulate(plan);
-    return list.map((c) => ({ airline: c.airline, key: c.key, imp: codeshareImpact(plan, c.airline, c.key, now) }))
-      .sort((x, y) => (y.imp?.gain ?? 0) - (x.imp?.gain ?? 0));
-  }, [plan]);
-}
-
 /** The 航線 tab's 共享 view: what you share, then the best new ones across all partners. */
 export function CodeshareHub({ plan, history, onOpen, onShare, onPartners, onOpenHosted, onHost }: {
   plan: Plan; history: DayRecord[]; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
   onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void;
 }) {
   const [dir, setDir] = useState<'out' | 'in'>('out');
+  // Every deal's impact is a week-long simulation: worked out once, in the worker, for the dashboard and both lists.
+  const deals = useDeals(plan);
   return (
     <>
-      <CodeshareDash plan={plan} history={history} onOpen={onOpen} onOpenHosted={onOpenHosted} />
+      <CodeshareDash plan={plan} history={history} deals={deals} onOpen={onOpen} onOpenHosted={onOpenHosted} />
       <div className="seg two cs-dir-seg" role="tablist" aria-label="共享方向">
         <button role="tab" aria-selected={dir === 'out'} className={dir === 'out' ? 'on' : ''} onClick={() => setDir('out')}>你賣夥伴航線{plan.codeshares?.length ? ` ${plan.codeshares.length}` : ''}</button>
         <button role="tab" aria-selected={dir === 'in'} className={dir === 'in' ? 'on' : ''} onClick={() => setDir('in')}>夥伴賣你航線{plan.hosted?.length ? ` ${plan.hosted.length}` : ''}</button>
       </div>
-      {dir === 'out' ? <OutHub plan={plan} onOpen={onOpen} onShare={onShare} onPartners={onPartners} /> : <HostedHub plan={plan} onOpen={onOpenHosted} onShare={onHost} />}
+      {dir === 'out' ? <OutHub plan={plan} deals={deals} onOpen={onOpen} onShare={onShare} onPartners={onPartners} /> : <HostedHub plan={plan} deals={deals} onOpen={onOpenHosted} onShare={onHost} />}
     </>
   );
 }
 
-function OutHub({ plan, onOpen, onShare, onPartners }: {
-  plan: Plan; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
+function OutHub({ plan, deals, onOpen, onShare, onPartners }: {
+  plan: Plan; deals: Deals; onOpen: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
 }) {
-  const active = useActive(plan);
+  // What each shared route adds, biggest first; one not worked out yet (undefined) goes last.
+  const active = useMemo(() => (plan.codeshares ?? [])
+    .map((c) => ({ airline: c.airline, key: c.key, imp: deals.out.get(dealId(c.airline, c.key)) }))
+    .sort((x, y) => (x.imp === undefined ? 1 : 0) - (y.imp === undefined ? 1 : 0) || (y.imp?.gain ?? 0) - (x.imp?.gain ?? 0)), [plan, deals]);
   const ideas = useCodeshareIdeas(plan);
   const [shown, setShown] = useState(SHOWN);
   if (!plan.fleet.length) return <div className="hint center">先開航線，才接得上夥伴航班</div>;
+  // Totals need every row: until then a partial sum would look like the answer.
+  const waiting = active.some((a) => a.imp === undefined);
   const gain = active.reduce((s, a) => s + (a.imp?.gain ?? 0), 0);
   const pax = active.reduce((s, a) => s + (a.imp?.stats.pax ?? 0), 0);
   const maxIdea = Math.max(1, ...(ideas?.ideas ?? []).map((i) => i.gain));
@@ -99,14 +96,14 @@ function OutHub({ plan, onOpen, onShare, onPartners }: {
     <>
       {active.length > 0 && (
         <div className="routes-summary">
-          <span><small>每週</small><b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b></span>
-          <span><b>{count(pax)}</b><small>人/週</small></span>
+          <span><small>每週</small>{waiting ? <b className="muted">—</b> : <b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b>}</span>
+          <span><b className={waiting ? 'muted' : undefined}>{waiting ? '—' : count(pax)}</b><small>人/週</small></span>
           <span><b>{active.length}</b><small>條共享</small></span>
         </div>
       )}
       {active.length > 0 && (
         <>
-          <Head info={<CodeshareTerms />}>已共享</Head>
+          <Head info={<CodeshareTerms />} right={!deals.done ? <small className="muted">更新中…</small> : undefined}>已共享</Head>
           <ul className="route-rows">
             {active.map((a) => <ActiveRow key={`${a.airline}|${a.key}`} airline={a.airline} routeKey={a.key} imp={a.imp} onOpen={() => onOpen(a.airline, a.key)} />)}
           </ul>
@@ -131,7 +128,7 @@ function OutHub({ plan, onOpen, onShare, onPartners }: {
 }
 
 /** One codeshare you run: route, partner, how full its seat block is, what it adds. */
-function ActiveRow({ airline, routeKey, imp, onOpen }: { airline: string; routeKey: string; imp: CodeshareImpact | null; onOpen: () => void }) {
+function ActiveRow({ airline, routeKey, imp, onOpen }: { airline: string; routeKey: string; imp: CodeshareImpact | null | undefined; onOpen: () => void }) {
   const [a, b] = routeKey.split('-');
   const s = imp?.stats;
   const use = s && s.seats ? s.pax / s.seats : 0;
@@ -146,7 +143,8 @@ function ActiveRow({ airline, routeKey, imp, onOpen }: { airline: string; routeK
         <span className="route-row-text">
           <span className="route-row-top"><strong>{routeName(a, b)}</strong>{imp && <b className={`route-row-profit ${imp.gain < 0 ? 'bad' : 'good'}`}>{signed(imp.gain)}<small>／週</small></b>}</span>
           <span className="route-row-meta">
-            {!imp ? <Badge n="warn" tone="warn">停飛</Badge>
+            {imp === undefined ? <Badge n="clock" tone="accent">計算中…</Badge>
+              : !imp ? <Badge n="warn" tone="warn">停飛</Badge>
               : dead ? <Badge n="warn" tone="bad">接不上</Badge>
               : soldOut ? <Badge n="spill" tone="accent">座位賣光</Badge>
               : ownFull ? <Badge n="spill" tone="warn">你的航班滿</Badge>

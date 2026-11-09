@@ -1,9 +1,10 @@
 import { analyzeAirport } from './airport-analysis.worker';
 import { destinationsFrom, previewChoice } from '../sim/newroute';
-import { simulate } from '../sim/simulate';
+import { simulate, type Plan } from '../sim/simulate';
 import { fareCurve } from '../sim/fares';
 import { routeWhatIf } from '../sim/route-whatif';
-import { codeshareIdeaSteps, hostedIdeaSteps, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
+import { codeshareImpact, codeshareIdeaSteps, hostedImpact, hostedIdeaSteps, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
+import type { Deal } from './deals';
 
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
   const { scope, port } = event.data;
@@ -18,6 +19,29 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
+      else if (scope === 'codeshare' && kind === 'deals') {
+        // The impact of every codeshare and hosted deal in the plan: a whole week's simulation for each, so in slices,
+        // sending each batch as soon as it is done and dropping the rest the moment a newer plan arrives.
+        const p = plan as Plan;
+        const now = simulate(p);
+        const work: (() => Deal)[] = [
+          ...(p.codeshares ?? []).map((c) => (): Deal => ({ side: 'out', airline: c.airline, key: c.key, imp: codeshareImpact(p, c.airline, c.key, now) })),
+          ...(p.hosted ?? []).map((h) => (): Deal => ({ side: 'in', airline: h.airline, key: h.key, imp: hostedImpact(p, h.airline, h.key, now) })),
+        ];
+        let batch: Deal[] = [];
+        let sliceStart = performance.now();
+        for (const run of work) {
+          if (current !== version) return;
+          batch.push(run());
+          if (performance.now() - sliceStart > 30) {
+            port.postMessage({ id, deals: batch, partial: true });
+            batch = [];
+            await yieldTask();
+            sliceStart = performance.now();
+          }
+        }
+        port.postMessage({ id, deals: batch });
+      }
       else if (scope === 'codeshare') {
         // Partner by partner, yielding between steps so a daily-figure request is not queued behind the whole search,
         // and dropping the search as soon as a newer plan asks for one.

@@ -2392,3 +2392,4 @@ button.danger.solid, .confirm button.danger.solid {
 .ac-tile-main small { flex: none; font-size: var(--fs-3xs); color: var(--muted); }
 .ac-tile strong { margin: 0; font-size: var(--fs-xs); }
 .ac-detail { color: var(--muted); font-size: var(--fs-2xs); padding: 0 2px; }
+.cs-dash-wait { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; }
