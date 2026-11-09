@@ -16,17 +16,37 @@ export interface FarePoint {
 
 export const clampFare = (x: number) => Math.max(FARE_MIN, Math.min(FARE_MAX, Math.round(x / FARE_STEP) * FARE_STEP));
 
-/** The route's results at every fare step from 70% to 140% of the reference fare. */
-export function fareCurve(plan: Plan, key: string): FarePoint[] {
-  const out: FarePoint[] = [];
-  for (let i = 0; FARE_MIN + i * FARE_STEP <= FARE_MAX + 1e-9; i++) {
-    const mult = Math.round((FARE_MIN + i * FARE_STEP) * 100) / 100;
-    const res = simulate({ ...plan, fares: { ...plan.fares, [key]: mult } });
-    const r = res.routes[key];
-    if (!r) continue;
-    out.push({ mult, profit: res.revenue - res.cost, loadFactor: r.loadFactor, demand: r.demand, spill: r.spill });
+const STEPS = Math.round((FARE_MAX - FARE_MIN) / FARE_STEP) + 1;
+
+/**
+ * The route's results at every fare step from 70% to 140% of the reference fare, one simulation at a time so a caller
+ * can yield between them and drop a curve a newer plan has made stale. Every other step comes first (the ones in line
+ * with today's fare), and the generator yields 'coarse' once those are in `out`: a usable curve in half the time.
+ * Returns the full curve, which is also `out`.
+ */
+export function* fareCurveSteps(plan: Plan, key: string, out: FarePoint[] = []): Generator<'coarse' | void, FarePoint[], void> {
+  const today = plan.fares[key] ?? 1;
+  const first = Math.max(0, Math.round((today - FARE_MIN) / FARE_STEP)) % 2;
+  for (const parity of [first, 1 - first]) {
+    for (let i = parity; i < STEPS; i += 2) {
+      const mult = Math.round((FARE_MIN + i * FARE_STEP) * 100) / 100;
+      const res = simulate(Math.abs(mult - today) < 1e-9 ? plan : { ...plan, fares: { ...plan.fares, [key]: mult } });
+      const r = res.routes[key];
+      if (r) out.push({ mult, profit: res.revenue - res.cost, loadFactor: r.loadFactor, demand: r.demand, spill: r.spill });
+      yield;
+    }
+    out.sort((x, y) => x.mult - y.mult);
+    if (parity === first) yield 'coarse';
   }
   return out;
+}
+
+/** The whole curve at once. */
+export function fareCurve(plan: Plan, key: string): FarePoint[] {
+  const steps = fareCurveSteps(plan, key);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
 }
 
 /** The most profitable fare step; ties go to the cheaper fare. */

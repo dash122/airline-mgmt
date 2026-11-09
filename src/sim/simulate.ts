@@ -900,7 +900,32 @@ export function todaySplit(o: string, d: string): { total: number; rivals: numbe
   return { total, rivals, via, connecting };
 }
 
+/**
+ * The last few results by plan content. The calculation worker asks for the same plan again and again (the fare curve
+ * at today's fare, "what if" baselines, every codeshare deal's "without"), and a week's simulation is the expensive part.
+ */
+const recent = new Map<string, NetworkResult>();
+const RECENT_MAX = 4;
 export function simulate(plan: Plan): NetworkResult {
+  const key = JSON.stringify(plan);
+  let result = recent.get(key);
+  if (result) { recent.delete(key); } else result = simulateUncached(plan);
+  recent.set(key, result);
+  if (recent.size > RECENT_MAX) recent.delete(recent.keys().next().value!);
+  return result;
+}
+
+/** Everything about a plan's flights and the itineraries over them that doesn't depend on its fares. */
+interface Structure {
+  flights: Flight[];
+  partners: Flight[];
+  every: Flight[];
+  itins: Map<string, Itinerary[]>;
+  blocks: Map<string, Flight>;
+  partnerLinks: Map<Flight, Set<Flight>>;
+}
+
+function buildStructure(plan: Plan): Structure {
   const flights = buildFlights(plan);
   // Codeshare flights only carry the player's travellers as one leg of a connection with its own flights.
   const partners = buildPartnerFlights(plan);
@@ -934,8 +959,6 @@ export function simulate(plan: Plan): NetworkResult {
   // Which of the player's flights each partner flight connects with, and how many travellers each pairing carries.
   const partnerLinks = new Map<Flight, Set<Flight>>();
   const linkOf = (f: Flight) => { let set = partnerLinks.get(f); if (!set) partnerLinks.set(f, (set = new Set())); return set; };
-  const linkPax = new Map<Flight, Map<Flight, number>>();
-  const partnerWanted = new Map<Flight, number>();
   for (const f1 of every) {
     const mult1 = multOf(f1);
     if (!f1.partner) add(f1.from, f1.to, { flights: [f1], weight: flightTimeQuality(f1), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
@@ -996,6 +1019,41 @@ export function simulate(plan: Plan): NetworkResult {
   for (const f1 of flights) for (const f2 of ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) addTwoStop([f1, f2, p]);
   for (const p of sellable) for (const f2 of ownFrom.get(p.to) ?? []) for (const f3 of ownFrom.get(f2.to) ?? []) addTwoStop([p, f2, f3]);
 
+  return { flights, partners, every, itins, blocks, partnerLinks };
+}
+
+/**
+ * The structure of the last few plans, apart from fares: trying every fare on a route (the fare curve) then builds
+ * the itineraries once and only redoes demand, capacity and the tally.
+ */
+const structures = new Map<string, Structure>();
+const STRUCTURES_MAX = 3;
+function structureOf(plan: Plan): Structure {
+  const key = JSON.stringify({ ...plan, fares: null });
+  const hit = structures.get(key);
+  if (hit) {
+    structures.delete(key);
+    structures.set(key, hit);
+    // The one thing fares change: what each itinerary's price follows (the same arithmetic as when it was built).
+    const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
+    for (const list of hit.itins.values()) {
+      for (const it of list) {
+        const legs = it.flights;
+        it.fareMult = legs.length === 1 ? multOf(legs[0]) : legs.reduce((sum, f) => sum + multOf(f) * f.distKm, 0) / legs.reduce((sum, f) => sum + f.distKm, 0);
+      }
+    }
+    return hit;
+  }
+  const built = buildStructure(plan);
+  structures.set(key, built);
+  if (structures.size > STRUCTURES_MAX) structures.delete(structures.keys().next().value!);
+  return built;
+}
+
+function simulateUncached(plan: Plan): NetworkResult {
+  const { flights, partners, every, itins, blocks, partnerLinks } = structureOf(plan);
+  const linkPax = new Map<Flight, Map<Flight, number>>();
+  const partnerWanted = new Map<Flight, number>();
   // Demand per itinerary (daily).
   const demand = new Map<Itinerary, number>();
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
@@ -1032,24 +1090,48 @@ export function simulate(plan: Plan): NetworkResult {
   // A trip a partner sells also needs a seat in its block on the player's flight.
   const legsOf = (it: Itinerary) => (it.block ? [...it.flights, it.block] : it.flights);
   const limited = [...every, ...blocks.values()];
-  const accept = new Map<Flight, number>(limited.map((f) => [f, 1]));
-  const carried = new Map<Itinerary, number>();
+  // Typed arrays over flight and itinerary indices: this loop is most of a simulation's cost, and the legs of each
+  // itinerary are looked up once instead of rebuilt on every pass.
+  const slot = new Map<Flight, number>(limited.map((f, i) => [f, i]));
+  const seatOf = Float64Array.from(limited, (f) => f.seats);
+  const itList: Itinerary[] = [], wantList: number[] = [], legList: number[][] = [];
+  for (const [it, n] of demand) { itList.push(it); wantList.push(n); legList.push(legsOf(it).map((f) => slot.get(f)!)); }
+  const acceptAt = new Float64Array(limited.length).fill(1);
+  const carriedAt = new Float64Array(itList.length);
+  const onboardAt = new Float64Array(limited.length);
   const load = () => {
-    for (const [it, n] of demand) carried.set(it, n * Math.min(...legsOf(it).map((f) => accept.get(f)!)));
-    const onboard = new Map<Flight, number>();
-    for (const [it, n] of carried) for (const f of legsOf(it)) onboard.set(f, (onboard.get(f) ?? 0) + n);
-    return onboard;
+    onboardAt.fill(0);
+    for (let i = 0; i < itList.length; i++) {
+      const legs = legList[i];
+      let share = Infinity;
+      for (let j = 0; j < legs.length; j++) share = Math.min(share, acceptAt[legs[j]]);
+      const n = wantList[i] * share;
+      carriedAt[i] = n;
+      for (let j = 0; j < legs.length; j++) onboardAt[legs[j]] += n;
+    }
   };
   for (let pass = 0; pass < 12; pass++) {
-    const onboard = load();
-    for (const f of limited) {
-      const n = onboard.get(f) ?? 0;
-      if (n > 0) accept.set(f, Math.min(1, (accept.get(f)! * f.seats) / n));
+    load();
+    let moved = false;
+    for (let f = 0; f < limited.length; f++) {
+      const n = onboardAt[f];
+      if (n > 0) {
+        const next = Math.min(1, (acceptAt[f] * seatOf[f]) / n);
+        if (next !== acceptAt[f]) { acceptAt[f] = next; moved = true; }
+      }
     }
+    if (!moved) break; // nothing changes from here on
   }
   // Never more travellers than seats.
-  const finalLoad = load();
-  for (const [it, n] of carried) carried.set(it, n * Math.min(1, ...legsOf(it).map((f) => f.seats / Math.max(finalLoad.get(f) ?? 0, f.seats))));
+  load();
+  const carried = new Map<Itinerary, number>();
+  for (let i = 0; i < itList.length; i++) {
+    const legs = legList[i];
+    let fit = 1;
+    for (let j = 0; j < legs.length; j++) fit = Math.min(fit, seatOf[legs[j]] / Math.max(onboardAt[legs[j]], seatOf[legs[j]]));
+    carried.set(itList[i], carriedAt[i] * fit);
+  }
+  const accept = new Map<Flight, number>(limited.map((f, i) => [f, acceptAt[i]]));
 
   // Tally per flight.
   const flightPax = new Map<Flight, number>();

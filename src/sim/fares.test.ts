@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+import { codeshareIdeas, hostedIdeas } from './codeshare';
 import { addRoundTrip, emptyPlan, simulate, type Plan } from './simulate';
-import { bestFare, fareCurve } from './fares';
+import { bestFare, fareCurve, fareCurveSteps } from './fares';
 import { marketBetween } from './markets';
 
 const must = (r: ReturnType<typeof addRoundTrip>) => {
@@ -72,5 +73,38 @@ describe('airports in one city', () => {
     expect(r.rivals).toHaveLength(0);
     expect(r.demand).toBeGreaterThan(m.potential * 0.5);
     expect(r.demand).toBeLessThan(m.potential * 2 * 0.9);
+  });
+});
+
+describe('fare curve steps', () => {
+  const hkg = trips(emptyPlan('TPE'), 'TPE', 'HKG', 3);
+  test('every other step first, in line with today\'s fare, then the rest; same curve as all at once', () => {
+    const plan = { ...hkg, fares: { 'HKG-TPE': 1.05 } };
+    const out: ReturnType<typeof fareCurve> = [];
+    const steps = fareCurveSteps(plan, 'HKG-TPE', out);
+    let coarse: number[] | null = null;
+    for (let r = steps.next(); !r.done; r = steps.next()) if (r.value === 'coarse') coarse = out.map((p) => p.mult);
+    expect(coarse).toEqual([0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35]);
+    expect(out).toHaveLength(15);
+    expect(out.map((p) => p.mult)).toEqual([...out.map((p) => p.mult)].sort((x, y) => x - y));
+    for (const p of out) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
+  });
+  test('simulating the same plan again returns the remembered result', () => {
+    expect(simulate(hkg)).toBe(simulate(JSON.parse(JSON.stringify(hkg))));
+  });
+});
+
+describe('structure reuse across fares', () => {
+  test('a fare tried on a remembered plan structure gives exactly the results of a cold start, codeshares included', async () => {
+    let p = trips(trips(trips(emptyPlan('HKG'), 'HKG', 'NRT', 2), 'HKG', 'SIN', 2), 'HKG', 'TPE', 2);
+    p = { ...p, codeshares: codeshareIdeas(p, 6).map((i) => ({ airline: i.airline, key: i.route.key })) };
+    p = { ...p, hosted: hostedIdeas(p, 6, 6).map((h) => ({ airline: h.airline, key: h.key })) };
+    expect((p.codeshares?.length ?? 0) + (p.hosted?.length ?? 0)).toBeGreaterThan(0);
+    const tried = { ...p, fares: { 'HKG-NRT': 1.25, 'HKG-SIN': 0.8 } };
+    simulate(p); // remembers the structure
+    const warm = JSON.stringify(simulate(tried));
+    vi.resetModules();
+    const cold = JSON.stringify((await import('./simulate')).simulate(tried));
+    expect(warm).toBe(cold);
   });
 });
