@@ -358,8 +358,8 @@ export default function MapCanvas(props: Props) {
           ctx.lineCap = 'round';
           ctx.strokeStyle = color;
           ctx.globalAlpha = net && net.airline.id !== cs.airline ? 0.25 : 0.95;
-          ctx.lineWidth = 2.5;
-          ctx.setLineDash([7, 5]);
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([5, 4]);
           ctx.stroke();
           ctx.setLineDash([]);
           ctx.globalAlpha = 1;

@@ -1,13 +1,14 @@
 ﻿// The airport sheet's competition and market potential sections, and the summary tiles that lead to each section.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AIRPORT_BY_CODE, AIRPORTS } from '../data/airports';
-import { airlinesAt, rivalsAt, rivalsBetween, type RivalService } from '../sim/competitors';
+import { airlinesAt, rivalsAt, rivalsBetween, type Airline, type RivalService } from '../sim/competitors';
 import { countryName } from '../sim/networks';
 import type { NetworkResult } from '../sim/simulate';
 import { marketSplit, type ShareRow } from '../sim/share';
 import { allFlights, marketPotential, type AirportPotential, type MarketPotential } from '../sim/airports';
 import { LONG_HAUL_KM, marketBetween, pairKey } from '../sim/markets';
-import { blockMinutes, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
+import { blockMinutes, canCodeshare, hasCodeshare, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
+import { CodeshareLink } from './codeshare';
 import { CompactTimetable } from './CompactTimetable';
 import { AirlineName } from './rivals';
 import { count, pct } from './format';
@@ -100,6 +101,18 @@ function ownBridgeOptions(plan: Plan, from: string, via: string, to: string): Br
   }
   return options.sort((a, b) => a.wait - b.wait || a.dep1 - b.dep1).slice(0, 4);
 }
+/** The airlines that fly exactly this airport pair and can codeshare, the busiest first. A codeshare needs the pair itself, not a neighbouring airport in the same city. */
+export function partnersOn(a: string, b: string): Airline[] {
+  const by = new Map<string, { airline: Airline; freq: number }>();
+  for (const s of rivalsBetween(a, b)) {
+    if (!canCodeshare(s.airline)) continue;
+    const e = by.get(s.airline.id) ?? { airline: s.airline, freq: 0 };
+    e.freq += s.freq;
+    by.set(s.airline.id, e);
+  }
+  return [...by.values()].sort((x, y) => y.freq - x.freq).map((x) => x.airline);
+}
+
 const PAGE = 10;
 type RouteFilter = 'all' | 'short' | 'long';
 type RouteView = RouteFilter | Continent;
@@ -122,6 +135,7 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, on
   const [shown, setShown] = useState(PAGE);
   const [filter, setFilter] = useState<RouteView>('all');
   const [open, setOpen] = useState<string | null>(null);
+  const openCodeshare = useContext(CodeshareLink);
   const carriers = airlinesAt(code);
   const dests = useMemo(() => {
     const ours = new Set(Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).map((r) => (r.a === code ? r.b : r.a)));
@@ -176,7 +190,7 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, on
           );
         })}
       </div>
-      <Head info={<p>每週、雙向。<span className="k" style={{ color: OWN }}>■</span> 你 <span className="k spill">■</span> 想搭你但客滿，其他顏色是各家對手。你飛的航線點了開航線；沒飛的點了看對手班表。對手的班表和票價固定。</p>}>每條航線</Head>
+      <Head info={<><p>每週、雙向。<span className="k" style={{ color: OWN }}>■</span> 你 <span className="k spill">■</span> 想搭你但客滿，其他顏色是各家對手。你飛的航線點了開航線；沒飛的點了看對手班表。對手的班表和票價固定。</p><p>對手的航班可以共享：把它的座位賣給轉乘你航班的旅客，要付共享費。</p></>}>每條航線</Head>
       <div className="airport-route-filters" role="group" aria-label="航線篩選">
         {([
           ['all', `全部 ${routeFilters.all}`],
@@ -198,11 +212,14 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, on
           const connectionRows = transitRows.filter((x) => x.kind === 'ownVia' || x.kind === 'rivalVia');
           const rf = rivals.reduce((s, x) => s + x.freq, 0);
           const isOpen = open === to;
+          const key = pairKey(code, to);
+          const sharing = (plan.codeshares ?? []).some((c) => c.key === key);
+          const partners = isOpen ? partnersOn(code, to) : [];
           return (
             <li key={to} className={flown ? 'flown' : ''}>
               <div className="vs-top" role="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : to)}>
                 <span className="name"><b>{AIRPORT_BY_CODE[to].name} {to}</b>
-                  <span className="ins">{flown && <IN n="plane" v={count(own?.freq ?? 0)} label="你的班次/週" w="你" u="班" tone="accent" />}<IN n="rival" v={count(rf)} label="對手班次/週" w="對手" u="班" /><IN n="pax" v={count(split.total)} label="旅客/週" u="人/週" /></span></span>
+                  <span className="ins">{flown && <IN n="plane" v={count(own?.freq ?? 0)} label="你的班次/週" w="你" u="班" tone="accent" />}<IN n="rival" v={count(rf)} label="對手班次/週" w="對手" u="班" /><IN n="pax" v={count(split.total)} label="旅客/週" u="人/週" />{sharing && <Badge n="link" tone="good" label="共享中" />}</span></span>
                 <span className="rival-share">{flown ? pct(own?.share ?? 0) : '—'}<small>{flown ? '市占' : '未開航'}</small></span>
               </div>
               {!isOpen && <div className="airport-row-summary">
@@ -216,6 +233,10 @@ export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, on
                 {flown
                   ? <button className="chip strong" onClick={() => onOpenRoute(pairKey(code, to))}>查看航線 {code} ⇄ {to}</button>
                   : <button className="chip strong" onClick={() => onOpen(to)}>開航 {code} ⇄ {to}</button>}
+                {openCodeshare && partners.slice(0, 4).map((al) => {
+                  const on = hasCodeshare(plan, al.id, key);
+                  return <button key={al.id} className={`chip${on ? ' on' : ''}`} onClick={() => openCodeshare(al.id, key)}><Icon n="link" /> {on ? `${al.name} · 共享中` : `共享 ${al.name}`}</button>;
+                })}
               </div>}
               {isOpen && <div className="airport-share-groups">
                 {[{ key: 'direct', label: '直飛', rows: directRows }, { key: 'connecting', label: '轉機', rows: transitRows }].map((group) => group.rows.length > 0 && (
