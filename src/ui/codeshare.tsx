@@ -457,11 +457,6 @@ export function MoneySteps({ imp, feedLabel = '共享旅客票價', feeLabel = '
   );
 }
 
-const FED_AIRLINES = 3;
-const FED_ROUTES = 4;
-/** Travellers of a group that the journeys listed under it don't account for. */
-const otherPax = (g: FeedGroup) => g.pax - g.journeys.slice(0, FED_ROUTES).reduce((sum, j) => sum + j.pax, 0);
-
 /** A whole journey that flies a route of yours, with the partner route (`key`) it uses. */
 export interface FeedJourney { path: string[]; pax: number; key: string }
 /** One partner airline's feed into a route: what it brings in total, the partner routes that bring it, and the journeys. */
@@ -486,71 +481,6 @@ export function groupFeeds(net: NetworkResult | null | undefined, routeKey: stri
     g.journeys.sort((x, y) => y.pax - x.pax);
   }
   return [...by.values()].sort((x, y) => y.pax - x.pax);
-}
-
-/**
- * The route sheet's note: travellers partners bring onto this route. One total and one bar with a segment per airline,
- * then the biggest airlines. An airline opens to the airports its travellers come from (the far end of each partner
- * route), and each of those opens that codeshare.
- */
-export function FedByNote({ net, routeKey, routePax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number }) {
-  const open = useContext(CodeshareLink);
-  const [all, setAll] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const groups = useMemo(() => groupFeeds(net, routeKey), [net, routeKey]);
-  if (!groups.length) return null;
-  const total = groups.reduce((s, g) => s + g.pax, 0);
-  const shown = all ? groups : groups.slice(0, FED_AIRLINES);
-  const rest = groups.slice(FED_AIRLINES);
-  return (
-    <div className="cs-feed-note">
-      <div className="cs-feed-head">
-        <span><b>{count(total)}</b> 人/週 由夥伴帶來</span>
-        <small>{pct(total / Math.max(1, routePax))}</small>
-      </div>
-      <div className="cs-feed-bar" role="img" aria-label={groups.map((g) => `${airlineName(g.airline)} ${count(g.pax)} 人`).join('，')}>
-        {groups.map((g) => <i key={g.airline} style={{ width: `${(100 * g.pax) / total}%`, background: colorOf(g.airline) }} />)}
-      </div>
-      <ul className="cs-feed-list">
-        {shown.map((g) => {
-          const on = expanded === g.airline;
-          return (
-            <li key={g.airline}>
-              <button className="cs-feed-row" aria-expanded={on} onClick={() => setExpanded(on ? null : g.airline)}>
-                <i className="dot" style={{ background: colorOf(g.airline) }} />
-                <span className="name">{airlineName(g.airline)}</span>
-                <small>{g.routes.length} 條航線</small>
-                <b>{pct(g.pax / total)}</b>
-                <span className="chev" aria-hidden="true" />
-              </button>
-              {on && (
-                <>
-                  <JourneyLegend airline={airlineName(g.airline)} color={colorOf(g.airline)} here />
-                  <ul className="cs-feed-routes">
-                    {g.journeys.slice(0, FED_ROUTES).map((j) => (
-                      <li key={`${j.key}|${j.path.join('>')}`}>
-                        <button onClick={() => open?.(g.airline, j.key, routeKey)}>
-                          <JourneyPath path={j.path} partnerKey={j.key} color={colorOf(g.airline)} airline={airlineName(g.airline)} here={routeKey} />
-                          <b className="jy-pax">{count(j.pax)}<small> 人</small></b>
-                          <span className="chev" aria-hidden="true" />
-                        </button>
-                      </li>
-                    ))}
-                    {otherPax(g) >= 1 && <li className="cs-feed-more-routes">其他 {count(otherPax(g))} 人</li>}
-                  </ul>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {rest.length > 0 && (
-        <button className="cs-feed-all" aria-expanded={all} onClick={() => setAll((v) => !v)}>
-          {all ? '收起' : `其他 ${rest.length} 家 · ${pct(rest.reduce((sum, g) => sum + g.pax, 0) / total)}`}
-        </button>
-      )}
-    </div>
-  );
 }
 
 /** Same ideas hook as the hub, limited to partner routes that start or end at this route's airports. Worked out only when opened. */
