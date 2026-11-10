@@ -278,7 +278,7 @@ export default function App() {
   const section: Section = panel === 'fleet' || panel === 'schedule' ? 'fleet' : panel === 'airports' || panel === 'airlines' ? 'market' : 'routes';
   const homeNav: SheetNav = {
     detent, onDetent: setDetent,
-    switcher: <div className="seg three switcher" role="tablist" aria-label="主要導覽">
+    switcher: <div className="switcher" role="tablist" aria-label="主要導覽">
       {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-selected={section === id} className={section === id ? 'on' : ''}
         onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} />{label}</button>)}
     </div>,
@@ -541,7 +541,7 @@ function TabIcon({ tab }: { tab: Panel | null }) {
     airlines: 'M4 20h16 M6 20l4-16h3l-1 8h6l2 8',
     market: 'M12 3a5 5 0 0 1 5 5c0 4-5 10-5 10S7 12 7 8a5 5 0 0 1 5-5z M12 6.5a1.6 1.6 0 1 0 0.01 0 M5 21h14',
   }[tab ?? 'map'];
-  return <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 /**
@@ -574,9 +574,9 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
     <header className={`island${open ? ' open' : ''}`}>
       <div className="island-bar">
         <button className="island-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="狀態與設定">
-          <span className="i-kpi"><small>累計 HK$</small><b className={toneOf(balance)}>{money(balance)}</b></span>
-          <span className="i-kpi"><small>每日 HK$</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
-          <span className="i-kpi"><small>第 {dayAt(base, now)} 天</small><b>{hhmm(localMinutes(base, now))}</b></span>
+          <span className="i-kpi" title="累計 HK$"><small>HK$</small><b className={toneOf(balance)}>{money(balance)}</b></span>
+          <span className="i-kpi" title="每日 HK$"><small>/日</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
+          <span className="i-kpi i-time" title={`第 ${dayAt(base, now)} 天`}><small>D{dayAt(base, now)}</small><b>{hhmm(localMinutes(base, now))}</b></span>
         </button>
         <button className={`island-play${speed === 0 ? ' paused' : ''}`} onClick={() => onSpeed(speed === 0 ? lastRun.current : 0)} aria-label={speed === 0 ? '繼續' : '暫停'}>
           {speed === 0 ? <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor" /></svg>
@@ -627,7 +627,7 @@ function StartScreen({ onPick }: { onPick: (base: string) => void }) {
             </button>
           ))}
         </div>
-        <p className="fine">需求由人口與機場規模推估，僅供遊戲使用。資料來源：OurAirports、GeoNames（CC BY 4.0）、Natural Earth。</p>
+        <p className="fine">資料：OurAirports、GeoNames（CC BY 4.0）、Natural Earth</p>
         </div>
       </div>
     </div>

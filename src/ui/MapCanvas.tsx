@@ -453,12 +453,22 @@ export default function MapCanvas(props: Props) {
             hinted.add(a.code);
           }
           ctx.beginPath();
-          ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fillStyle = inPlan.has(a.code) || isBase ? pal.airport : pal.land;
-          ctx.fill();
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = isBase ? pal.sel : pal.airport;
-          ctx.stroke();
+          if (inPlan.has(a.code) || isBase || selected || netHubs.has(a.code)) {
+            // Your network: a solid dot with a light rim, the base ringed in coral.
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = pal.airport;
+            ctx.fill();
+            ctx.lineWidth = isBase ? 2.5 : 1.5;
+            ctx.strokeStyle = isBase ? pal.sel : pal.labelHalo;
+            ctx.stroke();
+          } else {
+            // Everything else stays quiet: a small soft dot that reads as texture, not noise.
+            ctx.arc(x, y, Math.max(2, r * 0.55), 0, Math.PI * 2);
+            ctx.fillStyle = pal.idle;
+            ctx.globalAlpha = 0.55;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+          }
           const showLabel = hinted.has(a.code) || a.size === 'hub' || (a.size === 'major' && v.scale > 25) || v.scale > 45 || inPlan.has(a.code) || selected || isBase;
           if (showLabel) {
             const prio = selected || isBase || netHubs.has(a.code) ? 0 : inPlan.has(a.code) || hinted.has(a.code) ? 1 : SIZE_PRIORITY[a.size];
