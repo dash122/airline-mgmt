@@ -6,6 +6,16 @@ import { routeWhatIfSteps } from '../sim/route-whatif';
 import { bestShare, codeshareImpact, codeshareIdeaSteps, codeshareOptionSteps, hostedChoices, hostedImpact, hostedIdeaSteps, hostedOptionSteps, shareChoices, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
 import type { Deal } from './deals';
 
+/**
+ * Requests a sheet on screen is waiting for. The deal-by-deal impact list (hundreds of simulations with many
+ * codeshares) steps aside while any of these runs, so an open sheet is not queued behind it.
+ */
+let urgent = 0;
+/** Partners tried for one of your routes: the sheet shows the best 8, and each one tried is a full simulation. */
+const HOSTED_CANDIDATES = 10;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const ranked = <T extends { active: boolean; gain: number }>(list: T[]) => [...list].sort((x, y) => Number(y.active) - Number(x.active) || y.gain - x.gain);
+
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
   const { scope, port } = event.data;
   let version = 0;
@@ -23,6 +33,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         // The impact of every codeshare and hosted deal in the plan: a whole week's simulation for each, so in slices,
         // sending each batch as soon as it is done and dropping the rest the moment a newer plan arrives.
         const p = plan as Plan;
+        while (urgent > 0) { await sleep(25); if (current !== version) return; }
         const now = simulate(p);
         // The headline totals first: two simulations (with and without every deal) instead of waiting for all of them.
         // Pax and seats are the plan's own figures; the net is exact, though not the sum of the per-deal gains, since
@@ -40,6 +51,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         let batch: Deal[] = [];
         let sliceStart = performance.now();
         for (const run of work) {
+          while (urgent > 0) { await sleep(25); if (current !== version) return; }
           if (current !== version) return;
           batch.push(run());
           if (performance.now() - sliceStart > 30) {
@@ -52,17 +64,26 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         port.postMessage({ id, deals: batch });
       }
       else if (scope === 'codeshare' && (kind === 'cs-options' || kind === 'hs-options')) {
-        // A sheet's partner list, a simulation at a time so a newer request drops this one.
-        const steps = kind === 'cs-options' ? codeshareOptionSteps(plan, airline) : hostedOptionSteps(plan, routeKey, 16);
-        let step = steps.next();
-        while (!step.done) {
-          await yieldTask();
-          if (current !== version) return;
-          step = steps.next();
-        }
-        port.postMessage({ id, value: step.value });
+        // A sheet's partner list, a simulation at a time so a newer request drops this one. Each partner is sent as
+        // soon as it is worked out, so the list fills in instead of waiting for the last one.
+        urgent++;
+        try {
+          const out: { active: boolean; gain: number }[] = [];
+          const steps = kind === 'cs-options' ? codeshareOptionSteps(plan, airline, undefined, undefined, out as never) : hostedOptionSteps(plan, routeKey, HOSTED_CANDIDATES, out as never);
+          let step = steps.next();
+          let sent = 0;
+          while (!step.done) {
+            if (out.length > sent) { sent = out.length; port.postMessage({ id, value: ranked(out), partial: true }); }
+            await yieldTask();
+            if (current !== version) return;
+            step = steps.next();
+          }
+          port.postMessage({ id, value: step.value });
+        } finally { urgent--; }
       }
       else if (scope === 'codeshare' && (kind === 'cs-detail' || kind === 'hs-detail')) {
+        urgent++;
+        try {
         // One deal's sheet: what each seat block adds, then its full impact at the shown block (the best one unless given).
         const out = kind === 'cs-detail';
         const sizes = out ? shareChoices(plan, airline, routeKey) : hostedChoices(plan, airline, routeKey);
@@ -70,6 +91,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         const at: number = share ?? bestShare(sizes).share;
         const imp = out ? codeshareImpact(plan, airline, routeKey, undefined, at) : hostedImpact(plan, airline, routeKey, undefined, at);
         port.postMessage({ id, value: { choices: sizes, share: at, imp } });
+        } finally { urgent--; }
       }
       else if (scope === 'codeshare') {
         // Partner by partner, yielding between steps so a daily-figure request is not queued behind the whole search,
@@ -96,6 +118,8 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
       else if (kind === 'fare-curve' || kind === 'what-if') {
         // A simulation or two at a time: between them other requests (the main simulation above all) get their turn,
         // and the rest is dropped the moment a newer plan arrives. The fare curve sends a coarse version first.
+        urgent++;
+        try {
         const out: FarePoint[] = [];
         const steps = kind === 'fare-curve' ? fareCurveSteps(plan, routeKey, out) : routeWhatIfSteps(plan, a, b, routeKey);
         let step = steps.next();
@@ -106,6 +130,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
           step = steps.next();
         }
         port.postMessage({ id, value: step.value });
+        } finally { urgent--; }
       }
       else {
         const previews = [];

@@ -135,7 +135,8 @@ export function HostedSheet({ plan, routeKey, airline: initial, onSet, onStop, o
   const calc = useCalc<HostedOption[]>('hs-options', plan, { routeKey });
   const options = useMemo(() => calc.value ?? [], [calc.value]);
   const [picked, setPicked] = useState<string | undefined>(initial);
-  const airline = picked ?? options[0]?.airline;
+  // Partners fill in one by one; the best one opens once all are compared (a tapped one opens at once).
+  const airline = picked ?? (calc.done ? options[0]?.airline : undefined);
   const [a, b] = routeKey.split('-');
   const chips = options.slice(0, 8);
   if (airline && !chips.some((o) => o.airline === airline)) {
@@ -145,8 +146,8 @@ export function HostedSheet({ plan, routeKey, airline: initial, onSet, onStop, o
   return (
     <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><span className="in">夥伴賣你的航線</span></span>} onClose={onClose} info={<HostedTerms />}
       action={<button className="secondary small" onClick={onOpenRoute}>航線<span className="chev inline" aria-hidden="true" /></button>}>
-      {!calc.value && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各夥伴</div>}
-      {calc.value && options.length === 0 && <div className="hint center">兩端都沒有夥伴的航班接得上</div>}
+      {!calc.done && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各夥伴{options.length > 0 && ` · ${options.length}`}</div>}
+      {calc.done && options.length === 0 && <div className="hint center">兩端都沒有夥伴的航班接得上</div>}
       {chips.length > 0 && (
         <div className="chips scroll cs-partners" role="radiogroup" aria-label="夥伴">
           {chips.map((o) => (
