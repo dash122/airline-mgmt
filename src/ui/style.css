@@ -2473,3 +2473,21 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 @media (prefers-reduced-motion: reduce) {
   .tabbar .switcher button, button.primary { transition: none; }
 }
+
+/* ---- v3.1: roomier spacing, no live blur over the moving map (it was costly on iPhone) ---- */
+:root { --gutter: 20px; }
+.app .sheet { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.tabbar { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; padding: 6px 12px max(6px, env(safe-area-inset-bottom)); }
+.sheet.nav-root { padding-bottom: 0; }
+.sheet-body { padding-left: var(--gutter); padding-right: var(--gutter); gap: 16px; }
+.sheet-head, .airport-sheet .sheet-head { padding-left: var(--gutter); padding-right: 12px; padding-top: 12px; padding-bottom: 10px; }
+.nav-back { padding-left: calc(var(--gutter) - 6px); }
+.sheet-foot, .route-sheet .sheet-foot { padding-left: var(--gutter); padding-right: var(--gutter); }
+.island { max-width: calc(100% - 2 * var(--gutter)); }
+.island-main { gap: 10px; padding: 0 8px; }
+.i-kpi b { font-size: 14px; }
+.fare-control.pending { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  border-radius: 12px; background: var(--panel); color: var(--muted); font: var(--t-foot); }
+.spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }

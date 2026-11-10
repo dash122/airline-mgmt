@@ -381,7 +381,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
       {tab === 'fare' && <>
-        {flights.length > 0 && !curveAnswer ? <div className="fare-control pending" aria-busy="true" />
+        {flights.length > 0 && !curveAnswer ? <div className="fare-control pending" aria-busy="true" role="status"><span className="spinner" aria-hidden="true" />正在試算票價…</div>
           : curve.length > 2 && now && best
           ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
               info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
