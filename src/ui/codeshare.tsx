@@ -5,8 +5,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { airlines } from '../sim/competitors';
 import {
-  bestShare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareImpact, codeshareOptions, codeshareShare, shareChoices,
-  type CodeshareIdea, type CodeshareImpact, type CodeshareOption,
+  bestShare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare,
+  type CodeshareIdea, type CodeshareImpact, type CodeshareOption, type ShareChoice,
 } from '../sim/codeshare';
 import type { AirlineNetwork } from '../sim/networks';
 import { airlineName, hhmm, localMinutes, type CodeshareDeparture, type CodeshareResult, type NetworkResult, type Plan } from '../sim/simulate';
@@ -18,6 +18,7 @@ import { count, money, pct } from './format';
 import { dealId, useDeals, type Deals } from './deals';
 import { JourneyLegend, JourneyPath, journeyUses } from './journey';
 import { Head, routeName, Sheet } from './sheets';
+import { useCalc } from './sheet-calc';
 import { Badge, IN, Icon, Meter, ProfitBar, Ring, type Tone } from './viz';
 
 const name = (c: string) => AIRPORT_BY_CODE[c]?.name ?? c;
@@ -207,7 +208,9 @@ const seatTone = (s: CodeshareResult): Tone => (turnedAway(s).block > 0 ? 'accen
 /** Its routes that connect with yours, ranked by what they would add each week. Tap one for the full picture. */
 export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: AirlineNetwork; onToggle: (key: string) => void }) {
   const open = useContext(CodeshareLink);
-  const options = useMemo(() => codeshareOptions(plan, net.airline.id), [plan, net.airline.id]);
+  // Worked out in the calculation worker (a simulation per route); the last list stays while it refreshes.
+  const calc = useCalc<CodeshareOption[]>('cs-options', plan, { airline: net.airline.id }, net.airline.kind !== 'low' && plan.fleet.length > 0);
+  const options = useMemo(() => calc.value ?? [], [calc.value]);
   const [shown, setShown] = useState(SHOWN);
   if (net.airline.kind === 'low') return <div className="hint center"><Icon n="lock" /> 廉價航空不做代碼共享</div>;
   if (!plan.fleet.length) return <div className="hint center">先開航線，才接得上夥伴航班</div>;
@@ -227,7 +230,8 @@ export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: Airline
         </>
       )}
       <Head info={<CodeshareTerms />} right={<small className="muted">{ideas.length} 條接得上</small>}>{active.length ? '再共享' : '可共享的航線'}</Head>
-      {ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
+      {!calc.value && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各條航線</div>}
+      {calc.value && ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
       <ul className="cs-ideas">{ideas.slice(0, shown).map(row)}</ul>
       {ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN * 2)}>再顯示 {Math.min(SHOWN * 2, ideas.length - shown)} 條</button>}
     </>
@@ -248,13 +252,21 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
 }) {
   const current = codeshareShare(plan, airline, routeKey);
   const active = current !== null;
-  const choices = useMemo(() => shareChoices(plan, airline, routeKey), [plan, airline, routeKey]);
-  const best = bestShare(choices);
   const [pick, setPick] = useState<number | null>(null);
   const [allJourneys, setAllJourneys] = useState(false);
-  const share = active ? current : pick ?? best.share;
-  const imp = useMemo(() => codeshareImpact(plan, airline, routeKey, undefined, share), [plan, airline, routeKey, share]);
+  // Worked out in the calculation worker; the last figures stay (dimmed) while a new block size is worked out.
+  const calc = useCalc<{ choices: ShareChoice[]; share: number; imp: CodeshareImpact | null }>('cs-detail', plan, { airline, routeKey, share: active ? current : pick });
   const [a, b] = routeKey.split('-');
+  if (!calc.value) {
+    return (
+      <Sheet size="full" className="cs-sheet" title={routeName(a, b)} onClose={onClose}>
+        <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在計算</div>
+      </Sheet>
+    );
+  }
+  const { choices, imp } = calc.value;
+  const best = bestShare(choices);
+  const share = active ? current : pick ?? calc.value.share;
   const color = colorOf(airline);
   const sub = <span className="ins"><button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: color }} /><b>{airlineName(airline)}</b><span className="chev inline" aria-hidden="true" /></button>{imp && <IN n="plane" v={count(imp.stats.flights / 2)} label="夥伴班次（每個方向）" u="班/週" />}</span>;
   if (!imp) {
@@ -272,7 +284,7 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
   const fullRoute = [...imp.routes].sort((x, y) => y.lfAfter - x.lfAfter)[0];
   const fee = codeshareFee(share);
   return (
-    <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={sub} onClose={onClose} info={<CodeshareTerms />}
+    <Sheet size="full" className={`cs-sheet${calc.fresh ? '' : ' cs-stale'}`} title={routeName(a, b)} sub={sub} onClose={onClose} info={<CodeshareTerms />}
       footer={<div className="cs-foot">
         {active
           ? <><span className="cs-foot-state"><Icon n="link" /> 共享中 · {pct(share)} 座位</span><button className="secondary danger" onClick={onStop}>取消共享</button></>

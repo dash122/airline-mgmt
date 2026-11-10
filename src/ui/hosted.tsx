@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import {
-  bestShare, CODESHARE_SEAT_SHARE, HOSTED_FEE_PER_WEEK, hostedChoices, hostedImpact, hostedOptions, hostedShare,
-  type HostedImpact, type HostedOption,
+  bestShare, CODESHARE_SEAT_SHARE, HOSTED_FEE_PER_WEEK, hostedShare,
+  type HostedImpact, type HostedOption, type ShareChoice,
 } from '../sim/codeshare';
 import { airlineName, type NetworkResult, type Plan } from '../sim/simulate';
 import { colorOf, DemandBar, MoneySteps, signed } from './codeshare';
@@ -12,6 +12,7 @@ import { createComputeClient } from './compute-client';
 import { dealId, type Deals } from './deals';
 import { count, money, pct } from './format';
 import { Head, routeName, Sheet } from './sheets';
+import { useCalc } from './sheet-calc';
 import { Badge, Icon, IN, Meter, ProfitBar, Ring, type Tone } from './viz';
 
 const name = (c: string) => AIRPORT_BY_CODE[c]?.name ?? c;
@@ -131,7 +132,8 @@ export function HostedSheet({ plan, routeKey, airline: initial, onSet, onStop, o
   plan: Plan; routeKey: string; airline?: string;
   onSet: (airline: string, share: number) => void; onStop: (airline: string) => void; onOpenRoute: () => void; onPartner: (airline: string) => void; onClose: () => void;
 }) {
-  const options = useMemo(() => hostedOptions(plan, routeKey, 16), [plan, routeKey]);
+  const calc = useCalc<HostedOption[]>('hs-options', plan, { routeKey });
+  const options = useMemo(() => calc.value ?? [], [calc.value]);
   const [picked, setPicked] = useState<string | undefined>(initial);
   const airline = picked ?? options[0]?.airline;
   const [a, b] = routeKey.split('-');
@@ -143,7 +145,8 @@ export function HostedSheet({ plan, routeKey, airline: initial, onSet, onStop, o
   return (
     <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={<span className="ins"><b>{a}–{b}</b><span className="in">夥伴賣你的航線</span></span>} onClose={onClose} info={<HostedTerms />}
       action={<button className="secondary small" onClick={onOpenRoute}>航線<span className="chev inline" aria-hidden="true" /></button>}>
-      {options.length === 0 && <div className="hint center">兩端都沒有夥伴的航班接得上</div>}
+      {!calc.value && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各夥伴</div>}
+      {calc.value && options.length === 0 && <div className="hint center">兩端都沒有夥伴的航班接得上</div>}
       {chips.length > 0 && (
         <div className="chips scroll cs-partners" role="radiogroup" aria-label="夥伴">
           {chips.map((o) => (
@@ -164,18 +167,20 @@ function HostedDetail({ plan, routeKey, airline, onSet, onStop, onPartner }: {
 }) {
   const current = hostedShare(plan, airline, routeKey);
   const active = current !== null;
-  const choices = useMemo(() => hostedChoices(plan, airline, routeKey), [plan, airline, routeKey]);
-  const best = bestShare(choices);
   const [pick, setPick] = useState<number | null>(null);
-  const share = active ? current : pick ?? best.share;
-  const imp: HostedImpact | null = useMemo(() => hostedImpact(plan, airline, routeKey, undefined, share), [plan, airline, routeKey, share]);
+  // Worked out in the calculation worker; the last figures stay (dimmed) while a new block size is worked out.
+  const calc = useCalc<{ choices: ShareChoice[]; share: number; imp: HostedImpact | null }>('hs-detail', plan, { airline, routeKey, share: active ? current : pick });
+  if (!calc.value) return <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在計算</div>;
+  const { choices, imp } = calc.value;
+  const best = bestShare(choices);
+  const share = active ? current : pick ?? calc.value.share;
   if (!imp) return <div className="hint center">這條航線還沒有航班</div>;
   const s = imp.stats;
   const left = Math.max(0, s.wanted - s.pax);
   const blockFull = s.pax >= s.seats - 1 && left > 5;
   const next = choices.find((c) => c.share > share)?.share;
   return (
-    <>
+    <div className={calc.fresh ? undefined : 'cs-stale'} aria-busy={!calc.fresh}>
       <div className="cs-partner-line">
         <button className="cs-partner" onClick={onPartner}><span className="swatch dashed inline" style={{ borderColor: colorOf(airline) }} /><b>{airlineName(airline)}</b><span className="chev inline" aria-hidden="true" /></button>
         {active ? <Badge n="link" tone="good">在賣 {pct(share)}</Badge> : <Badge n="link">還沒開放</Badge>}
@@ -237,7 +242,7 @@ function HostedDetail({ plan, routeKey, airline, onSet, onStop, onPartner }: {
           </ul>
         </>
       )}
-    </>
+    </div>
   );
 }
 
