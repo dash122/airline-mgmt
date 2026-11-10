@@ -2,7 +2,7 @@
 // Every number comes from running the whole week's simulation with and without the codeshare (about 1 ms each).
 import { airlines } from './competitors';
 import { airlineNetwork, type AirlineRoute } from './networks';
-import { canCodeshare, CODESHARE_SHARES, codeshareShare, hasCodeshare, hostedShare, isHosted, routePairs, setCodeshareShare, setHostedShare, simulate, toggleCodeshare, toggleHosted, type CodeshareResult, type HostedResult, type NetworkResult, type Plan } from './simulate';
+import { canCodeshare, CODESHARE_SHARES, codeshareShare, hasCodeshare, hostedShare, isHosted, routePairs, setCodeshareShare, setHostedShare, simulate, simulateLean, toggleCodeshare, toggleHosted, type CodeshareResult, type HostedResult, type NetworkResult, type Plan } from './simulate';
 
 export { CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, HOSTED_FEE_PER_WEEK, canCodeshare, codeshareFee, codeshareShare, hasCodeshare, hostedShare, isHosted, setCodeshareShare, setHostedShare, toggleCodeshare, toggleHosted } from './simulate';
 
@@ -114,7 +114,7 @@ export interface CodeshareImpact {
 export function codeshareImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult, share?: number): CodeshareImpact | null {
   const active = hasCodeshare(plan, airlineId, key);
   const cur = now ?? simulate(plan);
-  const without = active ? simulate(toggleCodeshare(plan, airlineId, key)) : cur;
+  const without = active ? simulateLean(toggleCodeshare(plan, airlineId, key)) : cur;
   const withIt = share !== undefined && share !== codeshareShare(plan, airlineId, key) ? simulate(setCodeshareShare(plan, airlineId, key, share))
     : active ? cur : simulate(toggleCodeshare(plan, airlineId, key));
   const stats = withIt.codeshares[`${airlineId}|${key}`];
@@ -217,7 +217,7 @@ export interface HostedImpact {
 export function hostedImpact(plan: Plan, airlineId: string, key: string, now?: NetworkResult, share?: number): HostedImpact | null {
   const active = isHosted(plan, airlineId, key);
   const cur = now ?? simulate(plan);
-  const without = active ? simulate(toggleHosted(plan, airlineId, key)) : cur;
+  const without = active ? simulateLean(toggleHosted(plan, airlineId, key)) : cur;
   const withIt = share !== undefined && share !== hostedShare(plan, airlineId, key) ? simulate(setHostedShare(plan, airlineId, key, share))
     : active ? cur : simulate(toggleHosted(plan, airlineId, key));
   const stats = withIt.hosted[`${airlineId}|${key}`];
