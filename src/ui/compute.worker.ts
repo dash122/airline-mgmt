@@ -3,7 +3,7 @@ import { destinationsFrom, previewChoice } from '../sim/newroute';
 import { simulate, type Plan } from '../sim/simulate';
 import { fareCurveSteps, type FarePoint } from '../sim/fares';
 import { routeWhatIfSteps } from '../sim/route-whatif';
-import { codeshareImpact, codeshareIdeaSteps, hostedImpact, hostedIdeaSteps, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
+import { bestShare, codeshareImpact, codeshareIdeaSteps, codeshareOptionSteps, hostedChoices, hostedImpact, hostedIdeaSteps, hostedOptionSteps, shareChoices, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
 import type { Deal } from './deals';
 
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
@@ -15,7 +15,7 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     // Collapse superseded edits before doing expensive work.
     await yieldTask();
     if (current !== version) return;
-    const { id, request, kind, plan, result, code, transfer, from, to, choices, near, routeKey, a, b } = event.data;
+    const { id, request, kind, plan, result, code, transfer, from, to, choices, near, routeKey, a, b, airline, share } = event.data;
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
@@ -50,6 +50,26 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
           }
         }
         port.postMessage({ id, deals: batch });
+      }
+      else if (scope === 'codeshare' && (kind === 'cs-options' || kind === 'hs-options')) {
+        // A sheet's partner list, a simulation at a time so a newer request drops this one.
+        const steps = kind === 'cs-options' ? codeshareOptionSteps(plan, airline) : hostedOptionSteps(plan, routeKey, 16);
+        let step = steps.next();
+        while (!step.done) {
+          await yieldTask();
+          if (current !== version) return;
+          step = steps.next();
+        }
+        port.postMessage({ id, value: step.value });
+      }
+      else if (scope === 'codeshare' && (kind === 'cs-detail' || kind === 'hs-detail')) {
+        // One deal's sheet: what each seat block adds, then its full impact at the shown block (the best one unless given).
+        const out = kind === 'cs-detail';
+        const sizes = out ? shareChoices(plan, airline, routeKey) : hostedChoices(plan, airline, routeKey);
+        if (current !== version) return;
+        const at: number = share ?? bestShare(sizes).share;
+        const imp = out ? codeshareImpact(plan, airline, routeKey, undefined, at) : hostedImpact(plan, airline, routeKey, undefined, at);
+        port.postMessage({ id, value: { choices: sizes, share: at, imp } });
       }
       else if (scope === 'codeshare') {
         // Partner by partner, yielding between steps so a daily-figure request is not queued behind the whole search,

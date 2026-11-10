@@ -2378,3 +2378,6 @@ button.danger.solid, .confirm button.danger.solid {
 .cs-feeds .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cs-feeds .grow .ins { flex-wrap: wrap; row-gap: 4px; }
 .cs-feeds .grow > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Figures from the last plan, shown until the new ones are worked out. */
+.cs-stale { opacity: .6; transition: opacity .15s; }
