@@ -255,13 +255,16 @@ function PlanStep(props: PlanStepProps) {
   const choices = useMemo(() => routeChoices(plan, from, to), [plan, from, to]);
   const [state, setState] = useState<{ plan: Plan; result: NetworkResult | null; from: string; to: string; previews: Map<string, RoutePreview> } | null>(null);
   const [error, setError] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   useEffect(() => {
     setError(false);
+    setProgress(null);
     const worker = previewWorker ??= createComputeClient('preview');
     const request = ++previewRequest;
-    const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; error?: string }>) => {
+    const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; progress?: number; total?: number; error?: string }>) => {
       if (event.data.request !== request) return;
       if (event.data.previews) setState({ plan, result, from, to, previews: new Map(event.data.previews) });
+      else if (event.data.progress !== undefined) setProgress({ done: event.data.progress, total: event.data.total ?? 0 });
       else setError(true);
     };
     const onError = () => { worker.terminate(); if (previewWorker === worker) previewWorker = null; setError(true); };
@@ -271,7 +274,8 @@ function PlanStep(props: PlanStepProps) {
     return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); };
   }, [plan, result, from, to, choices]);
   if (!state || state.plan !== plan || state.result !== result || state.from !== from || state.to !== to) {
-    return <Sheet size="half" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : '正在計算航線方案…'}</div></Sheet>;
+    const working = progress && progress.total > 0 ? `正在計算航線方案… ${progress.done}/${progress.total}` : '正在計算航線方案…';
+    return <Sheet size="half" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : working}</div></Sheet>;
   }
   return <PlanStepReady {...props} choices={choices} previews={state.previews} />;
 }

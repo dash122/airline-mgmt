@@ -133,13 +133,20 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         } finally { urgent--; }
       }
       else {
-        const previews = [];
-        for (const { choice, dep } of choices as { choice: Parameters<typeof previewChoice>[2]; dep: number }[]) {
-          await yieldTask();
-          if (current !== version) return;
-          previews.push([choice.id, previewChoice(plan, result, choice, from, to, dep)]);
-        }
-        port.postMessage({ request, previews });
+        // Each choice is a whole week's simulation, so this is urgent like the sheets above: background deal work steps
+        // aside, and each choice is reported as it is worked out so the sheet can show how far along it is.
+        urgent++;
+        try {
+          const previews = [];
+          const list = choices as { choice: Parameters<typeof previewChoice>[2]; dep: number }[];
+          for (const { choice, dep } of list) {
+            await yieldTask();
+            if (current !== version) return;
+            previews.push([choice.id, previewChoice(plan, result, choice, from, to, dep)]);
+            port.postMessage({ request, progress: previews.length, total: list.length });
+          }
+          port.postMessage({ request, previews });
+        } finally { urgent--; }
       }
     } catch (error) { port.postMessage({ id, request, error: String(error) }); }
   };
