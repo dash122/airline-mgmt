@@ -2381,3 +2381,95 @@ button.danger.solid, .confirm button.danger.solid {
 
 /* Figures from the last plan, shown until the new ones are worked out. */
 .cs-stale { opacity: .6; transition: opacity .15s; }
+
+/* ======================================================================================
+   Design system v3 — Apple HIG-inspired. Loaded last, so it is the single source of truth
+   for type, materials, the tab bar, the status capsule and grouped lists.
+   ====================================================================================== */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Waypoint Sans', 'PingFang TC', 'Noto Sans TC', system-ui, sans-serif;
+  --ease-ios: cubic-bezier(.32, .72, 0, 1);
+  /* iOS text styles */
+  --t-large: 700 28px/1.2 var(--font-sans);
+  --t-title: 700 20px/1.25 var(--font-sans);
+  --t-headline: 600 16px/1.3 var(--font-sans);
+  --t-body: 400 15px/1.4 var(--font-sans);
+  --t-foot: 400 13px/1.35 var(--font-sans);
+  --t-cap: 500 11px/1.2 var(--font-sans);
+  --material: color-mix(in srgb, var(--panel) 78%, transparent);
+  --hairline: .5px;
+  --group: var(--panel);
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum' 1;
+}
+body { font: var(--t-body); letter-spacing: -.01em; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font-family: var(--font-sans); }
+
+/* Sheets: one material, consistent head */
+.app .sheet { background: color-mix(in srgb, var(--bg) 92%, transparent); -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px); }
+.sheet-head h3, .airport-sheet .sheet-head h3 { font: var(--t-title); letter-spacing: -.02em; }
+.sheet.nav-root .sheet-head h3 { font: var(--t-large); letter-spacing: -.025em; }
+.sheet-head .sub { font: var(--t-foot); color: var(--muted); }
+.sheet h4, .sec-head h4 { font: 600 13px/1.3 var(--font-sans); color: var(--muted); text-transform: none; letter-spacing: 0; margin: 4px 4px 6px; }
+.hint, .swipe-hint, .fine { font: var(--t-foot); color: var(--muted); }
+.swipe-hint { opacity: .7; }
+
+/* Tab bar: icon over label, pinned to the bottom of the home sheet (like a UITabBar) */
+.tabbar { order: 99; flex-shrink: 0; margin-top: auto; border-top: var(--hairline) solid var(--line-strong);
+  background: var(--material); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); }
+.tabbar .switcher { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+.tabbar .switcher button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 48px; padding: 4px 0; border: 0; border-radius: 10px; background: none; box-shadow: none;
+  color: var(--muted); font: var(--t-cap); transition: color .15s, transform .15s var(--ease-ios); }
+.tabbar .switcher button.on { color: var(--accent); background: none; box-shadow: none; font-weight: 600; }
+.tabbar .switcher button:active { transform: scale(.92); }
+.tabbar .switcher button svg { width: 24px; height: 24px; }
+.tabbar .switcher button.on svg path { stroke-width: 2.2; }
+
+/* Status capsule: Dynamic-Island-like, one compact line */
+.island { background: color-mix(in srgb, #000 88%, transparent); color: #fff; border: 0;
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
+.island.open { background: var(--material); color: var(--text); -webkit-backdrop-filter: saturate(180%) blur(30px); backdrop-filter: saturate(180%) blur(30px); }
+.island-bar { min-height: 0; padding: 4px 4px 4px 8px; }
+.island-main { gap: 12px; min-height: 36px; padding: 0 6px; }
+.island .i-kpi { display: inline-flex; flex-direction: row; align-items: baseline; gap: 3px; white-space: nowrap; }
+.i-kpi small { font: var(--t-cap); opacity: .6; order: 2; }
+.i-kpi.i-time small { order: 0; }
+.i-kpi b { font: 600 15px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.island:not(.open) .i-kpi b.good { color: #4ade80; }
+.island:not(.open) .i-kpi b.bad { color: #ff6b6b; }
+.island-play { width: 32px; height: 32px; background: rgba(255, 255, 255, .16); color: inherit; }
+.island.open .island-play { background: var(--surface-2); }
+.island-play.paused { background: #ff9f0a; color: #000; }
+.island-note { color: inherit; font: var(--t-foot); font-weight: 600; }
+:root { --hud-h: 44px; }
+
+/* Grouped inset lists and cards: one radius, no borders, hairline separators */
+.stat, .routes-summary > div, .route-row, .route-rows > li, .pot-list > li, .hubbox, .empty-cta, .opt, .stations li, .fleet li, .markets li {
+  border-radius: 12px; }
+.routes-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 2px 4px; }
+.routes-summary > span { display: flex; align-items: baseline; gap: 8px; }
+.routes-summary small { font: var(--t-foot); color: var(--muted); }
+.routes-summary b { font: 700 24px/1.1 var(--font-sans); letter-spacing: -.02em; }
+.empty-cta strong { font: var(--t-title); }
+.empty-cta p { font: var(--t-foot); color: var(--muted); margin: 4px 0 12px; }
+
+/* Controls: iOS segmented control and buttons */
+.seg { background: color-mix(in srgb, var(--text) 7%, var(--bg)); border: 0; border-radius: 9px; padding: 2px; }
+.seg button { border-radius: 7px; font: 500 13px/1.2 var(--font-sans); }
+.seg button.on { background: var(--thumb); color: var(--text); font-weight: 600; box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 3px 1px rgba(0, 0, 0, .04); }
+button.primary, .primary.wide { border-radius: 12px; font: 600 16px/1 var(--font-sans); letter-spacing: -.01em; transition: transform .15s var(--ease-ios), opacity .15s; }
+button.primary:active, button.secondary:active, .chip:active { transform: scale(.97); opacity: .85; }
+.chip { border-radius: var(--r-pill); font: 500 13px/1 var(--font-sans); }
+.close { width: 30px; height: 30px; border-radius: 50%; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--muted); font-size: 13px; font-weight: 700; }
+
+/* Start screen: big title, inset grouped list */
+.start-card h1 { font: 800 34px/1.15 var(--font-sans); letter-spacing: -.03em; }
+
+@media (min-width: 900px) {
+  .tabbar { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tabbar .switcher button, button.primary { transition: none; }
+}

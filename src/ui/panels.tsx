@@ -82,15 +82,15 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
       {rows.length === 0 && (
         <div className="empty-cta">
           <div className="empty-flight" aria-hidden="true"><span>✈</span></div>
-          <strong>你的航空網絡，從這裡開始</strong>
-          <p>選擇目的地，規劃第一條航線，讓你的機隊起飛。</p>
-          <button className="primary wide" onClick={onNew}>＋ 開第一條航線</button>
+          <strong>開第一條航線</strong>
+          <p>選目的地，飛機就起飛。</p>
+          <button className="primary wide" onClick={onNew}>＋ 新航線</button>
         </div>
       )}
       {rows.length > 0 && (
         <div className="routes-summary">
-          <span><small>航線週損益合計</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
-          <small className="routes-summary-meta">{daily} 班來回/日{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</small>
+          <span><small>週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
+          <small className="routes-summary-meta">{daily} 班/日{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</small>
         </div>
       )}
       {rows.length > 1 && (
@@ -120,7 +120,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
           </section>
         );
       })}
-      {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">← 滑動減一班 · 加一班 →</p>}
+      {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">左右滑動 −/＋ 班</p>}
       </>}
     </Sheet>
   );

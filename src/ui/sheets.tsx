@@ -144,7 +144,6 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
         <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
           style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
-        {nav?.switcher && <div className="sheet-switcher">{nav.switcher}</div>}
         {nav?.back && <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="chev back" aria-hidden="true" />{nav.back.label}</button>}
         <div className="sheet-head">
           <div className="grow">
@@ -177,6 +176,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
           {children}
         </div>}
         {footer && s !== 'compact' && <div className="sheet-foot">{footer}</div>}
+        {nav?.switcher && <nav className="tabbar">{nav.switcher}</nav>}
       </div>
     </>
   );
