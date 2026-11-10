@@ -55,7 +55,8 @@ export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: Netwo
   for (const route of routes) {
     yield;
     const active = hasCodeshare(plan, airlineId, route.key);
-    const other = simulate(toggleCodeshare(plan, airlineId, route.key));
+    // Only totals and the deal's traveller count are read from it, so the lighter simulation does.
+    const other = simulateLean(toggleCodeshare(plan, airlineId, route.key));
     const withIt = active ? now : other;
     const stats = withIt.codeshares[`${airlineId}|${route.key}`] ?? null;
     if (!active && (!stats || stats.pax < 1)) continue;
@@ -268,7 +269,8 @@ export function* hostedOptionSteps(plan: Plan, key: string, limit = 24, out: Hos
   for (const id of partnersAt(key).slice(0, limit)) {
     yield;
     const active = isHosted(plan, id, key);
-    const other = simulate(toggleHosted(plan, id, key));
+    // Only totals and the deal's own figures are read here, so the lighter simulation does.
+    const other = simulateLean(toggleHosted(plan, id, key));
     const withIt = active ? now : other;
     const s = withIt.hosted[`${id}|${key}`];
     if (!active && (!s || s.pax < 1)) continue;
