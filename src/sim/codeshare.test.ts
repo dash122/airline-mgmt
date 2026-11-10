@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rivalsBetween } from './competitors';
 import { bestShare, codeshareIdeaSteps, hostedChoices, hostedIdeaSteps, hostedIdeas, hostedImpact, hostedOptions, codeshareIdeas, codeshareImpact, codeshareOptions, shareChoices } from './codeshare';
-import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, feederFlights, HOSTED_FEE_PER_WEEK, setHostedShare, toggleHosted, addRoundTrip, emptyPlan, partnerFlights, simulate, toggleCodeshare, type Plan } from './simulate';
+import { canCodeshare, CODESHARE_FEE_PER_WEEK, CODESHARE_SEAT_SHARE, CODESHARE_SHARES, codeshareFee, codeshareShare, setCodeshareShare, feederFlights, HOSTED_FEE_PER_WEEK, setHostedShare, toggleHosted, addRoundTrip, emptyPlan, partnerFlights, simulate, simulateLean, toggleCodeshare, type Plan } from './simulate';
 import { AIRCRAFT } from '../data/aircraft';
 import { hubTransit } from './airports';
 
@@ -39,6 +39,17 @@ describe('codeshare', () => {
     expect(feed.revenue).toBeCloseTo(cs.feedRevenue, 0);
     const r = imp.routes.find((x) => x.key === 'BKK-TPE')!;
     expect(r.lfAfter).toBeGreaterThan(r.lfBefore);
+  });
+
+  it('the lean simulation has the same totals as the full one', () => {
+    const lean = simulateLean(toggleCodeshare(withCs, partner.id, 'BKK-HKT'));
+    const full = simulate(toggleCodeshare(withCs, partner.id, 'BKK-HKT'));
+    expect(lean.revenue).toBeCloseTo(full.revenue, 3);
+    expect(lean.cost).toBeCloseTo(full.cost, 3);
+    expect(Object.keys(lean.routes)).toEqual(Object.keys(full.routes));
+    const l = simulateLean(withCs), f = simulate(withCs);
+    expect(l.revenue).toBeCloseTo(f.revenue, 3);
+    expect(l.cost).toBeCloseTo(f.cost, 3);
   });
 
   it('sells connections from your flights onto the partner route', () => {

@@ -909,10 +909,20 @@ const RECENT_MAX = 4;
 export function simulate(plan: Plan): NetworkResult {
   const key = JSON.stringify(plan);
   let result = recent.get(key);
-  if (result) { recent.delete(key); } else result = simulateUncached(plan);
+  if (result) { recent.delete(key); } else result = simulateUncached(plan, false);
   recent.set(key, result);
   if (recent.size > RECENT_MAX) recent.delete(recent.keys().next().value!);
   return result;
+}
+
+/**
+ * The same totals (revenue, cost, every route and flight) without the per-deal detail (journeys, feeds, markets,
+ * departures) of codeshares and hosted deals. For the "without it" side of a deal's impact, which only reads totals,
+ * and which is run once per deal: with hundreds of deals the detail is most of the work.
+ */
+export function simulateLean(plan: Plan): NetworkResult {
+  const full = recent.get(JSON.stringify(plan));
+  return full ?? simulateUncached(plan, true);
 }
 
 /** Everything about a plan's flights and the itineraries over them that doesn't depend on its fares. */
@@ -931,9 +941,9 @@ function buildStructure(plan: Plan): Structure {
   const partners = buildPartnerFlights(plan);
   const every = [...flights, ...partners];
   const byFrom = new Map<string, Flight[]>();
-  for (const f of every) byFrom.set(f.from, [...(byFrom.get(f.from) ?? []), f]);
+  for (const f of every) { const l = byFrom.get(f.from); if (l) l.push(f); else byFrom.set(f.from, [f]); }
   const ownFrom = new Map<string, Flight[]>();
-  for (const f of flights) ownFrom.set(f.from, [...(ownFrom.get(f.from) ?? []), f]);
+  for (const f of flights) { const l = ownFrom.get(f.from); if (l) l.push(f); else ownFrom.set(f.from, [f]); }
   // Partners selling the player's routes: the seat block each may use, per player flight.
   const hostedBy = new Map<string, Codeshare[]>(); // player route -> partners selling it
   for (const h of plan.hosted ?? []) hostedBy.set(h.key, [...(hostedBy.get(h.key) ?? []), h]);
@@ -952,7 +962,8 @@ function buildStructure(plan: Plan): Structure {
   const itins = new Map<string, Itinerary[]>(); // `${o}>${d}`
   const add = (o: string, d: string, it: Itinerary) => {
     const k = `${o}>${d}`;
-    itins.set(k, [...(itins.get(k) ?? []), it]);
+    const l = itins.get(k);
+    if (l) l.push(it); else itins.set(k, [it]);
   };
   // The partner's part of a ticket follows the market's reference fare (the player sets fares on its own flights).
   const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
@@ -990,7 +1001,7 @@ function buildStructure(plan: Plan): Structure {
   // are not chained, and the partner leg is always a flight the player sells seats on.
   const sellable = partners.filter((p) => !p.partner!.hosted);
   const sellableFrom = new Map<string, Flight[]>();
-  for (const p of sellable) sellableFrom.set(p.from, [...(sellableFrom.get(p.from) ?? []), p]);
+  for (const p of sellable) { const l = sellableFrom.get(p.from); if (l) l.push(p); else sellableFrom.set(p.from, [p]); }
   const addTwoStop = (legs: [Flight, Flight, Flight]) => {
     const [f1, f2, f3] = legs;
     const c1 = connectionAt(f1, f2, plan.hub), c2 = connectionAt(f2, f3, plan.hub);
@@ -1050,7 +1061,7 @@ function structureOf(plan: Plan): Structure {
   return built;
 }
 
-function simulateUncached(plan: Plan): NetworkResult {
+function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   const { flights, partners, every, itins, blocks, partnerLinks } = structureOf(plan);
   const linkPax = new Map<Flight, Map<Flight, number>>();
   const partnerWanted = new Map<Flight, number>();
@@ -1141,10 +1152,12 @@ function simulateUncached(plan: Plan): NetworkResult {
   const flightSpill = new Map<Flight, number>();
   let tripsWeekly = 0, connectingWeekly = 0, revenueWeekly = 0;
   const transferFlows = new Map<string, { pax: number; long: number; stopover: number }>(); // `${via}|${o}|${d}`, plus `|${stops}` for two-stop trips
+  const partnersOfDeal = new Map<string, Flight[]>(); // `${airline}|${key}` -> that deal's partner flights
+  for (const f of partners) { const id = `${f.partner!.airline}|${f.partner!.key}`; const l = partnersOfDeal.get(id); if (l) l.push(f); else partnersOfDeal.set(id, [f]); }
   const csResults = new Map<string, CodeshareResult & { marketMap: Map<string, CodeshareResult['markets'][number]>; feedMap: Map<string, CodeshareResult['feeds'][number]>; journeyMap: Map<string, CodeshareResult['journeys'][number]> }>();
   for (const cs of plan.codeshares ?? []) {
     const id = `${cs.airline}|${cs.key}`;
-    const fl = partners.filter((f) => f.partner!.airline === cs.airline && f.partner!.key === cs.key);
+    const fl = partnersOfDeal.get(id) ?? [];
     if (!fl.length) continue;
     csResults.set(id, {
       key: cs.key, airline: cs.airline, flights: fl.reduce((s, f) => s + f.perWeek, 0), seats: fl.reduce((s, f) => s + f.perWeek * f.seats, 0),
@@ -1202,6 +1215,7 @@ function simulateUncached(plan: Plan): NetworkResult {
         h.wanted += want * it.perWeek;
         h.partnerRevenue += toPartner;
         h.revenue += n * fare * it.perWeek - toPartner;
+        if (lean) { revenueWeekly += n * fare * it.perWeek - toPartner; } else {
         h.sourceMap.set(partnerLeg.partner!.key, (h.sourceMap.get(partnerLeg.partner!.key) ?? 0) + n * it.perWeek);
         const [o, d] = k.split('>');
         const mk = [o, d].sort().join('|');
@@ -1209,11 +1223,13 @@ function simulateUncached(plan: Plan): NetworkResult {
         row.pax += n * it.perWeek;
         h.marketMap.set(mk, row);
         revenueWeekly += n * fare * it.perWeek - toPartner;
+        }
       } else if (partnerLeg) {
         const cs = csOf(partnerLeg);
         const toPartner = n * fare * it.perWeek * partnerShare;
         cs.pax += n * it.perWeek;
         cs.wanted += want * it.perWeek;
+        if (lean) { cs.feedRevenue += n * fare * it.perWeek - toPartner; revenueWeekly += n * fare * it.perWeek - toPartner; } else {
         partnerWanted.set(partnerLeg, (partnerWanted.get(partnerLeg) ?? 0) + want * it.perWeek / partnerLeg.perWeek);
         // The player's flight the partner's leg connects with: the one next to it.
         const at = it.flights.indexOf(partnerLeg);
@@ -1245,6 +1261,7 @@ function simulateUncached(plan: Plan): NetworkResult {
         jr.pax += n * it.perWeek;
         cs.journeyMap.set(jk, jr);
         revenueWeekly += n * fare * it.perWeek - toPartner;
+        }
       } else revenueWeekly += n * fare * it.perWeek;
       for (const f of it.flights) {
         if (f.partner) { flightPax.set(f, (flightPax.get(f) ?? 0) + n); continue; }
@@ -1362,7 +1379,7 @@ function simulateUncached(plan: Plan): NetworkResult {
   const hubCost = plan.hub && AIRPORT_BY_CODE[plan.hub] ? HUB_COST_PER_WEEK : 0;
   const codeshares: Record<string, CodeshareResult> = {};
   for (const [id, { marketMap, feedMap, journeyMap, ...r }] of csResults) {
-    const departures: CodeshareDeparture[] = partners.filter((f) => `${f.partner!.airline}|${f.partner!.key}` === id).map((f) => {
+    const departures: CodeshareDeparture[] = (lean ? [] : partnersOfDeal.get(id) ?? []).map((f) => {
       const best = [...(linkPax.get(f) ?? new Map<Flight, number>())].sort((x, y) => y[1] - x[1])[0];
       return {
         from: f.from, to: f.to, dep: f.dep, arr: f.arr, perWeek: f.perWeek, seats: f.seats, pax: flightPax.get(f) ?? 0,
