@@ -64,3 +64,21 @@ it('drops an older deals request when a newer one arrives', async () => {
     expect(port.postMessage.mock.calls.some(([m]) => m.id === 1)).toBe(false);
   } finally { vi.restoreAllMocks(); vi.unstubAllGlobals(); }
 });
+
+it('reports a route preview as each choice is worked out, then the whole list', async () => {
+  vi.resetModules();
+  const runtime = { onmessage: null as unknown as (event: unknown) => void };
+  vi.stubGlobal('self', runtime);
+  try {
+    await import('./compute.worker');
+    const port = { onmessage: null as unknown as (event: unknown) => void, postMessage: vi.fn() };
+    runtime.onmessage({ data: { scope: 'preview', port } });
+    port.onmessage({ data: { request: 7, plan, result: null, from: 'A', to: 'B', choices: [{ choice: { id: 'x' }, dep: 1 }, { choice: { id: 'y' }, dep: 2 }] } });
+    await vi.waitFor(() => expect(port.postMessage.mock.calls.some(([m]) => m.previews)).toBe(true));
+    expect(port.postMessage.mock.calls.map(([m]) => m)).toEqual([
+      { request: 7, progress: 1, total: 2 },
+      { request: 7, progress: 2, total: 2 },
+      { request: 7, previews: [['x', undefined], ['y', undefined]] },
+    ]);
+  } finally { vi.unstubAllGlobals(); }
+});
