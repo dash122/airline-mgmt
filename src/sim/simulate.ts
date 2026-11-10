@@ -324,8 +324,9 @@ interface Itinerary {
   fixed?: ItineraryFixed;
   /** Position in its structure, for the per-itinerary arrays of a simulation (set when the structure is built). */
   idx?: number;
-  /** Its legs' (and seat block's) positions in the capacity arrays, worked out once per structure. */
+  /** Its legs' (and seat block's) positions in the capacity arrays of `slotsOf` (structures share itineraries). */
   legSlots?: number[];
+  slotsOf?: object;
 }
 
 interface ItineraryFixed {
@@ -729,17 +730,6 @@ export const SALES_COST_SHARE = 0.12;
 export const fareMultOf = (plan: Plan, key: string) => plan.fares[key] ?? 1;
 
 /** The plan's codeshare flights, as flights the player can sell connections on. */
-function buildPartnerFlights(plan: Plan): Flight[] {
-  // A partner flight the player already sells (codeshare) isn't fed twice through the partner selling a player route.
-  const sold = new Set((plan.codeshares ?? []).map((c) => `${c.airline}|${c.key}`));
-  const feeders = (plan.hosted ?? []).flatMap(feederFlights).filter((p) => !sold.has(`${p.airline}|${p.key}`));
-  return [...codeshareFlights(plan), ...feeders].map((p, i) => {
-    const A = AIRPORT_BY_CODE[p.from], B = AIRPORT_BY_CODE[p.to];
-    const ac: Aircraft = { id: `${p.hosted ? 'hs' : 'cs'}:${p.airline}|${p.key}#${i}`, reg: '', type: p.type, legs: [] };
-    return { key: ac.id, idx: -1, ac, from: p.from, to: p.to, dep: p.dep, perWeek: p.perWeek, arr: p.dep + p.block, seats: p.seats, blockH: p.block / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon), partner: p };
-  });
-}
-
 function buildFlights(plan: Plan): Flight[] {
   const out: Flight[] = [];
   for (const ac of plan.fleet) {
@@ -972,78 +962,93 @@ interface Structure {
   partnerLinks: Map<Flight, Set<Flight>>;
   /** Number of itineraries (each one's idx is below this). */
   count: number;
+  /** Flights and seat blocks with seat limits, and each one's position, made on first use. */
+  limited?: Flight[];
+  slot?: Map<Flight, number>;
 }
 
 function buildStructure(plan: Plan): Structure {
   const flights = buildFlights(plan);
   // Codeshare flights only carry the player's travellers as one leg of a connection with its own flights.
-  const partners = buildPartnerFlights(plan);
-  const every = [...flights, ...partners];
-  const byFrom = new Map<string, Flight[]>();
-  for (const f of every) { const l = byFrom.get(f.from); if (l) l.push(f); else byFrom.set(f.from, [f]); }
-  const ownFrom = new Map<string, Flight[]>();
-  for (const f of flights) { const l = ownFrom.get(f.from); if (l) l.push(f); else ownFrom.set(f.from, [f]); }
-  // Partners selling the player's routes: the seat block each may use, per player flight.
-  const hostedBy = new Map<string, Codeshare[]>(); // player route -> partners selling it
-  for (const h of plan.hosted ?? []) hostedBy.set(h.key, [...(hostedBy.get(h.key) ?? []), h]);
-  const blocks = new Map<string, Flight>();
-  const blockFor = (airline: string, f: Flight) => {
-    const k = `${airline}|${f.key}`;
-    let b = blocks.get(k);
-    if (!b) {
-      const h = hostedBy.get(pairKey(f.from, f.to))!.find((x) => x.airline === airline)!;
-      blocks.set(k, (b = { ...f, key: `hb:${k}`, seats: Math.round(f.seats * shareOf(h)), blockOf: f }));
-    }
-    return b;
-  };
-
-  // Itineraries per directed market: nonstops, plus one-stop connections on the player's own flights.
-  const itins = new Map<string, Itinerary[]>(); // `${o}>${d}`
-  let count = 0;
-  const add = (o: string, d: string, it: Itinerary) => {
-    it.idx = count++;
-    const k = `${o}>${d}`;
-    const l = itins.get(k);
-    if (l) l.push(it); else itins.set(k, [it]);
-  };
-  // The partner's part of a ticket follows the market's reference fare (the player sets fares on its own flights).
-  const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
-  // Which of the player's flights each partner flight connects with, and how many travellers each pairing carries.
-  const partnerLinks = new Map<Flight, Set<Flight>>();
-  const linkOf = (f: Flight) => { let set = partnerLinks.get(f); if (!set) partnerLinks.set(f, (set = new Set())); return set; };
-  for (const f1 of every) {
-    const mult1 = multOf(f1);
-    if (!f1.partner) add(f1.from, f1.to, { flights: [f1], weight: flightTimeQuality(f1), fareShare: 1, fareMult: mult1, perWeek: f1.perWeek });
-    for (const f2 of (f1.partner ? ownFrom : byFrom).get(f1.to) ?? []) {
-      if (f1.partner && f2.partner) continue;
-      // A partner's feeder flight only connects with the player route that partner sells.
-      const feeder = f1.partner?.hosted ? f1 : f2.partner?.hosted ? f2 : null;
-      const own = feeder === f1 ? f2 : f1;
-      if (feeder && feeder.partner!.hosted !== pairKey(own.from, own.to)) continue;
-      if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) continue;
-      const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
-      const wait = mod(f2.dep - f1.arr, DAY);
-      if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub))) continue;
-      const m = marketBetween(f1.from, f2.to);
-      if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) continue;
-      if (f1.partner && !feeder) linkOf(f1).add(f2);
-      if (f2.partner && !feeder) linkOf(f2).add(f1);
-      // Extra time versus flying nonstop, valued in the same units as fares. Long waits and stopovers count less than in full.
-      const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
-      // Connecting fares follow the fares the player sets on the legs, weighted by distance.
-      const mult = (mult1 * f1.distKm + multOf(f2) * f2.distKm) / (f1.distKm + f2.distKm);
-      add(f1.from, f2.to, { flights: [f1, f2], weight: flightTimeQuality(f1) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait, perWeek: Math.min(f1.perWeek, f2.perWeek), block: feeder ? blockFor(feeder.partner!.airline, own) : undefined });
-    }
-  }
+  const partners = partnerFlightsOf(plan).map(partnerFlight);
+  const s: Structure = { flights, partners, every: [...flights, ...partners], itins: new Map(), blocks: new Map(), partnerLinks: new Map(), count: 0 };
+  const b = builderFor(plan, s);
+  for (const f of flights) b.nonstop(f);
+  for (const f1 of s.every) for (const f2 of (f1.partner ? b.ownFrom : b.byFrom).get(f1.to) ?? []) b.pair(f1, f2);
 
   // Two-stop trips: the player's own flights to a hub and on to a second airport, then a codeshare flight to the
   // destination (or a codeshare flight out, then the player's own two). This is how a codeshare extends the player's
   // network: Guangzhou-Miami through Hong Kong and New York once the partner sells New York-Miami. Hosted feeders
   // are not chained, and the partner leg is always a flight the player sells seats on.
   const sellable = partners.filter((p) => !p.partner!.hosted);
-  const sellableFrom = new Map<string, Flight[]>();
-  for (const p of sellable) { const l = sellableFrom.get(p.from); if (l) l.push(p); else sellableFrom.set(p.from, [p]); }
-  const addTwoStop = (legs: [Flight, Flight, Flight]) => {
+  const sellableFrom = groupBy(sellable, (f) => f.from);
+  for (const f1 of flights) for (const f2 of b.ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) b.twoStop([f1, f2, p]);
+  for (const p of sellable) for (const f2 of b.ownFrom.get(p.to) ?? []) for (const f3 of b.ownFrom.get(f2.to) ?? []) b.twoStop([p, f2, f3]);
+  return s;
+}
+
+function groupBy(list: Flight[], keyOf: (f: Flight) => string): Map<string, Flight[]> {
+  const out = new Map<string, Flight[]>();
+  for (const f of list) { const k = keyOf(f); const l = out.get(k); if (l) l.push(f); else out.set(k, [f]); }
+  return out;
+}
+
+/**
+ * The rules that turn flights into itineraries, writing into a structure: shared by the full build and by the
+ * one-deal update below, so both make exactly the same itineraries.
+ */
+function builderFor(plan: Plan, s: Structure, copyOnWrite = false) {
+  // When updating a structure derived from a cached one, a market's list is copied before it first gains an itinerary.
+  const copied = new Set<string>();
+  const ownFrom = groupBy(s.flights, (f) => f.from);
+  const byFrom = groupBy(s.every, (f) => f.from);
+  // Partners selling the player's routes: the seat block each may use, per player flight.
+  const hostedBy = new Map<string, Codeshare[]>(); // player route -> partners selling it
+  for (const h of plan.hosted ?? []) hostedBy.set(h.key, [...(hostedBy.get(h.key) ?? []), h]);
+  const blockFor = (airline: string, f: Flight) => {
+    const k = `${airline}|${f.key}`;
+    let bl = s.blocks.get(k);
+    if (!bl) {
+      const h = hostedBy.get(pairKey(f.from, f.to))!.find((x) => x.airline === airline)!;
+      s.blocks.set(k, (bl = { ...f, key: `hb:${k}`, seats: Math.round(f.seats * shareOf(h)), blockOf: f }));
+    }
+    return bl;
+  };
+  // Itineraries per directed market: nonstops, plus one-stop connections on the player's own flights.
+  const add = (o: string, d: string, it: Itinerary) => {
+    it.idx = s.count++;
+    const k = `${o}>${d}`;
+    let l = s.itins.get(k);
+    if (l && copyOnWrite && !copied.has(k)) s.itins.set(k, (l = [...l]));
+    if (copyOnWrite) copied.add(k);
+    if (l) l.push(it); else s.itins.set(k, [it]);
+  };
+  // The partner's part of a ticket follows the market's reference fare (the player sets fares on its own flights).
+  const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
+  // Which of the player's flights each partner flight connects with, and how many travellers each pairing carries.
+  const linkOf = (f: Flight) => { let set = s.partnerLinks.get(f); if (!set) s.partnerLinks.set(f, (set = new Set())); return set; };
+  const nonstop = (f1: Flight) => add(f1.from, f1.to, { flights: [f1], weight: flightTimeQuality(f1), fareShare: 1, fareMult: multOf(f1), perWeek: f1.perWeek });
+  const pair = (f1: Flight, f2: Flight) => {
+    if (f1.partner && f2.partner) return;
+    // A partner's feeder flight only connects with the player route that partner sells.
+    const feeder = f1.partner?.hosted ? f1 : f2.partner?.hosted ? f2 : null;
+    const own = feeder === f1 ? f2 : f1;
+    if (feeder && feeder.partner!.hosted !== pairKey(own.from, own.to)) return;
+    if (AIRPORT_BY_CODE[f2.to].metro === AIRPORT_BY_CODE[f1.from].metro) return;
+    const through = f2.ac === f1.ac && f2.idx === f1.idx + 1;
+    const wait = mod(f2.dep - f1.arr, DAY);
+    if (wait < (through ? 0 : minConnect(f1.to, f1.from, f2.to, plan.hub))) return;
+    const m = marketBetween(f1.from, f2.to);
+    if (!m || !detourOk(m.distKm, f1.distKm + f2.distKm)) return;
+    if (f1.partner && !feeder) linkOf(f1).add(f2);
+    if (f2.partner && !feeder) linkOf(f2).add(f1);
+    // Extra time versus flying nonstop, valued in the same units as fares. Long waits and stopovers count less than in full.
+    const penalty = connectionWeight(f1.blockH + f2.blockH, wait, f1.to, m.distKm, through);
+    // Connecting fares follow the fares the player sets on the legs, weighted by distance.
+    const mult = (multOf(f1) * f1.distKm + multOf(f2) * f2.distKm) / (f1.distKm + f2.distKm);
+    add(f1.from, f2.to, { flights: [f1, f2], weight: flightTimeQuality(f1) * penalty, fareShare: connectFareShare(through ? 0 : wait), fareMult: mult, wait: through ? 0 : wait, perWeek: Math.min(f1.perWeek, f2.perWeek), block: feeder ? blockFor(feeder.partner!.airline, own) : undefined });
+  };
+  const twoStop = (legs: [Flight, Flight, Flight]) => {
     const [f1, f2, f3] = legs;
     const c1 = connectionAt(f1, f2, plan.hub), c2 = connectionAt(f2, f3, plan.hub);
     if (!c1 || !c2) return;
@@ -1063,47 +1068,133 @@ function buildStructure(plan: Plan): Structure {
       flights: legs,
       weight: flightTimeQuality(f1) * tripWeight(f1.blockH + f2.blockH + f3.blockH, layovers, m.distKm),
       fareShare: Math.max(MIN_CONNECT_FARE_SHARE, connectFareShare(longest) - TWO_STOP_FARE_DISCOUNT),
-      fareMult: legs.reduce((s, f) => s + multOf(f) * f.distKm, 0) / km,
+      fareMult: legs.reduce((sum, f) => sum + multOf(f) * f.distKm, 0) / km,
       perWeek: Math.min(...legs.map((f) => f.perWeek)),
       waits: layovers.map((l) => (l.through ? 0 : l.waitMin)),
     });
   };
-  for (const f1 of flights) for (const f2 of ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) addTwoStop([f1, f2, p]);
-  for (const p of sellable) for (const f2 of ownFrom.get(p.to) ?? []) for (const f3 of ownFrom.get(f2.to) ?? []) addTwoStop([p, f2, f3]);
+  return { ownFrom, byFrom, nonstop, pair, twoStop };
+}
 
-  return { flights, partners, every, itins, blocks, partnerLinks, count };
+/** The partner flights a plan sells or is fed by, before they become flights (the same objects for the same deal). */
+function partnerFlightsOf(plan: Plan): PartnerFlight[] {
+  // A partner flight the player already sells (codeshare) isn't fed twice through the partner selling a player route.
+  const sold = new Set((plan.codeshares ?? []).map((c) => `${c.airline}|${c.key}`));
+  const feeders = (plan.hosted ?? []).flatMap(feederFlights).filter((p) => !sold.has(`${p.airline}|${p.key}`));
+  return [...codeshareFlights(plan), ...feeders];
+}
+
+let partnerSerial = 0;
+function partnerFlight(p: PartnerFlight): Flight {
+  const A = AIRPORT_BY_CODE[p.from], B = AIRPORT_BY_CODE[p.to];
+  const ac: Aircraft = { id: `${p.hosted ? 'hs' : 'cs'}:${p.airline}|${p.key}#${partnerSerial++}`, reg: '', type: p.type, legs: [] };
+  return { key: ac.id, idx: -1, ac, from: p.from, to: p.to, dep: p.dep, perWeek: p.perWeek, arr: p.dep + p.block, seats: p.seats, blockH: p.block / 60, distKm: distanceKm(A.lat, A.lon, B.lat, B.lon), partner: p };
+}
+
+/**
+ * A plan's structure from a cached one that differs only in its codeshare and hosted deals (the usual case: every
+ * partner and deal comparison toggles one deal). Itineraries over the partner flights that went are dropped, and
+ * only itineraries over the partner flights that came are built; the rest (most of a big network) is shared.
+ */
+function deriveStructure(plan: Plan, base: Structure, basePlan: Plan): Structure {
+  const target = partnerFlightsOf(plan);
+  const hostedId = (h: Codeshare) => `${h.airline}|${h.key}|${shareOf(h)}`;
+  const keepHosted = new Set((plan.hosted ?? []).map(hostedId));
+  // Hosted deals that went or changed block size: their feeders and seat blocks are rebuilt.
+  const changed = new Set((basePlan.hosted ?? []).filter((h) => !keepHosted.has(hostedId(h))).map((h) => `${h.airline}|${h.key}`));
+  const wanted = new Set(target);
+  const gone = new Set<Flight>();
+  const kept: Flight[] = [];
+  const have = new Set<PartnerFlight>();
+  for (const f of base.partners) {
+    const p = f.partner!;
+    if (!wanted.has(p) || (p.hosted && changed.has(`${p.airline}|${p.hosted}`))) gone.add(f);
+    else { kept.push(f); have.add(p); }
+  }
+  const added = target.filter((p) => !have.has(p)).map(partnerFlight);
+  const partners = [...kept, ...added];
+  const s: Structure = {
+    flights: base.flights, partners, every: [...base.flights, ...partners], itins: new Map(base.itins),
+    blocks: new Map(base.blocks), partnerLinks: new Map(base.partnerLinks), count: base.count,
+  };
+  if (gone.size) {
+    for (const f of gone) s.partnerLinks.delete(f);
+    for (const [k, bl] of base.blocks) if (changed.has(`${k.slice(0, k.indexOf('|'))}|${pairKey(bl.from, bl.to)}`)) s.blocks.delete(k);
+    for (const [k, list] of base.itins) {
+      if (!list.some((it) => it.flights.some((f) => gone.has(f)))) continue;
+      const left = list.filter((it) => !it.flights.some((f) => gone.has(f)));
+      if (left.length) s.itins.set(k, left); else s.itins.delete(k);
+    }
+  }
+  if (added.length) {
+    // Lists that gain itineraries are copied first, so the base structure stays as it was.
+    const b = builderFor(plan, s, true);
+    const newFrom = groupBy(added, (f) => f.from);
+    // One-stop trips with a new partner flight on either leg (partner flights never connect with each other).
+    for (const f1 of added) for (const f2 of b.ownFrom.get(f1.to) ?? []) b.pair(f1, f2);
+    for (const f1 of base.flights) for (const f2 of newFrom.get(f1.to) ?? []) b.pair(f1, f2);
+    // Two-stop trips over a new flight the player sells seats on.
+    const ownTo = groupBy(base.flights, (f) => f.to);
+    for (const p of added) {
+      if (p.partner!.hosted) continue;
+      for (const f2 of ownTo.get(p.from) ?? []) for (const f1 of ownTo.get(f2.from) ?? []) b.twoStop([f1, f2, p]);
+      for (const f2 of b.ownFrom.get(p.to) ?? []) for (const f3 of b.ownFrom.get(f2.to) ?? []) b.twoStop([p, f2, f3]);
+    }
+  }
+  return s;
 }
 
 /**
  * The structure of the last few plans, apart from fares: trying every fare on a route (the fare curve) then builds
- * the itineraries once and only redoes demand, capacity and the tally.
+ * the itineraries once and only redoes demand, capacity and the tally. A plan that differs from one of them only in
+ * its deals is derived from it (see deriveStructure).
  */
-const structures = new Map<string, Structure>();
-const STRUCTURES_MAX = 3;
+const structures = new Map<string, { s: Structure; plan: Plan; shape: string }>();
+const STRUCTURES_MAX = 4;
+/** A plan without its fares and deals: two plans with the same shape differ only in what partners do. */
+const shapeOf = (plan: Plan) => JSON.stringify({ ...plan, fares: null, codeshares: null, hosted: null });
 function structureOf(plan: Plan): Structure {
   const key = JSON.stringify({ ...plan, fares: null });
-  const hit = structures.get(key);
-  if (hit) {
-    structures.delete(key);
-    structures.set(key, hit);
-    // The one thing fares change: what each itinerary's price follows (the same arithmetic as when it was built).
-    const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
-    for (const list of hit.itins.values()) {
-      for (const it of list) {
-        const legs = it.flights;
-        it.fareMult = legs.length === 1 ? multOf(legs[0]) : legs.reduce((sum, f) => sum + multOf(f) * f.distKm, 0) / legs.reduce((sum, f) => sum + f.distKm, 0);
-      }
-    }
-    return hit;
+  let entry = structures.get(key);
+  if (entry) structures.delete(key);
+  else {
+    const shape = shapeOf(plan);
+    // The most recent cached plan of the same shape, if it is only a few deals away.
+    const base = [...structures.values()].reverse().find((e) => e.shape === shape && dealDistance(e.plan, plan) <= MAX_DERIVED_CHANGES);
+    const s = base ? deriveStructure(plan, base.s, base.plan) : buildStructure(plan);
+    entry = { s, plan, shape };
   }
-  const built = buildStructure(plan);
-  structures.set(key, built);
+  structures.set(key, entry);
   if (structures.size > STRUCTURES_MAX) structures.delete(structures.keys().next().value!);
-  return built;
+  // The one thing fares change: what each itinerary's price follows (the same arithmetic as when it was built).
+  // Itineraries are shared between derived structures, so this runs on every use.
+  const multOf = (f: Flight) => (f.partner ? 1 : fareMultOf(plan, pairKey(f.from, f.to)));
+  for (const list of entry.s.itins.values()) {
+    for (const it of list) {
+      const legs = it.flights;
+      it.fareMult = legs.length === 1 ? multOf(legs[0]) : legs.reduce((sum, f) => sum + multOf(f) * f.distKm, 0) / legs.reduce((sum, f) => sum + f.distKm, 0);
+    }
+  }
+  return entry.s;
 }
 
+/** Deals beyond which a fresh build is cheaper than updating a cached structure. */
+const MAX_DERIVED_CHANGES = 6;
+function dealDistance(a: Plan, b: Plan): number {
+  const ids = (p: Plan) => [...(p.codeshares ?? []).map((c) => `c${c.airline}|${c.key}|${shareOf(c)}`), ...(p.hosted ?? []).map((h) => `h${h.airline}|${h.key}|${shareOf(h)}`)];
+  const x = new Set(ids(a)), y = new Set(ids(b));
+  let n = 0;
+  for (const id of x) if (!y.has(id)) n++;
+  for (const id of y) if (!x.has(id)) n++;
+  return n;
+}
+
+/** Each market's demand by its itinerary list (lists are shared between structures that differ in a deal elsewhere). */
+const marketDemand = new WeakMap<Itinerary[], { fares: string; perIt: Float64Array; info: { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] } }>();
+
 function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
-  const { flights, partners, every, itins, blocks, partnerLinks, count } = structureOf(plan);
+  const st = structureOf(plan);
+  const { flights, partners, every, itins, blocks, partnerLinks, count } = st;
   const linkPax = new Map<Flight, Map<Flight, number>>();
   const partnerWanted = new Map<Flight, number>();
   // Demand per itinerary (daily), by itinerary idx; `has` marks itineraries in a market that exists.
@@ -1111,7 +1202,16 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   const has = new Uint8Array(count);
   const pricedAt = new Float64Array(count);
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
+  const faresKey = JSON.stringify(plan.fares ?? {});
   for (const [k, list] of itins) {
+    // A market whose itineraries are the same list as in a structure this one came from (a deal elsewhere changed)
+    // has the same demand at the same fares: reuse it.
+    const hit = marketDemand.get(list);
+    if (hit && hit.fares === faresKey) {
+      for (let i = 0; i < list.length; i++) { demand[list[i].idx!] = hit.perIt[i]; has[list[i].idx!] = 1; }
+      marketInfo.set(k, hit.info);
+      continue;
+    }
     const [o, d] = k.split('>');
     const m = marketBetween(o, d);
     if (!m) continue;
@@ -1134,13 +1234,16 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
     const airTotal = respondingAirTotal(m, air.utility, comp);
     const mine = (airTotal * air.shares[0]) / 7;
     // Per departure: an itinerary flown every other day gets half the week's travellers on twice as few departures.
-    for (const it of list) { demand[it.idx!] = (mine * 7 * pricedAt[it.idx!]) / pSum / it.perWeek; has[it.idx!] = 1; }
+    const perIt = new Float64Array(list.length);
+    list.forEach((it, i) => { demand[it.idx!] = perIt[i] = (mine * 7 * pricedAt[it.idx!]) / pSum / it.perWeek; has[it.idx!] = 1; });
     const connecting = airTotal * air.shares.slice(rivals.length + 1).reduce((s, x) => s + x, 0);
-    marketInfo.set(k, {
+    const info = {
       airTotal, refFare: m.refFare, mine: mine * 7, connecting,
       rivals: rivals.map((r, i) => ({ id: r.airline.id, pax: airTotal * air.shares[i + 1] })),
       rivalVia: comp.connections.map((x, i) => ({ id: x.airline.id, via: x.via, pax: airTotal * air.shares[rivals.length + 1 + i] })),
-    });
+    };
+    marketInfo.set(k, info);
+    marketDemand.set(list, { fares: faresKey, perIt, info });
   }
 
   // Capacity: where a flight is oversold, everyone who wants it (local and connecting) loses seats in the same
@@ -1148,16 +1251,17 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   // its two flights, and seats a connection can't use on one flight go back to the others on the next pass.
   // A trip a partner sells also needs a seat in its block on the player's flight.
   const legsOf = (it: Itinerary) => (it.block ? [...it.flights, it.block] : it.flights);
-  const limited = [...every, ...blocks.values()];
   // Typed arrays over flight and itinerary indices: this loop is most of a simulation's cost, and the legs of each
-  // itinerary are looked up once instead of rebuilt on every pass.
-  const slot = new Map<Flight, number>(limited.map((f, i) => [f, i]));
+  // itinerary are looked up once per structure instead of rebuilt on every pass.
+  const limited = (st.limited ??= [...every, ...blocks.values()]);
+  const slot = (st.slot ??= new Map<Flight, number>(limited.map((f, i) => [f, i])));
   const seatOf = Float64Array.from(limited, (f) => f.seats);
   const itList: Itinerary[] = [], wantList: number[] = [], legList: number[][] = [];
   for (const list of itins.values()) {
     for (const it of list) {
       if (!has[it.idx!]) continue;
-      itList.push(it); wantList.push(demand[it.idx!]); legList.push(it.legSlots ??= legsOf(it).map((f) => slot.get(f)!));
+      itList.push(it); wantList.push(demand[it.idx!]); if (it.slotsOf !== slot) { it.legSlots = legsOf(it).map((f) => slot.get(f)!); it.slotsOf = slot; }
+      legList.push(it.legSlots!);
     }
   }
   const acceptAt = new Float64Array(limited.length).fill(1);
@@ -1228,6 +1332,15 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       pax: 0, wanted: 0, revenue: 0, partnerRevenue: 0, fee: HOSTED_FEE_PER_WEEK, markets: [], marketMap: new Map(), sources: [], sourceMap: new Map(),
     });
   }
+  // A deal's market rows read the same whichever direction is tallied first: the airports in order, and the stop of
+  // the itinerary that carries the most travellers (seen from the first airport; near-ties go to the earlier code).
+  const viaPax = new Map<object, number>();
+  const marketRow = (o: string, d: string) => ({ o: o < d ? o : d, d: o < d ? d : o, via: '', pax: 0 });
+  const noteVia = (row: { via: string }, it: Itinerary, forward: boolean, pax: number) => {
+    const via = forward ? it.flights[0].to : it.flights[it.flights.length - 2].to;
+    const top = viaPax.get(row) ?? -1;
+    if (pax > top * (1 + 1e-9) + 1e-12 || (pax >= top * (1 - 1e-9) - 1e-12 && via < row.via)) { row.via = via; viaPax.set(row, Math.max(top, pax)); }
+  };
   const markets: Record<string, MarketResult> = {};
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
@@ -1245,6 +1358,8 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       const fare = Math.round(info.refFare * it.fareMult) * it.fareShare;
       if (it.flights.length > 1) {
         connectingWeekly += n * it.perWeek;
+        // Transfer flows are for the airport views; the totals-only (lean) simulation skips them.
+        if (!lean)
         // A trip counts at every airport where it changes planes. Two-stop trips also carry their full stop list.
         fx.transferKeys.forEach((tk, i) => {
           const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
@@ -1265,10 +1380,11 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
         h.wanted += want * it.perWeek;
         h.partnerRevenue += toPartner;
         h.revenue += n * fare * it.perWeek - toPartner;
-        if (lean) { revenueWeekly += n * fare * it.perWeek - toPartner; } else {
         h.sourceMap.set(partnerLeg.partner!.key, (h.sourceMap.get(partnerLeg.partner!.key) ?? 0) + n * it.perWeek);
-        const row = h.marketMap.get(mk) ?? { o: mo, d: md, via: it.flights[0].to, pax: 0 };
+        if (lean) { revenueWeekly += n * fare * it.perWeek - toPartner; } else {
+        const row = h.marketMap.get(mk) ?? marketRow(mo, md);
         row.pax += n * it.perWeek;
+        noteVia(row, it, mo < md, n * it.perWeek);
         h.marketMap.set(mk, row);
         revenueWeekly += n * fare * it.perWeek - toPartner;
         }
@@ -1295,9 +1411,9 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
           cs.feedMap.set(fk, feed);
         }
         cs.feedRevenue += n * fare * it.perWeek - toPartner;
-        const via = it.flights[0].to;
-        const row = cs.marketMap.get(mk) ?? { o: mo, d: md, via, pax: 0 };
+        const row = cs.marketMap.get(mk) ?? marketRow(mo, md);
         row.pax += n * it.perWeek;
+        noteVia(row, it, mo < md, n * it.perWeek);
         cs.marketMap.set(mk, row);
         // The whole journey, stop by stop. The two directions are one journey: keep whichever way reads first.
         const jk = fx.journeyKey;

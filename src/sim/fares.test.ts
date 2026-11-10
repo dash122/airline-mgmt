@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import { codeshareIdeas, hostedIdeas } from './codeshare';
-import { addRoundTrip, emptyPlan, simulate, type Plan } from './simulate';
+import { addRoundTrip, emptyPlan, simulate, toggleCodeshare, toggleHosted, setHostedShare, type Plan } from './simulate';
 import { bestFare, fareCurve, fareCurveSteps } from './fares';
 import { marketBetween } from './markets';
 
@@ -94,6 +94,23 @@ describe('fare curve steps', () => {
   });
 });
 
+/**
+ * The same result: every field present on both sides, text equal, numbers equal to rounding. A remembered or
+ * deal-updated structure lists the same itineraries in another order, so sums can differ in the last bits.
+ */
+function expectSame(a: unknown, b: unknown, path = '') {
+  if (typeof a === 'number' && typeof b === 'number') {
+    if (Math.abs(a - b) > 1e-9 * Math.max(1, Math.abs(a))) expect(a, path).toBe(b);
+    return;
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    expect(Object.keys(a).sort(), path).toEqual(Object.keys(b).sort());
+    for (const k of Object.keys(a)) expectSame((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${path}.${k}`);
+    return;
+  }
+  expect(a, path).toBe(b);
+}
+
 describe('structure reuse across fares', () => {
   test('a fare tried on a remembered plan structure gives exactly the results of a cold start, codeshares included', async () => {
     let p = trips(trips(trips(emptyPlan('HKG'), 'HKG', 'NRT', 2), 'HKG', 'SIN', 2), 'HKG', 'TPE', 2);
@@ -102,9 +119,35 @@ describe('structure reuse across fares', () => {
     expect((p.codeshares?.length ?? 0) + (p.hosted?.length ?? 0)).toBeGreaterThan(0);
     const tried = { ...p, fares: { 'HKG-NRT': 1.25, 'HKG-SIN': 0.8 } };
     simulate(p); // remembers the structure
-    const warm = JSON.stringify(simulate(tried));
+    const warm = simulate(tried);
     vi.resetModules();
-    const cold = JSON.stringify((await import('./simulate')).simulate(tried));
-    expect(warm).toBe(cold);
+    const cold = (await import('./simulate')).simulate(tried);
+    expectSame(warm, cold);
+  });
+
+  test('a deal added, dropped or resized on a remembered structure gives the results of a cold start', async () => {
+    let p = trips(trips(trips(emptyPlan('HKG'), 'HKG', 'NRT', 2), 'HKG', 'SIN', 2), 'HKG', 'TPE', 2);
+    const cs = codeshareIdeas(p, 4);
+    p = { ...p, codeshares: cs.slice(1).map((i) => ({ airline: i.airline, key: i.route.key })) };
+    const hs = hostedIdeas(p, 4, 6);
+    p = { ...p, hosted: hs.slice(1).map((h) => ({ airline: h.airline, key: h.key })) };
+    expect(cs.length).toBeGreaterThan(1);
+    expect(hs.length).toBeGreaterThan(1);
+    const variants: Plan[] = [
+      toggleCodeshare(p, cs[0].airline, cs[0].route.key), // added
+      toggleCodeshare(p, cs[1].airline, cs[1].route.key), // dropped
+      toggleHosted(p, hs[0].airline, hs[0].key),
+      toggleHosted(p, hs[1].airline, hs[1].key),
+      setHostedShare(p, hs[1].airline, hs[1].key, 0.1),
+      // A codeshare on a partner flight a hosted deal already feeds from, and the other way round.
+      ...(p.hosted ?? []).map((h) => toggleCodeshare(p, h.airline, h.key)),
+    ];
+    for (const v of variants) {
+      simulate(p); // the structure the variant is worked out from
+      const warm = simulate(v);
+      vi.resetModules();
+      const cold = (await import('./simulate')).simulate(v);
+      expectSame(warm, cold);
+    }
   });
 });
