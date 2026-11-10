@@ -320,6 +320,43 @@ interface Itinerary {
   waits?: number[];
   /** The partner's seat block on the player's flight, for trips a partner sells. */
   block?: Flight;
+  /** What the tally needs that depends only on the itinerary's flights, worked out the first time it is tallied. */
+  fixed?: ItineraryFixed;
+  /** Position in its structure, for the per-itinerary arrays of a simulation (set when the structure is built). */
+  idx?: number;
+  /** Its legs' (and seat block's) positions in the capacity arrays, worked out once per structure. */
+  legSlots?: number[];
+}
+
+interface ItineraryFixed {
+  dist: number;
+  ownKm: number;
+  partnerLeg: Flight | undefined;
+  partnerShare: number;
+  /** transferFlows keys, one per stop. */
+  transferKeys: string[];
+  journeyKey: string;
+  journeyPath: string[];
+}
+
+function fixedOf(it: Itinerary): ItineraryFixed {
+  if (it.fixed) return it.fixed;
+  const fl = it.flights;
+  let dist = 0, ownKm = 0, refSum = 0;
+  let partnerLeg: Flight | undefined;
+  for (const f of fl) { dist += f.distKm; refSum += refFare(f.distKm); if (f.partner) partnerLeg ??= f; else ownKm += f.distKm; }
+  const origin = fl[0].from, dest = fl[fl.length - 1].to;
+  const transferKeys: string[] = [];
+  if (fl.length > 1) {
+    const route = fl.length > 2 ? `|${[origin, ...fl.slice(0, -1).map((f) => f.to), dest].join('>')}` : '';
+    for (let i = 0; i < fl.length - 1; i++) transferKeys.push(`${fl[i].to}|${origin}|${dest}${route}`);
+  }
+  const stops = [origin, ...fl.map((f) => f.to)];
+  const fwd = stops.join('>'), back = [...stops].reverse().join('>');
+  return (it.fixed = {
+    dist, ownKm, partnerLeg, partnerShare: partnerLeg ? refFare(partnerLeg.distKm) / refSum : 0, transferKeys,
+    journeyKey: fwd <= back ? fwd : back, journeyPath: fwd <= back ? stops : [...stops].reverse(),
+  });
 }
 
 export interface RouteResult {
@@ -905,7 +942,7 @@ export function todaySplit(o: string, d: string): { total: number; rivals: numbe
  * at today's fare, "what if" baselines, every codeshare deal's "without"), and a week's simulation is the expensive part.
  */
 const recent = new Map<string, NetworkResult>();
-const RECENT_MAX = 4;
+const RECENT_MAX = 8;
 export function simulate(plan: Plan): NetworkResult {
   const key = JSON.stringify(plan);
   let result = recent.get(key);
@@ -933,6 +970,8 @@ interface Structure {
   itins: Map<string, Itinerary[]>;
   blocks: Map<string, Flight>;
   partnerLinks: Map<Flight, Set<Flight>>;
+  /** Number of itineraries (each one's idx is below this). */
+  count: number;
 }
 
 function buildStructure(plan: Plan): Structure {
@@ -960,7 +999,9 @@ function buildStructure(plan: Plan): Structure {
 
   // Itineraries per directed market: nonstops, plus one-stop connections on the player's own flights.
   const itins = new Map<string, Itinerary[]>(); // `${o}>${d}`
+  let count = 0;
   const add = (o: string, d: string, it: Itinerary) => {
+    it.idx = count++;
     const k = `${o}>${d}`;
     const l = itins.get(k);
     if (l) l.push(it); else itins.set(k, [it]);
@@ -1030,7 +1071,7 @@ function buildStructure(plan: Plan): Structure {
   for (const f1 of flights) for (const f2 of ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) addTwoStop([f1, f2, p]);
   for (const p of sellable) for (const f2 of ownFrom.get(p.to) ?? []) for (const f3 of ownFrom.get(f2.to) ?? []) addTwoStop([p, f2, f3]);
 
-  return { flights, partners, every, itins, blocks, partnerLinks };
+  return { flights, partners, every, itins, blocks, partnerLinks, count };
 }
 
 /**
@@ -1062,11 +1103,13 @@ function structureOf(plan: Plan): Structure {
 }
 
 function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
-  const { flights, partners, every, itins, blocks, partnerLinks } = structureOf(plan);
+  const { flights, partners, every, itins, blocks, partnerLinks, count } = structureOf(plan);
   const linkPax = new Map<Flight, Map<Flight, number>>();
   const partnerWanted = new Map<Flight, number>();
-  // Demand per itinerary (daily).
-  const demand = new Map<Itinerary, number>();
+  // Demand per itinerary (daily), by itinerary idx; `has` marks itineraries in a market that exists.
+  const demand = new Float64Array(count);
+  const has = new Uint8Array(count);
+  const pricedAt = new Float64Array(count);
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
   for (const [k, list] of itins) {
     const [o, d] = k.split('>');
@@ -1075,9 +1118,14 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
     // An itinerary that runs less often than daily attracts proportionally fewer travellers.
     // Each itinerary's weight, after travellers' reaction to its price against the nonstop reference fare: connections
     // sell cheaper, so they also draw travellers who would otherwise fly nonstop.
-    const priced = new Map(list.map((it) => [it, it.weight * (it.perWeek / 7) * Math.exp(-fareResponse(it.fareShare * it.fareMult * m.refFare, m.refFare))]));
-    const wSum = list.reduce((s, it) => s + it.weight * (it.perWeek / 7), 0);
-    const pSum = [...priced.values()].reduce((s, w) => s + w, 0);
+    let wSum = 0, pSum = 0;
+    for (const it of list) {
+      const w = it.weight * (it.perWeek / 7);
+      const p = w * Math.exp(-fareResponse(it.fareShare * it.fareMult * m.refFare, m.refFare));
+      pricedAt[it.idx!] = p;
+      wSum += w;
+      pSum += p;
+    }
     // One fare that has the same pull as the player's mix of itineraries and prices.
     const fare = m.refFare * (1 - Math.log(pSum / wSum) / FARE_SENSITIVITY);
     const comp = competitionFor(o, d);
@@ -1086,7 +1134,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
     const airTotal = respondingAirTotal(m, air.utility, comp);
     const mine = (airTotal * air.shares[0]) / 7;
     // Per departure: an itinerary flown every other day gets half the week's travellers on twice as few departures.
-    for (const it of list) demand.set(it, (mine * 7 * priced.get(it)!) / pSum / it.perWeek);
+    for (const it of list) { demand[it.idx!] = (mine * 7 * pricedAt[it.idx!]) / pSum / it.perWeek; has[it.idx!] = 1; }
     const connecting = airTotal * air.shares.slice(rivals.length + 1).reduce((s, x) => s + x, 0);
     marketInfo.set(k, {
       airTotal, refFare: m.refFare, mine: mine * 7, connecting,
@@ -1106,7 +1154,12 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   const slot = new Map<Flight, number>(limited.map((f, i) => [f, i]));
   const seatOf = Float64Array.from(limited, (f) => f.seats);
   const itList: Itinerary[] = [], wantList: number[] = [], legList: number[][] = [];
-  for (const [it, n] of demand) { itList.push(it); wantList.push(n); legList.push(legsOf(it).map((f) => slot.get(f)!)); }
+  for (const list of itins.values()) {
+    for (const it of list) {
+      if (!has[it.idx!]) continue;
+      itList.push(it); wantList.push(demand[it.idx!]); legList.push(it.legSlots ??= legsOf(it).map((f) => slot.get(f)!));
+    }
+  }
   const acceptAt = new Float64Array(limited.length).fill(1);
   const carriedAt = new Float64Array(itList.length);
   const onboardAt = new Float64Array(limited.length);
@@ -1135,12 +1188,12 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   }
   // Never more travellers than seats.
   load();
-  const carried = new Map<Itinerary, number>();
+  const carried = new Float64Array(count);
   for (let i = 0; i < itList.length; i++) {
     const legs = legList[i];
     let fit = 1;
     for (let j = 0; j < legs.length; j++) fit = Math.min(fit, seatOf[legs[j]] / Math.max(onboardAt[legs[j]], seatOf[legs[j]]));
-    carried.set(itList[i], carriedAt[i] * fit);
+    carried[itList[i].idx!] = carriedAt[i] * fit;
   }
   const accept = new Map<Flight, number>(limited.map((f, i) => [f, acceptAt[i]]));
 
@@ -1179,10 +1232,13 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
+    const [mo, md] = k.split('>');
+    const mk = mo < md ? `${mo}|${md}` : `${md}|${mo}`;
     const mr: MarketResult = markets[k] = { airTotal: info.airTotal, connecting: info.connecting, rivals: info.rivals, rivalVia: info.rivalVia, nonstop: 0, via: {}, wanted: info.mine };
     for (const it of list) {
-      const n = carried.get(it) ?? 0;
-      const want = demand.get(it) ?? 0;
+      const n = carried[it.idx!];
+      const want = demand[it.idx!];
+      const fx = fixedOf(it);
       if (it.flights.length === 1) mr.nonstop += n * it.perWeek;
       else mr.via[it.flights[0].to] = (mr.via[it.flights[0].to] ?? 0) + n * it.perWeek;
       tripsWeekly += n * it.perWeek;
@@ -1190,10 +1246,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       if (it.flights.length > 1) {
         connectingWeekly += n * it.perWeek;
         // A trip counts at every airport where it changes planes. Two-stop trips also carry their full stop list.
-        const origin = it.flights[0].from, dest = it.flights[it.flights.length - 1].to;
-        const route = it.flights.length > 2 ? `|${[origin, ...it.flights.slice(0, -1).map((f) => f.to), dest].join('>')}` : '';
-        it.flights.slice(0, -1).forEach((f, i) => {
-          const tk = `${f.to}|${origin}|${dest}${route}`;
+        fx.transferKeys.forEach((tk, i) => {
           const tf = transferFlows.get(tk) ?? { pax: 0, long: 0, stopover: 0 };
           tf.pax += n * it.perWeek;
           const kind = layoverKind((it.waits ?? [it.wait ?? 0])[i]);
@@ -1201,13 +1254,10 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
           transferFlows.set(tk, tf);
         });
       }
-      const dist = it.flights.reduce((s, f) => s + f.distKm, 0);
-      // The player's own part of a trip with a partner leg is split between its own flights by distance.
-      const ownKm = it.flights.reduce((s, f) => s + (f.partner ? 0 : f.distKm), 0);
-      const partnerLeg = it.flights.find((f) => f.partner);
+      // The player's own part of a trip with a partner leg is split between its own flights by distance (ownKm).
       // The partner keeps its flight's part of the fare, in proportion to the two flights' own fares (a short
       // flight gets more than its share of the distance, as in airlines' prorate agreements); the player keeps the rest.
-      const partnerShare = partnerLeg ? refFare(partnerLeg.distKm) / it.flights.reduce((s, f) => s + refFare(f.distKm), 0) : 0;
+      const { dist, ownKm, partnerLeg, partnerShare } = fx;
       if (partnerLeg?.partner!.hosted) {
         const h = hsResults.get(`${partnerLeg.partner!.airline}|${partnerLeg.partner!.hosted}`)!;
         const toPartner = n * fare * it.perWeek * partnerShare;
@@ -1217,9 +1267,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
         h.revenue += n * fare * it.perWeek - toPartner;
         if (lean) { revenueWeekly += n * fare * it.perWeek - toPartner; } else {
         h.sourceMap.set(partnerLeg.partner!.key, (h.sourceMap.get(partnerLeg.partner!.key) ?? 0) + n * it.perWeek);
-        const [o, d] = k.split('>');
-        const mk = [o, d].sort().join('|');
-        const row = h.marketMap.get(mk) ?? { o, d, via: it.flights[0].to, pax: 0 };
+        const row = h.marketMap.get(mk) ?? { o: mo, d: md, via: it.flights[0].to, pax: 0 };
         row.pax += n * it.perWeek;
         h.marketMap.set(mk, row);
         revenueWeekly += n * fare * it.perWeek - toPartner;
@@ -1247,17 +1295,13 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
           cs.feedMap.set(fk, feed);
         }
         cs.feedRevenue += n * fare * it.perWeek - toPartner;
-        const [o, d] = k.split('>');
-        const mk = [o, d].sort().join('|');
         const via = it.flights[0].to;
-        const row = cs.marketMap.get(mk) ?? { o, d, via, pax: 0 };
+        const row = cs.marketMap.get(mk) ?? { o: mo, d: md, via, pax: 0 };
         row.pax += n * it.perWeek;
         cs.marketMap.set(mk, row);
         // The whole journey, stop by stop. The two directions are one journey: keep whichever way reads first.
-        const stops = [it.flights[0].from, ...it.flights.map((f) => f.to)];
-        const fwd = stops.join('>'), back = [...stops].reverse().join('>');
-        const jk = fwd <= back ? fwd : back;
-        const jr = cs.journeyMap.get(jk) ?? { path: fwd <= back ? stops : [...stops].reverse(), pax: 0 };
+        const jk = fx.journeyKey;
+        const jr = cs.journeyMap.get(jk) ?? { path: fx.journeyPath, pax: 0 };
         jr.pax += n * it.perWeek;
         cs.journeyMap.set(jk, jr);
         revenueWeekly += n * fare * it.perWeek - toPartner;
@@ -1273,9 +1317,11 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
         }
       }
       // Travellers turned away count against the flight that was full (both legs only if both were).
-      const fullLegs = it.flights.filter((f) => accept.get(f)! < 0.999 || (f === it.block?.blockOf && accept.get(it.block)! < 0.999));
-      const blame = fullLegs.length ? fullLegs : it.flights;
-      for (const f of blame) flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / blame.length);
+      if (want - n > 1e-12) {
+        const fullLegs = it.flights.filter((f) => accept.get(f)! < 0.999 || (f === it.block?.blockOf && accept.get(it.block)! < 0.999));
+        const blame = fullLegs.length ? fullLegs : it.flights;
+        for (const f of blame) flightSpill.set(f, (flightSpill.get(f) ?? 0) + (want - n) / blame.length);
+      }
     }
   }
 
@@ -1305,7 +1351,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       let localPax = 0, airTotal = 0, localDemand = 0, connectingPax = 0;
       const rivals = new Map<string, RouteRival>();
       for (const lk of [`${a}>${b}`, `${b}>${a}`]) {
-        for (const it of itins.get(lk) ?? []) if (it.flights.length === 1) localPax += it.perWeek * (carried.get(it) ?? 0);
+        for (const it of itins.get(lk) ?? []) if (it.flights.length === 1) localPax += it.perWeek * carried[it.idx!];
         const info = marketInfo.get(lk);
         const [o, d] = lk.split('>');
         const comp = competitionFor(o, d);

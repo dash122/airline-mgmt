@@ -230,8 +230,8 @@ export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: Airline
         </>
       )}
       <Head info={<CodeshareTerms />} right={<small className="muted">{ideas.length} 條接得上</small>}>{active.length ? '再共享' : '可共享的航線'}</Head>
-      {!calc.value && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各條航線</div>}
-      {calc.value && ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
+      {!calc.done && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各條航線</div>}
+      {calc.done && ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
       <ul className="cs-ideas">{ideas.slice(0, shown).map(row)}</ul>
       {ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN * 2)}>再顯示 {Math.min(SHOWN * 2, ideas.length - shown)} 條</button>}
     </>

@@ -41,7 +41,7 @@ export function codeshareOptions(plan: Plan, airlineId: string, now?: NetworkRes
 }
 
 /** The same search one route at a time, so a caller can yield between simulations (each one is a full week). */
-export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: NetworkResult, only?: Set<string>): Generator<void, CodeshareOption[], void> {
+export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: NetworkResult, only?: Set<string>, out: CodeshareOption[] = []): Generator<void, CodeshareOption[], void> {
   const net = airlineNetwork(airlineId);
   if (!net || !canCodeshare(net.airline) || !plan.fleet.length) return [];
   // `only`: restrict candidates to routes touching these airports (a search from one route's ends).
@@ -52,7 +52,6 @@ export function* codeshareOptionSteps(plan: Plan, airlineId: string, now?: Netwo
   // Most partners fly none of your airports: nothing to compare, so no simulation at all.
   if (!routes.length) return [];
   now ??= simulate(plan);
-  const out: CodeshareOption[] = [];
   for (const route of routes) {
     yield;
     const active = hasCodeshare(plan, airlineId, route.key);
@@ -263,10 +262,9 @@ export function hostedOptions(plan: Plan, key: string, limit = 24): HostedOption
 }
 
 /** The same search one partner at a time (see codeshareOptionSteps). */
-export function* hostedOptionSteps(plan: Plan, key: string, limit = 24): Generator<void, HostedOption[], void> {
+export function* hostedOptionSteps(plan: Plan, key: string, limit = 24, out: HostedOption[] = []): Generator<void, HostedOption[], void> {
   if (!routePairs(plan).some((r) => r.key === key)) return [];
   const now = simulate(plan);
-  const out: HostedOption[] = [];
   for (const id of partnersAt(key).slice(0, limit)) {
     yield;
     const active = isHosted(plan, id, key);
