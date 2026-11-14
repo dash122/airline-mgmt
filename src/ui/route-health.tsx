@@ -86,7 +86,7 @@ export function RouteRow({ name, sub, swatch, figures, daily, onOpen, onAdd, onR
         onClick={() => { if (swiped.current) { swiped.current = false; return; } onOpen(); }}>
         {swatch && <span className="swatch" style={{ background: swatch }} />}
         <span className="route-row-text">
-          <span className="route-row-top"><strong>{name}</strong>{figures && <b className={`route-row-profit ${figures.profit < 0 ? 'bad' : 'good'}`}>{figures.profit >= 0 ? '+' : ''}{money(figures.profit)}<small>／週</small></b>}</span>
+          <span className="route-row-top"><strong>{name}</strong>{figures && <b className={`route-row-profit ${figures.profit < 0 ? 'bad' : 'good'}`}>{figures.profit >= 0 ? '+' : ''}{money(figures.profit)}</b>}</span>
           <span className="route-row-meta">
             {status && <Badge n={h.icon} tone={h.tone}>{h.label}</Badge>}
             {figures && <span className="route-row-load"><Meter value={figures.loadFactor} tone={lfTone(figures.loadFactor)} label={`載客率 ${pct(figures.loadFactor)}`} /><b className={lfTone(figures.loadFactor)}>{pct(figures.loadFactor)}</b></span>}

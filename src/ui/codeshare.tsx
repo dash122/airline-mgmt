@@ -306,7 +306,7 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
               </li>
             ))}
           </ul>
-          {s.journeys.length > JOURNEYS_SHOWN && <button className="cs-more" onClick={() => setAllJourneys((v) => !v)}>{allJourneys ? '收起' : `再顯示 ${s.journeys.length - JOURNEYS_SHOWN} 條`}</button>}
+          {s.journeys.length > JOURNEYS_SHOWN && <button className="cs-more" onClick={() => setAllJourneys((v) => !v)}>{allJourneys ? '收起' : `再看 ${s.journeys.length - JOURNEYS_SHOWN} 條`}</button>}
         </>
       )}
 
@@ -432,7 +432,7 @@ function Departures({ deps }: { deps: CodeshareDeparture[] }) {
                 );
               })}
             </ul>
-            {list.length < every.length && <button className="cs-more" onClick={() => setAll(true)}>再顯示 {every.length - list.length} 班</button>}
+            {list.length < every.length && <button className="cs-more" onClick={() => setAll(true)}>再看 {every.length - list.length} 班</button>}
           </div>
         );
       })}

@@ -164,7 +164,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
       {ownTurnedAway >= 1 && (
         <div className="ms-turned"><b>想搭你但客滿</b><span>{count(ownTurnedAway)} 人／週 · 未包含在上方市占</span></div>
       )}
-      {hidden > 0 && <button className="secondary share-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? '收起' : `顯示另外 ${hidden} 項`}</button>}
+      {hidden > 0 && <button className="share-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "收起" : `再看 ${hidden} 項`}</button>}
     </div>
   );
 }

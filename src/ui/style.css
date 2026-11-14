@@ -2491,3 +2491,86 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
+/* ======================================================================================
+   v3.2 polish (2026-11-14): one rhythm, fewer repeats, simpler controls. This block wins over the ones above it.
+   Spacing scale used here: 4 / 8 / 12 / 16 / 20 (gutter).
+   ====================================================================================== */
+
+/* Rows inside a grouped list are straight: only the group is rounded. A radius on a row bent its hairline into a curve. */
+.stations li, .fleet li, .markets li, .report li { border-radius: 0; }
+
+/* Pushed pages: ‹ back and ‹ n/N › share one nav row, so the title below gets the full width. */
+.nav-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 0 12px 0 calc(var(--gutter) - 6px); }
+.nav-row .nav-back { margin: 0; padding-left: 4px; }
+.nav-row .pager { transform: scale(.94); transform-origin: right center; }
+@media (max-width: 819px) {
+  .sheet.nav-page .nav-back { margin-top: 0; }
+  .sheet.nav-page .nav-row { margin-top: 12px; }
+}
+.sheet.nav-page .sheet-head { padding-top: 4px; }
+.sheet-head h3 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sheet-head .sub { margin-top: 2px; }
+.sheet-head .sub b.warn { color: var(--warn); }
+
+/* A list's column captions, said once above the group instead of a unit on every row. */
+.list-cap, .list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 4px -8px; font: var(--t-foot); font-size: 12px; color: var(--muted); }
+.list-head { margin-bottom: -10px; }
+.list-cap-r { white-space: nowrap; }
+
+/* Pull-down for a list's order: "排序 損益 ⌄" in one quiet line, instead of a row of chips or a segmented control. */
+.pull-down { position: relative; display: inline-flex; }
+.pull-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 2px; border: 0; background: none; color: var(--accent); font: 600 13px/1 var(--font-sans); position: relative; white-space: nowrap; }
+.pull-btn::after { content: ''; position: absolute; inset: -6px -6px; }
+.pull-btn small { color: var(--muted); font-weight: 500; font-size: 12px; margin-right: 2px; }
+.pull-btn .chev { --chev-color: var(--accent); --chev-h: 9px; transform: rotate(90deg); margin-left: 2px; }
+.pull-btn[aria-expanded='true'] .chev { transform: rotate(-90deg); }
+.pull-menu.right { left: auto; right: -4px; transform-origin: top right; }
+.list-head .pull-menu.right, .list-head .pull-menu { left: -4px; right: auto; transform-origin: top left; }
+
+/* Routes: the total on the left, the order on the right; frequency and "to fix" moved up into the title's sub line. */
+.routes-panel .routes-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; margin-bottom: -4px; }
+.routes-panel .routes-summary > span { align-items: baseline; }
+.route-group-head { padding: 0 4px; }
+
+/* Fleet rows: name and weekly profit, then the aircraft's day as a strip with its flying hours. */
+.fleet li { gap: 6px; }
+.fleet-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.fleet-top .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: 600; }
+.fleet-profit { flex: none; font-size: var(--fs-base); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.fleet-profit.good { color: var(--good); } .fleet-profit.bad { color: var(--bad); }
+.fleet-day { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.fleet-day .daybar.compact { height: 10px; margin: 0; background: var(--fill-2, var(--surface-2)); }
+.fleet-day .daybar.compact .dseg { top: 0; bottom: 0; border-radius: 2px; }
+.fleet-day small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.st-top { align-items: center; }
+
+/* Report: the week's result and where the money goes, in one card; no "show details" box. */
+.report-hero { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 12px; background: var(--group, var(--panel)); }
+.report-hero > small { color: var(--muted); font: var(--t-foot); }
+.report-hero > strong { font: 700 30px/1.1 var(--font-sans); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.report-hero > strong.good { color: var(--good); } .report-hero > strong.bad { color: var(--bad); }
+.report-hero .money-flow { margin-top: 10px; }
+.report li { align-items: center; }
+.report .name { gap: 2px; font-weight: 600; }
+.report .route-row-load { grid-template-columns: 56px auto auto; justify-content: start; font-weight: 400; }
+
+/* "Show more" is one quiet text button everywhere. */
+.bridge-more, .cs-more, .share-more { align-self: center; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-pill); background: none; color: var(--accent); font: 600 14px/1 var(--font-sans); box-shadow: none; }
+.share-more { display: block; margin: 0 auto; }
+
+/* Rival timetable: a grouped row with a disclosure chevron, like the partner rows under it. */
+.route-times > summary { justify-content: space-between; }
+.route-times > summary::after { content: ''; width: 8px; height: 13px; background: var(--muted); -webkit-mask: var(--chev-mask) center / 100% 100% no-repeat; mask: var(--chev-mask) center / 100% 100% no-repeat; transition: transform .2s var(--ease-ios); }
+.route-times[open] > summary::after { transform: rotate(90deg); }
+
+/* Status capsule: every figure reads label-first (HK$ 1.2 億, D3 08:20); only "/日" trails its number. */
+.island .i-bal small { order: 0; }
+.island-list > :last-child { border-bottom: 0; }
+.island-list > :last-child::after { display: none; }
+
+/* Airport glance: three figures; the route count is already on the 航線 tab below. */
+.airport-glance { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Money flow figures stay on one line. */
+.mf-num { width: auto; min-width: 72px; white-space: nowrap; }
+.route-times:not([open]) { padding-bottom: 0; }

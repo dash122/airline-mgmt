@@ -56,7 +56,7 @@ export function travellerRows(net: NetworkResult | null | undefined, routeKey: s
 
 const SHOWN = 4;
 
-export function TravellerBridge({ net, routeKey, routePax, directPax }: { net: NetworkResult | null | undefined; routeKey: string; routePax: number; directPax: number }) {
+export function TravellerBridge({ net, routeKey, directPax }: { net: NetworkResult | null | undefined; routeKey: string; directPax: number }) {
   const open = useContext(CodeshareLink);
   const [all, setAll] = useState(false);
   const rows = useMemo(() => travellerRows(net, routeKey, directPax), [net, routeKey, directPax]);
@@ -66,14 +66,12 @@ export function TravellerBridge({ net, routeKey, routePax, directPax }: { net: N
   const direct = rows.filter((r) => r.path.length === 2).reduce((s, r) => s + r.pax, 0);
   const viaPartner = rows.filter((r) => r.partner).reduce((s, r) => s + r.pax, 0);
   const connecting = rows.filter((r) => r.path.length > 2).reduce((s, r) => s + r.pax, 0);
-  const total = Math.max(routePax, direct + connecting, 1);
   const hasPartner = viaPartner > 0;
   const partnerRoute = (r: TravellerRow) => r.partner && open ? () => open(r.partner!.airline, r.partner!.key, routeKey) : undefined;
   return (
     <section className="bridge" aria-label="旅客怎麼轉">
       <div className="bridge-head">
         <h3>旅客怎麼轉</h3>
-        <span>{count(total)} 人／週</span>
       </div>
       <div className="bridge-split" role="img" aria-label={`直飛 ${count(direct)} 人，轉機 ${count(connecting)} 人`}>
         <i className="direct" style={{ flexGrow: direct }} />
@@ -89,7 +87,7 @@ export function TravellerBridge({ net, routeKey, routePax, directPax }: { net: N
           const go = partnerRoute(r);
           const color = r.partner ? colorOf(r.partner.airline) : 'var(--accent)';
           const body = <>
-            <JourneyPath path={r.path} partnerKey={r.partner?.key ?? ''} color={color} airline={r.partner ? airlineName(r.partner.airline) : ''} here={routeKey} />
+            <JourneyPath path={r.path} partnerKey={r.partner?.key ?? ''} color={color} airline={r.partner ? airlineName(r.partner.airline) : ''} here={routeKey} known={routeKey.split('-')} />
             <b className="jy-pax">{count(r.pax)}<small> 人</small></b>
           </>;
           return <li key={`${r.key}|${r.partner?.key ?? ''}`}>{go ? <button onClick={go}>{body}<span className="chev" aria-hidden="true" /></button> : <div>{body}</div>}</li>;

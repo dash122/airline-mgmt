@@ -9,7 +9,7 @@ import {
   weeklyDepartures, type NetworkResult, type Plan,
 } from '../sim/simulate';
 import { count, money, short } from './format';
-import { routeColor, Sheet, type Pager } from './sheets';
+import { PullDown, routeColor, Sheet, type Pager } from './sheets';
 import { RouteRow } from './route-health';
 import { AirportCompetition, AirportDaySchedule, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
 import { rivalsAt } from '../sim/competitors';
@@ -126,7 +126,6 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
       sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
       info={<p>直飛 {directDestinations.size} 個航點、{directCountries.size} 個國家／地區（含對手航班）· 腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <div className="airport-glance">
-        <div><b>{list.length}</b><small>你的航線</small></div>
         <div><b>{used}</b><small>每週出發</small></div>
         <div><b>{short(ourPax)}</b><small>你的旅客/週</small></div>
         <div><b>{directDestinations.size}</b><small>直飛航點</small></div>
@@ -138,10 +137,11 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
       {tab === 'routes' && (
         <>
           {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地<span className="chev inline" aria-hidden="true" /></button></div></div>}
+          {list.length > 0 && <div className="list-cap"><span>航線 · 載客率</span><span>週損益</span></div>}
           <ul className="route-rows">
             {list.map((s) => {
               const res = result?.routes[s.key];
-              return <RouteRow key={s.key} name={AIRPORT_BY_CODE[s.other].name} sub={s.other} swatch={routeColor(s.key)} daily={s.flightsPerDay}
+              return <RouteRow key={s.key} name={AIRPORT_BY_CODE[s.other].name} swatch={routeColor(s.key)} daily={s.flightsPerDay}
                 figures={res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null}
                 onOpen={() => onOpenRoute(s.key)} onAdd={onAddFlight && (() => onAddFlight(s.key))} onRemove={onRemoveFlight && (() => onRemoveFlight(s.key))} />;
             })}
@@ -200,6 +200,8 @@ const minConnectLabel = (plan: Plan, code: string) => {
 
 // ---------- Airports tab ----------
 
+const ORDERS = [['busy', '班次'], ['profit', '損益'], ['transfer', '轉機']] as const;
+
 export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; result: NetworkResult | null; onPick: (code: string) => void; onClose: () => void }) {
   const [order, setOrder] = useState<'busy' | 'profit' | 'transfer'>('busy');
   const rows = stations(plan, result).sort((x, y) =>
@@ -211,11 +213,10 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
         {plan.hub && <p>轉運站 {plan.hub}：每週 {money(HUB_COST_PER_WEEK)}，轉機最短時間縮短 {HUB_MCT_CUT} 分鐘。</p>}
       </>}>
       {rows.length === 0 && <div className="hint center">還沒有機場</div>}
-      <div className="seg three">
-        {([['busy', '班次'], ['profit', '損益'], ['transfer', '轉機']] as const).map(([k, label]) => (
-          <button key={k} className={order === k ? 'on' : ''} onClick={() => setOrder(k)}>{label}</button>
-        ))}
-      </div>
+      {rows.length > 1 && <div className="list-head">
+        <PullDown label="排序" items={ORDERS} value={order} onPick={setOrder} />
+        <span className="list-cap-r">週損益</span>
+      </div>}
       <ul className="stations">
         {rows.map((r) => {
           const use = r.departures / r.slotCap;
@@ -223,8 +224,10 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
             <li key={r.code} role="button" tabIndex={0} onClick={() => onPick(r.code)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(r.code); } }}>
               <div className="st-top">
                 <span className="name"><span className="st-title">{AIRPORT_BY_CODE[r.code].name} {r.code}{r.code === plan.base && <span className="chip">基地</span>}{r.isHub && <span className="chip">轉運站</span>}</span>
-                  <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="plane" v={r.departures} label="出發班次/週" u="班/週" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />{r.transferPax > 0 && <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" />}</span></span>
-                {r.profit !== null && <span className={`pill ${r.profit >= 0 ? 'good' : 'bad'}`} title="分攤到這個機場的航線週損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}<small>／週</small></span>}
+                  <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="plane" v={r.departures} label="出發班次/週" u="班/週" />{order === 'transfer' && r.transferPax > 0
+                    ? <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" u="人/週" />
+                    : <IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />}</span></span>
+                {r.profit !== null && <b className={`fleet-profit ${r.profit >= 0 ? 'good' : 'bad'}`} title="分攤到這個機場的航線週損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}</b>}
               </div>
               {use >= 0.7 && <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : 'warn'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>}
               {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" w="時間帶" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}
