@@ -28,7 +28,9 @@ export function orientJourney(path: string[], partnerKey: string): string[] {
  * The partner's flight is the dashed leg in the airline's colour, your own flights are solid, and `here` (a route key)
  * is drawn thicker so you can see where the route you came from sits in the trip.
  */
-export function JourneyPath({ path: raw, partnerKey, color, airline, here }: { path: string[]; partnerKey: string; color: string; airline: string; here?: string }) {
+export function JourneyPath({ path: raw, partnerKey, color, airline, here, known }: { path: string[]; partnerKey: string; color: string; airline: string; here?: string;
+  /** Airports already named on screen (the route's two ends): their code is enough, so the city name is left out. */
+  known?: string[] }) {
   const path = orientJourney(raw, partnerKey);
   const legs = journeyLegs(path);
   const said = `${name(path[0])}${legs.map((l) => `，${l.key === partnerKey ? `搭${airline}到` : '搭你的航班到'}${name(l.to)}`).join('')}`;
@@ -40,7 +42,7 @@ export function JourneyPath({ path: raw, partnerKey, color, airline, here }: { p
           <li key={`${code}-${i}`} className={`jy-node ${i === 0 || i === path.length - 1 ? 'end' : 'via'}${leg ? ` ${leg.key === partnerKey ? 'partner' : 'own'}${leg.key === here ? ' here' : ''}` : ''}`}>
             <i className="jy-dot" />
             <b>{code}</b>
-            <small>{shortName(code)}</small>
+            {!known?.includes(code) && <small>{shortName(code)}</small>}
           </li>
         );
       })}

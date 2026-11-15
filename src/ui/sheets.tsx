@@ -24,7 +24,7 @@ import { ExplainCard, explainRoute, type ExplainKey } from './explain';
 import { marketSplit } from '../sim/share';
 import type { DayRecord } from './clock';
 import { FlightLoads, LoadPill } from './FlightLoads';
-import { Badge, IN, Icon, ProfitBar, Ring, Stack, type IconName } from './viz';
+import { Badge, IN, Icon, Meter, ProfitBar, Ring, Stack, type IconName } from './viz';
 
 /** "A320neo" rather than "Airbus A320neo". */
 export const shortType = (t: AircraftModel) => AIRCRAFT[t].name.replace(/^(Airbus|Boeing|Embraer|ATR|De Havilland|Bombardier) /, '');
@@ -135,6 +135,12 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
   } : null;
   const moving = pull ? `translateY(${pull}px)` : edgeDx ? `translateX(${edgeDx}px)` : '';
   const menu = nav?.menu;
+  // ‹ n/N › sits on the back button's row on a pushed page (like an iOS nav bar), so the title gets the full width.
+  const pagerEl = pager && (pager.prev || pager.next) ? <span className="pager" role="group" aria-label="上一個或下一個">
+    <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個"><span className="chev back" aria-hidden="true" /></button>
+    <small>{pager.label}</small>
+    <button onClick={pager.next} disabled={!pager.next} aria-label="下一個"><span className="chev" aria-hidden="true" /></button>
+  </span> : null;
   return (
     <>
       {over && <div className="scrim" onClick={onClose} />}
@@ -144,7 +150,10 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
         <div className="sheet-top" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null; setPull(0); setSlide(0); }}
           style={slide ? { transform: `translateX(${slide}px)`, opacity: 1 - Math.min(0.5, Math.abs(slide) / 300), transition: 'none' } : undefined}>
         <button className="grab" onClick={cycle} aria-label={s === 'full' ? '縮小' : '展開'}><span /></button>
-        {nav?.back && <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="chev back" aria-hidden="true" />{nav.back.label}</button>}
+        {nav?.back && <div className="nav-row">
+          <button className="nav-back" onClick={nav.back.go} aria-label={`返回${nav.back.label}`}><span className="chev back" aria-hidden="true" />{nav.back.label}</button>
+          {pagerEl}
+        </div>}
         <div className="sheet-head">
           <div className="grow">
             <h3>{menu
@@ -163,11 +172,7 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
             </>}
           </div>
           {action}
-          {pager && (pager.prev || pager.next) && <span className="pager" role="group" aria-label="上一個或下一個">
-            <button onClick={pager.prev} disabled={!pager.prev} aria-label="上一個"><span className="chev back" aria-hidden="true" /></button>
-            <small>{pager.label}</small>
-            <button onClick={pager.next} disabled={!pager.next} aria-label="下一個"><span className="chev" aria-hidden="true" /></button>
-          </span>}
+          {!nav?.back && pagerEl}
           {!nav?.switcher && !nav?.back && <button className="close" onClick={onClose} aria-label="關閉">✕</button>}
         </div>
         </div>
@@ -179,6 +184,32 @@ export function Sheet({ title, sub, info, onClose, children, size = 'half', over
         {nav?.switcher && <nav className="tabbar">{nav.switcher}</nav>}
       </div>
     </>
+  );
+}
+
+/**
+ * A small pull-down for a list's order (or any one-of choice that isn't worth a whole row of chips): shows the current
+ * choice with a ⌄, and opens an iOS-style menu with a ✓ on the chosen item.
+ */
+export function PullDown<T extends string>({ label, items, value, onPick }: { label: string; items: readonly (readonly [T, string])[]; value: T; onPick: (v: T) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = items.find(([k]) => k === value)?.[1] ?? '';
+  return (
+    <span className="pull-down">
+      <button className="pull-btn" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label={`${label}：${current}`}>
+        <small>{label}</small>{current}<span className="chev" aria-hidden="true" />
+      </button>
+      {open && <>
+        <div className="menu-scrim" onClick={() => setOpen(false)} />
+        <div className="pull-menu right" role="menu">
+          {items.map(([k, text]) => (
+            <button key={k} role="menuitemradio" aria-checked={value === k} onClick={() => { setOpen(false); onPick(k); }}>
+              <span className="pull-check" aria-hidden="true">{value === k ? '✓' : ''}</span>{text}
+            </button>
+          ))}
+        </div>
+      </>}
+    </span>
   );
 }
 
@@ -376,7 +407,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         </button>
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
-      {result && <TravellerBridge net={net} routeKey={routeKey} routePax={result.pax} directPax={result.localPax} />}
+      {result && <TravellerBridge net={net} routeKey={routeKey} directPax={result.localPax} />}
       <div className="seg route-tabs" role="tablist" aria-label="航線內容">
         {tabs.map(([k, label]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>)}
       </div>
@@ -587,15 +618,18 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
   const maxProfit = Math.max(1, ...rows.map((r) => Math.abs(r.revenue - r.flyingCost)));
   const anyLoss = rows.some((r) => r.revenue < r.flyingCost);
   return (
-    <Sheet size="full" title="報表" sub={<span className="ins"><IN n="money" v={hk(balance)} label="累計損益" w="累計" tone={balance >= 0 ? 'good' : 'bad'} /></span>} onClose={onClose}
-      info={<p>每週數字是用目前的班表推估。航線損益＝票價收入減飛行與旅客成本，不含飛機租金。</p>}>
-      <div className="plan-summary">
-        <span>預計全網週損益（含租金）</span>
+    <Sheet size="full" title="報表" sub={<span className="ins"><IN n="money" v={hk(balance)} label="累計損益" w="累計" tone={balance > 0 ? 'good' : balance < 0 ? 'bad' : undefined} /></span>} onClose={onClose}
+      info={<p>每週數字是用目前的班表推估，全網含飛機租金。航線損益＝票價收入減飛行與旅客成本，不含租金。</p>}>
+      <div className="report-hero">
+        <small>全網週損益</small>
         <strong className={result.revenue - result.cost >= 0 ? 'good' : 'bad'}>{hkSigned(result.revenue - result.cost)}</strong>
-        <span>依目前班表推估</span>
+        <MoneyFlow result={result} />
       </div>
-      <details className="route-adjust">
-      <summary>查看收支與營運詳情</summary>
+      <div className="stats">
+        <Stat label="利用率" icon="util" value={pct(result.avgUtilisation)} viz={<Ring value={result.avgUtilisation} tone={result.avgUtilisation >= 0.45 ? 'good' : result.avgUtilisation >= 0.3 ? 'warn' : 'bad'} size={24} stroke={4} />} />
+        <Stat label="載客率" icon="seat" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
+        <Stat label="轉機" icon="transfer" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
+      </div>
       {recent.length > 0 && (
         <>
           <h4>每日損益</h4>
@@ -613,22 +647,15 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
           </div>
         </>
       )}
-      <h4>每週收支</h4>
-      <MoneyFlow result={result} />
-      <div className="stats">
-        <Stat label="利用率" icon="util" value={pct(result.avgUtilisation)} viz={<Ring value={result.avgUtilisation} tone={result.avgUtilisation >= 0.45 ? 'good' : result.avgUtilisation >= 0.3 ? 'warn' : 'bad'} size={24} stroke={4} />} />
-        <Stat label="載客率" icon="seat" value={pct(result.loadFactor)} tone={tone(result.loadFactor)} viz={<Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={24} stroke={4} />} />
-        <Stat label="轉機" icon="transfer" value={count(result.connectingPax)} viz={result.pax > 0 ? <Ring value={result.connectingPax / result.pax} tone="muted" size={24} stroke={4} /> : undefined} />
-      </div>
-      </details>
-      <h4>航線 <small>航線週損益，不含租金</small></h4>
+      <div className="list-cap"><span>航線 · 載客率</span><span>週損益（不含租金）</span></div>
       <ul className="report">
         {rows.map((r) => {
           const p = r.revenue - r.flyingCost;
+          const lf = tone(r.loadFactor);
           return (
             <li key={r.key} role="button" tabIndex={0} onClick={() => onPick(r.key)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(r.key); } }}>
-              <Ring value={r.loadFactor} tone={tone(r.loadFactor)} size={30} stroke={4} label={`載客率 ${pct(r.loadFactor)}`}><small>{Math.round(r.loadFactor * 100)}</small></Ring>
-              <span className="name">{routeName(r.a, r.b)}<span className="ins"><IN n="plane" v={r.flightsPerWeek} label="班/週" u="班/週" /><IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" /></span></span>
+              <span className="name">{routeName(r.a, r.b)}
+                <span className="route-row-load"><Meter value={r.loadFactor} tone={lf} label={`載客率 ${pct(r.loadFactor)}`} /><b className={lf}>{pct(r.loadFactor)}</b><small>{count(r.pax)} 人/週</small></span></span>
               <span className="profit-col">
                 <span className={`num ${p >= 0 ? 'good' : 'bad'}`}>{p >= 0 ? '+' : ''}{money(p)}</span>
                 <ProfitBar value={p} max={maxProfit} split={anyLoss} />

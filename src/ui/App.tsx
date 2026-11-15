@@ -566,7 +566,7 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
   if (fresh !== null) lastEstimate.current = fresh;
   const estimate = fresh ?? lastEstimate.current;
   const last = history.at(-1);
-  const toneOf = (v: number | null) => (v === null ? '' : v >= 0 ? 'good' : 'bad');
+  const toneOf = (v: number | null) => (v === null || Math.abs(v) < 1 ? '' : v > 0 ? 'good' : 'bad');
   const close = () => setOpen(false);
   return (
     <>
@@ -574,7 +574,7 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
     <header className={`island${open ? ' open' : ''}`}>
       <div className="island-bar">
         <button className="island-main" onClick={() => setOpen(!open)} aria-expanded={open} aria-label="狀態與設定">
-          <span className="i-kpi" title="累計 HK$"><small>HK$</small><b className={toneOf(balance)}>{money(balance)}</b></span>
+          <span className="i-kpi i-bal" title="累計 HK$"><small>HK$</small><b className={toneOf(balance)}>{money(balance)}</b></span>
           <span className="i-kpi" title="每日 HK$"><small>/日</small><b className={toneOf(estimate)}>{estimate === null ? '—' : `${estimate >= 0 ? '+' : ''}${money(estimate)}`}</b></span>
           <span className="i-kpi i-time" title={`第 ${dayAt(base, now)} 天`}><small>D{dayAt(base, now)}</small><b>{hhmm(localMinutes(base, now))}</b></span>
         </button>

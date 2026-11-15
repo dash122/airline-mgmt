@@ -15,10 +15,10 @@ import {
   type Aircraft, type NetworkResult, type Plan,
 } from '../sim/simulate';
 import { count, hkSigned, money, pct } from './format';
-import { arrival, at, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
+import { arrival, at, DayBar, PullDown, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
 import { LoadIcons, LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
-import { Badge, hm, IN, Icon, Ring } from './viz';
+import { Badge, hm, IN, Icon } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = hm;
@@ -26,7 +26,7 @@ const dur = hm;
 // ---------- Routes ----------
 
 type RouteSort = 'need' | 'profit' | 'load' | 'share';
-const SORTS: [RouteSort, string][] = [['need', '建議'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']];
+const SORTS = [['need', '要處理先'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']] as const;
 export type RoutesView = 'own' | 'share';
 
 export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
@@ -35,7 +35,6 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
   onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
   onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void; onClose: () => void;
 }) {
-  const [only, setOnly] = useState(false);
   const [sort, setSort] = useState<RouteSort>('need');
   const shared = (plan.codeshares?.length ?? 0) + (plan.hosted?.length ?? 0);
   const pairs = routePairs(plan);
@@ -61,7 +60,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
     share: (x, y) => y.share - x.share,
   };
   const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
-  const shown = (only ? todo : rows).slice().sort(by[sort]);
+  const shown = rows.slice().sort(by[sort]);
   const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   const groups = [...new Set(shown.map((r) => r.home))]
@@ -69,6 +68,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
     .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
+      sub={rows.length > 0 && view === 'own' ? <>每日 {daily} 班來回{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</> : undefined}
       info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。金額是港幣（HK$）。航線週損益不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length > 0 && (
@@ -90,14 +90,7 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
       {rows.length > 0 && (
         <div className="routes-summary">
           <span><small>週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
-          <small className="routes-summary-meta">{daily} 班/日{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</small>
-        </div>
-      )}
-      {rows.length > 1 && (
-        <div className="chips scroll route-tools" role="toolbar" aria-label="篩選和排序">
-          {todo.length > 0 && <button className={`chip${only ? ' strong' : ''}`} aria-pressed={only} onClick={() => setOnly(!only)}>要處理 {todo.length}</button>}
-          {todo.length > 0 && <span className="sep" aria-hidden="true" />}
-          {SORTS.map(([k, label]) => <button key={k} className={`chip${sort === k ? ' strong' : ''}`} aria-pressed={sort === k} onClick={() => setSort(k)}>{label}{sort === k && k !== 'need' ? ' ↓' : ''}</button>)}
+          {rows.length > 1 && <PullDown label="排序" items={SORTS} value={sort} onPick={setSort} />}
         </div>
       )}
       {groups.map((g) => {
@@ -106,13 +99,13 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
           <section key={g.home} className="route-group">
             {groups.length > 1 && <div className="route-group-head">
               <h4>{AIRPORT_BY_CODE[g.home].name} {g.home} · {g.rows.length}</h4>
-              <b className={sum >= 0 ? 'good' : 'bad'}>{sum >= 0 ? '+' : ''}{money(sum)}／週</b>
+              <b className={sum >= 0 ? 'good' : 'bad'}>{sum >= 0 ? '+' : ''}{money(sum)}</b>
             </div>}
             <ul className="route-rows">
               {g.rows.map((r) => {
                 return (
                   <RouteRow key={r.key} name={AIRPORT_BY_CODE[r.other].name} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
-                    sub={[r.other, r.types.join('、')].filter(Boolean).join(' · ')}
+                    sub={r.types.join('、')}
                     onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
                 );
               })}
@@ -245,6 +238,7 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
       info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
       onClose={onClose} action={<button className="primary small" onClick={onLease}>租飛機</button>}>
       {plan.fleet.length === 0 && <div className="hint center">還沒有飛機</div>}
+      {plan.fleet.length > 0 && <div className="list-cap"><span>飛機的一天</span><span>週損益</span></div>}
       <ul className="fleet">
         {plan.fleet.map((ac) => {
           const info = rotationInfo(ac);
@@ -254,11 +248,12 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           return (
             <li key={ac.id} role="button" tabIndex={0} onClick={() => onPick(ac.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(ac.id); } }}>
               <div className="fleet-top">
-                <Ring value={info.utilisation} tone={info.utilisation >= 0.45 ? 'good' : info.utilisation >= 0.3 ? 'warn' : 'bad'} size={34} stroke={4} label={`利用率 ${pct(info.utilisation)}`}>
-                  <small>{Math.round(info.utilisation * 100)}</small>
-                </Ring>
-                <span className="name">{ac.reg} · {shortType(ac.type)}<span className="ins"><IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行" w="飛" />{warn && <Badge n="warn" tone="warn">{warn}</Badge>}</span></span>
-                {r && <span className={`pill ${p >= 0 ? 'good' : 'bad'}`} title="每週損益，含租金">{p >= 0 ? '+' : ''}{money(p)}<small>／週</small></span>}
+                <span className="name">{ac.reg} · {shortType(ac.type)}</span>
+                {r && <b className={`fleet-profit ${p >= 0 ? 'good' : 'bad'}`} title="每週損益，含租金">{p >= 0 ? '+' : ''}{money(p)}</b>}
+              </div>
+              <div className="fleet-day">
+                <DayBar ac={ac} base={plan.base} compact />
+                {warn ? <Badge n="warn" tone="warn">{warn}</Badge> : <small><IN n="clock" v={`${(info.blockMin / 60).toFixed(1)}h/日`} label="每日飛行" w="飛" /></small>}
               </div>
             </li>
           );
