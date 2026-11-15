@@ -16,8 +16,17 @@ const TURBOPROP_KMH = 650;
 
 const rad = (d: number) => (d * Math.PI) / 180;
 
-/** How much of a flight heads east (+1) or west (-1), averaged along its great circle. */
+const eastwardCache = new WeakMap<object, Map<object, number>>();
+/** How much of a flight heads east (+1) or west (-1), averaged along its great circle. Worked out once per pair of airports. */
 export function eastwardShare(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  let byB = eastwardCache.get(a);
+  if (!byB) eastwardCache.set(a, byB = new Map());
+  let share = byB.get(b);
+  if (share === undefined) byB.set(b, share = computeEastwardShare(a, b));
+  return share;
+}
+
+function computeEastwardShare(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const steps = 8;
   let sum = 0;
   let prev = [a.lat, a.lon];
