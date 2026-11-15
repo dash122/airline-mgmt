@@ -2677,3 +2677,36 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .al-glance .al-tail + div::before { display: none; }
 /* Cover the strip above the sticky control too, so scrolled rows never peek out between it and the title. */
 .sheet .seg.ap-seg { top: 0; box-shadow: 0 -16px 0 var(--bg); }
+
+/* ---------- Next-action hint: one at a time, under the status pill ---------- */
+.nudge { position: absolute; z-index: 6; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + var(--hud-top) + var(--hud-h) + 10px);
+  max-width: 420px; margin: 0 auto; display: flex; gap: 10px; align-items: center; padding: 10px 10px 10px 14px;
+  border-radius: var(--r-md); background: var(--panel); box-shadow: var(--shadow); animation: island-note .32s var(--ease-ios); }
+.nudge-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.nudge-text b { font-size: var(--fs-sm); }
+.nudge-text span { font-size: var(--fs-xs); color: var(--muted); line-height: 1.4; }
+.nudge-step { font-size: var(--fs-3xs); color: var(--accent); font-weight: 700; letter-spacing: .02em; }
+.nudge-acts { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex: none; }
+.nudge-acts .primary.small { min-height: 36px; }
+.nudge-x { min-height: 32px; padding: 0 8px; border-radius: var(--r-sm); color: var(--muted); font-size: var(--fs-xs); background: none; }
+@media (min-width: 820px) { .nudge { right: auto; width: 360px; margin: 0; } }
+
+/* ---------- Status pill: one fast-forward button beside play/pause ---------- */
+.island-ff { flex: none; display: grid; place-items: center; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 16px; border: 0;
+  background: rgba(255, 255, 255, .16); color: inherit; font: var(--t-cap); font-weight: 700; font-variant-numeric: tabular-nums; }
+.island-ff.on { background: var(--accent); color: var(--accent-text); }
+.island.open .island-ff:not(.on) { background: var(--surface-2); }
+.island-list button:disabled { opacity: .5; }
+
+/* ---------- Service editor ---------- */
+.svc-foot { display: flex; align-items: center; gap: 12px; width: 100%; }
+.svc-gain { flex: none; font-size: var(--fs-xs); color: var(--muted); max-width: 40%; }
+.svc-gain b { display: block; font-size: var(--fs-base); }
+.svc-gain:empty { display: none; }
+.svc-ac { display: grid; gap: 8px; }
+.svc-ac > .opt { flex-direction: row; align-items: center; width: 100%; min-height: 52px; }
+.svc-ac > .opt .grow { display: grid; gap: 2px; }
+.svc-change { color: var(--accent) !important; font-weight: 600; }
+.svc-cancel, .danger-text { color: var(--bad); }
+.svc-cancel { align-self: flex-start; min-height: 44px; padding: 0 4px; background: none; font-size: var(--fs-sm); }
+.link-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; background: none; color: var(--accent); font-size: var(--fs-sm); }

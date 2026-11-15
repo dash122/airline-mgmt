@@ -6,17 +6,11 @@ import { AIRCRAFT, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from '../sim/markets';
 import { byAirport, dayMark, timeline, zoneDiffHours, type ClockBasis } from '../sim/airports';
-import {
-  gapAt, insertRoundTrip, insertWindow, leaseFor, pickTime, placementOptions, removeUnit, shiftUnit, shiftWindow, slotProblem, typesFor,
-  unitOf, type Placement, type Unit,
-} from '../sim/schedule';
-import {
-  blockMinutes, DAY, hhmm, routePairs, routeProblem, rotationInfo, runwayFits, simulate, topMarketsFrom, utcFromLocal,
-  type Aircraft, type NetworkResult, type Plan,
-} from '../sim/simulate';
+import { shiftUnit } from '../sim/schedule';
+import { hhmm, routePairs, routeProblem, rotationInfo, runwayFits, topMarketsFrom, type Aircraft, type NetworkResult, type Plan } from '../sim/simulate';
 import { count, hkSigned, money, pct } from './format';
-import { arrival, at, DayBar, PullDown, routeColor, routeName, Sheet, shortType, UtilBar } from './sheets';
-import { LoadIcons, LoadPill } from './FlightLoads';
+import { at, DayBar, PullDown, routeColor, Sheet, shortType, UtilBar } from './sheets';
+import { LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
 import { Badge, hm, IN, Icon } from './viz';
 
@@ -165,6 +159,10 @@ export function SchedulePanel({ plan, result, now, selected, preset, onPickLeg, 
   );
 }
 
+/** Departures or arrivals, in each airport's own time or the base's: one pull-down instead of two switches. */
+const SHOW_OPTS = [['dep-local', '出發 · 當地時間'], ['arr-local', '抵達 · 當地時間'], ['dep-base', '出發 · 基地時間'], ['arr-base', '抵達 · 基地時間']] as const;
+type ShowOpt = (typeof SHOW_OPTS)[number][0];
+
 function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBasis, onAirport, onPickLeg }: {
   plan: Plan; result: NetworkResult | null; view: SchedView; mode: 'dep' | 'arr'; basis: ClockBasis; airport: string | null;
   onMode: (m: 'dep' | 'arr') => void; onBasis: (b: ClockBasis) => void; onAirport: (a: string | null) => void; onPickLeg: (acId: string, leg: number) => void;
@@ -197,14 +195,8 @@ function ScheduleLists({ plan, result, view, mode, basis, airport, onMode, onBas
   return (
     <>
       <div className="viewopts">
-        <div className="seg two" aria-label="出發或抵達">
-          <button className={mode === 'dep' ? 'on' : ''} onClick={() => onMode('dep')}><Icon n="up" /> 出發</button>
-          <button className={mode === 'arr' ? 'on' : ''} onClick={() => onMode('arr')}><Icon n="down" /> 抵達</button>
-        </div>
-        <div className="seg two" aria-label="時間基準">
-          <button className={basis === 'local' ? 'on' : ''} onClick={() => onBasis('local')}>當地</button>
-          <button className={basis === 'base' ? 'on' : ''} onClick={() => onBasis('base')}>基地</button>
-        </div>
+        <PullDown label="顯示" items={SHOW_OPTS} value={`${mode}-${basis}` as ShowOpt}
+          onPick={(v) => { const [m, bs] = v.split('-') as ['dep' | 'arr', ClockBasis]; onMode(m); onBasis(bs); }} />
       </div>
       {served.length > 1 && (
         <div className="chips scroll" aria-label="機場篩選">
@@ -236,8 +228,15 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
   return (
     <Sheet size="full" title={`機隊 · ${plan.fleet.length}`} sub={<span className="ins"><IN n="util" v={pct(avg)} label="平均利用率" w="利用率" /><IN n="lease" v={`${money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))}/週`} label="租金" w="租金" /></span>}
       info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
-      onClose={onClose} action={<button className="primary small" onClick={onLease}>租飛機</button>}>
-      {plan.fleet.length === 0 && <div className="hint center">還沒有飛機</div>}
+      onClose={onClose} action={plan.fleet.length > 0 && <button className="primary small" onClick={onLease}>租飛機</button>}>
+      {plan.fleet.length === 0 && (
+        <div className="empty-cta">
+          <div className="empty-flight" aria-hidden="true"><span>✈</span></div>
+          <strong>還沒有飛機</strong>
+          <p>租一架飛機，它會停在{AIRPORT_BY_CODE[plan.base].name}等你排班。</p>
+          <button className="primary wide" onClick={onLease}>租飛機</button>
+        </div>
+      )}
       {plan.fleet.length > 0 && <div className="list-cap"><span>飛機的一天</span><span>週損益</span></div>}
       <ul className="fleet">
         {plan.fleet.map((ac) => {
@@ -331,184 +330,5 @@ export function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep
   );
 }
 
-const windowText = (code: string, lo: number, hi: number) =>
-  hi - lo >= DAY - 5 ? '全天可飛' : lo === hi ? '沒有空檔可移動' : `可 ${at(code, lo)}–${at(code, hi)} 出發`;
-
-// ---------- Edit one flight ----------
-
-export function FlightEditor({ plan, result, acId, leg, onChange, onMove, onClose }: {
-  plan: Plan; result?: NetworkResult | null; acId: string; leg: number; onChange: (plan: Plan, msg?: string) => void; onMove: (acId: string, unit: Unit) => void; onClose: () => void;
-}) {
-  const [draftDep, setDraftDep] = useState<number | null>(null);
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const ac = plan.fleet.find((x) => x.id === acId);
-  const previewPlan = useMemo(() => {
-    if (!ac || !ac.legs[leg] || draftDep === null) return plan;
-    const unit = unitOf(ac, leg);
-    const delta = draftDep - ac.legs[unit.start].dep;
-    return delta ? withAc(plan, shiftUnit(ac, unit, delta)) : plan;
-  }, [plan, ac, leg, draftDep]);
-  const previewResult = useMemo(() => previewPlan === plan ? result : simulate(previewPlan), [previewPlan, plan, result]);
-  if (!ac || !ac.legs[leg]) return null;
-  const u = unitOf(ac, leg);
-  const first = ac.legs[u.start];
-  const last = u.start + u.count - 1;
-  const w = shiftWindow(ac, u);
-  const isTrip = u.count === 2;
-  const dep = draftDep ?? first.dep;
-  const delta = dep - first.dep;
-  return (
-    <Sheet over title={isTrip ? `${first.from} ⇄ ${first.to}` : `${first.from} → ${first.to}`} sub={<span className="ins"><span>{ac.reg} · {shortType(ac.type)}</span><IN n="clock" v={dur(blockMinutes(first.from, first.to, ac.type))} label="單程" w="單程" /></span>} onClose={onClose}>
-      <ul className="timetable">
-        {Array.from({ length: u.count }, (_, k) => u.start + k).map((i) => (
-          <li key={i}>
-            <span className="t">{at(ac.legs[i].from, ac.legs[i].dep + delta)}</span>
-            <span className="name">{AIRPORT_BY_CODE[ac.legs[i].from].name} → {AIRPORT_BY_CODE[ac.legs[i].to].name}<small><IN n="down" v={at(ac.legs[i].to, arrival(ac, i) + delta)} label="抵達" w="抵達" /></small>
-              {previewResult?.byFlight[`${ac.id}#${i}`] && <small><LoadIcons f={previewResult.byFlight[`${ac.id}#${i}`]} /></small>}</span>
-            {previewResult?.byFlight[`${ac.id}#${i}`] && <LoadPill f={previewResult.byFlight[`${ac.id}#${i}`]} />}
-          </li>
-        ))}
-      </ul>
-      <div>
-        <div className="label">{isTrip ? '去程出發（回程跟著移）' : '出發時間'} · {first.from} 當地時間</div>
-        <TimeStepper code={first.from} dep={dep} lo={first.dep + w.min} hi={first.dep + w.max} onChange={setDraftDep} />
-        <div className="hint">{windowText(first.from, first.dep + w.min, first.dep + w.max)}</div>
-      </div>
-      {delta !== 0 && <button className="primary" onClick={() => { onChange(withAc(plan, shiftUnit(ac, u, delta)), '已儲存航班時間'); onClose(); }}>儲存時間變更</button>}
-      <div className="row">
-        {isTrip && <button className="secondary grow" disabled={delta !== 0} onClick={() => onMove(ac.id, u)}><Icon n="plane" /> 換飛機</button>}
-        <button className="danger grow" onClick={() => setConfirmCancel(true)}>✕ {isTrip ? '取消來回航班' : '取消航班'}</button>
-      </div>
-      {delta !== 0 && isTrip && <div className="hint">請先儲存時間，或關閉以放棄變更，再換飛機。</div>}
-      {confirmCancel && <div className="confirm"><span>確定取消{isTrip ? '這組來回航班' : '這班航班'}？</span><button className="secondary" onClick={() => setConfirmCancel(false)}>返回</button><button className="danger solid" onClick={() => { onChange(withAc(plan, removeUnit(ac, u)), `已取消 ${at(first.from, first.dep)} ${first.from}→${first.to}${isTrip ? ' 與回程' : ''}`); onClose(); }}>確定取消</button></div>}
-      {last < ac.legs.length - 1 && !isTrip && <div className="hint warn"><Icon n="warn" /> 飛機可能停在別的機場</div>}
-    </Sheet>
-  );
-}
-
-// ---------- Add a round trip on a route, or move one to another aircraft ----------
-
-export function AddFlightSheet({ plan, routeKey, move, prefer, onDone, onClose }: {
-  plan: Plan; routeKey: string; move?: { acId: string; unit: Unit }; prefer?: { from: string; dep: number; acId?: string; gap?: number };
-  onDone: (plan: Plan, msg: string, acId: string) => void; onClose: () => void;
-}) {
-  const [a, b] = routeKey.split('-');
-  const src = move ? plan.fleet.find((x) => x.id === move.acId) : undefined;
-  const srcLeg = src && move ? src.legs[move.unit.start] : undefined;
-  const opts = useMemo(() => {
-    const pool = move ? { ...plan, fleet: plan.fleet.filter((x) => x.id !== move.acId) } : plan;
-    const choices = placementOptions(pool, a, b, srcLeg?.dep ?? prefer?.dep);
-    if (prefer?.acId && prefer.gap !== undefined) {
-      const option = choices.find((o) => o.ac.id === prefer.acId);
-      const to = prefer.from === a ? b : a;
-      const w = option && insertWindow(option.ac, prefer.gap, prefer.from, to);
-      if (option && w) option.placement = { acId: option.ac.id, k: prefer.gap, from: prefer.from, to, dep: pickTime(w, prefer.dep), ...w };
-    }
-    return choices;
-  }, [plan, a, b, move, srcLeg?.dep, prefer]);
-  const types = typesFor(plan, a, b);
-  const firstOk = opts.findIndex((o) => o.placement);
-  const preferred = opts.findIndex((o) => o.ac.id === prefer?.acId && o.placement);
-  const [choice, setChoice] = useState<number | 'lease'>(preferred >= 0 ? preferred : firstOk >= 0 ? firstOk : 'lease');
-  const [leaseType, setLeaseType] = useState<AircraftModel | undefined>(types[0]);
-  const chosen: Placement | null = choice === 'lease' ? null : opts[choice]?.placement ?? null;
-  const [dep, setDep] = useState<number | null>(null);
-  const leaseFrom = b === plan.base ? b : a;
-  // A suggested departure is for the leg that leaves `prefer.from`; a new aircraft starting at the other end leaves earlier.
-  const leaseDepFor = (t: AircraftModel | undefined) => {
-    if (!prefer) return utcFromLocal(leaseFrom, 7 * 60);
-    if (leaseFrom === prefer.from || !t) return prefer.dep;
-    return Math.floor((prefer.dep - blockMinutes(a, b, t) - AIRCRAFT[t].turnMin) / 5) * 5;
-  };
-  const defaultLeaseDep = srcLeg ? srcLeg.dep : leaseDepFor(leaseType);
-  const cur = chosen ? Math.max(chosen.lo, Math.min(chosen.hi, dep ?? chosen.dep)) : dep ?? defaultLeaseDep;
-  const slot = move ? null : slotProblem(plan, a, b);
-  const from = chosen ? chosen.from : srcLeg?.from ?? leaseFrom;
-  const to = from === a ? b : a;
-
-  const confirm = () => {
-    let base = plan;
-    if (move && src) base = withAc(plan, removeUnit(src, move.unit));
-    if (chosen) {
-      const ac = base.fleet.find((x) => x.id === chosen.acId)!;
-      const next = withAc(base, insertRoundTrip(ac, chosen.k, chosen.from, chosen.to, cur));
-      onDone(next, `${move ? '已換到' : '已排入'} ${ac.reg}：${at(chosen.from, cur)} ${chosen.from}→${chosen.to} 與回程`, ac.id);
-    } else if (leaseType) {
-      const r = leaseFor(base, a, b, leaseType, cur);
-      const reg = r.plan.fleet.find((x) => x.id === r.aircraftId)!.reg;
-      onDone(r.plan, `租了新飛機 ${reg}（${AIRCRAFT[leaseType].name}），${at(from, cur)} 出發`, r.aircraftId);
-    }
-  };
-
-  return (
-    <Sheet over size="full" title={move ? '換到別架飛機' : '加一班來回'} sub={<span className="ins"><span>{routeName(a, b)}</span><IN n="clock" v={dur(blockMinutes(a, b, leaseType ?? 'A20N'))} label="單程" w="單程" /></span>} onClose={onClose}
-      info={<p>早上 7–10 點與傍晚 4–8 點的航班最好賣。</p>}
-      footer={<button className="primary grow" onClick={confirm} disabled={!!slot || (!chosen && !leaseType)}>
-        {slot ?? `${move ? '換到' : '加開'} ${at(from, cur)} ${from}→${to} 與回程`}
-      </button>}>
-      <h4>飛機</h4>
-      <div className="options">
-        {opts.map((o, i) => (
-          <button key={o.ac.id} className={`opt${choice === i ? ' pick' : ''}`} disabled={!o.placement} onClick={() => { setChoice(i); setDep(null); }}>
-            <b>{o.ac.reg} · {shortType(o.ac.type)}</b>
-            {o.placement
-              ? <span className="ins"><IN n="up" v={`${at(o.placement.from, o.placement.dep)} ${o.placement.from}`} label="出發" w="出發" /><IN n="util" v={`${pct(o.utilBefore)}→${pct(o.utilAfter)}`} label="利用率" w="利用率" /></span>
-              : <small>{o.reason}</small>}
-          </button>
-        ))}
-        <button className={`opt${choice === 'lease' ? ' pick' : ''}`} onClick={() => { setChoice('lease'); setDep(null); }} disabled={!types.length}>
-          <b><Icon n="lease" /> 租新飛機</b>
-          {leaseType ? <span className="ins"><span>{shortType(leaseType)}</span><IN n="lease" v={`${money(AIRCRAFT[leaseType].ownershipPerWeek)}/週`} label="租金" w="租金" /></span> : <small>沒有機型能飛</small>}
-        </button>
-      </div>
-      {choice === 'lease' && (
-        <div className="chips">
-          {types.map((t) => <button key={t} className={`chip${leaseType === t ? ' strong' : ''}`} onClick={() => setLeaseType(t)}>{shortType(t)} <Icon n="seat" />{AIRCRAFT[t].seats}</button>)}
-        </div>
-      )}
-      <div>
-        <div className="label">{from} 出發（當地時間）</div>
-        <TimeStepper code={from} dep={cur} lo={chosen ? chosen.lo : -Infinity} hi={chosen ? chosen.hi : Infinity} onChange={setDep} />
-        <div className="hint">{chosen ? windowText(from, chosen.lo, chosen.hi) : '全天可飛'}</div>
-        {prefer && !prefer.acId && <div className="hint">建議 {prefer.from} {at(prefer.from, prefer.dep)} 出發，接得上轉機</div>}
-        <div className="hint">{choice === 'lease' ? '租用新飛機' : `使用 ${opts[choice]?.ac.reg}`} · {from} → {to} → {from} · {from} 當地時間 {at(from, cur)} 出發</div>
-      </div>
-    </Sheet>
-  );
-}
-
-// ---------- Add a round trip in a gap of one aircraft's day ----------
-
-export function GapSheet({ plan, acId, t, onChoose, onClose }: {
-  plan: Plan; acId: string; t: number; onChoose: (key: string, prefer: { from: string; dep: number; acId: string; gap: number }) => void; onClose: () => void;
-}) {
-  const ac = plan.fleet.find((x) => x.id === acId);
-  if (!ac) return null;
-  const k = gapAt(ac, t);
-  const station = ac.legs.length ? (k > 0 ? ac.legs[k - 1].to : ac.legs[0].from) : plan.base;
-  const served = new Set(routePairs(plan).map((r) => r.key));
-  const options = topMarketsFrom(station, plan, 60)
-    .filter((m) => !routeProblem(station, m.to, ac.type))
-    .map((m) => {
-      const w = insertWindow(ac, k, station, m.to);
-      return { ...m, w, dep: w ? pickTime(w, t) : 0, slot: slotProblem(plan, station, m.to) };
-    })
-    .filter((m) => m.w && !m.slot)
-    .sort((x, y) => Number(served.has(pairKey(station, y.to))) - Number(served.has(pairKey(station, x.to))) || y.airDemand - x.airDemand)
-    .slice(0, 10);
-  return (
-    <Sheet over title={`${ac.reg} 加一班來回`} sub={<IN n="up" v={`${station} ~${at(station, pickTime({ lo: -Infinity, hi: Infinity }, t))}`} label="出發" w="出發" />} onClose={onClose}>
-      {options.length === 0 && <div className="hint center">這個空檔放不下來回航班</div>}
-      <ul className="markets">
-        {options.map((m) => (
-          <li key={m.to}>
-            <span className="name">{AIRPORT_BY_CODE[m.to].name}<span className="ins"><IN n="clock" v={`${at(station, m.dep)}–${at(station, m.dep + blockMinutes(station, m.to, ac.type) * 2 + AIRCRAFT[ac.type].turnMin)}`} label="出發–回到" /><IN n="pax" v={count(m.airDemand)} label="旅客/週" u="人/週" />{served.has(pairKey(station, m.to)) && <Badge n="check" tone="good" label="已開航" />}</span></span>
-            <button onClick={() => onChoose(pairKey(station, m.to), { from: station, dep: m.dep, acId, gap: k })}>選擇</button>
-          </li>
-        ))}
-      </ul>
-    </Sheet>
-  );
-}
 
 export { UtilBar };
