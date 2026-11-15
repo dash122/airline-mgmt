@@ -2,7 +2,7 @@
 // Direct travellers come first as a plain two-airport row; connecting trips show every stop. This route's leg is drawn
 // thick, your other flights thin, and a codeshare partner's flight dashed in its colour. Replaces the old flow diagram
 // and the separate "brought by partners" note: one list answers both.
-import { useContext, useMemo, useState, type CSSProperties } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { routeConnections } from '../sim/connections';
 import type { NetworkResult } from '../sim/simulate';
 import { airlineName } from '../sim/simulate';
@@ -67,12 +67,11 @@ export function TravellerBridge({ net, routeKey, directPax }: { net: NetworkResu
   const viaPartner = rows.filter((r) => r.partner).reduce((s, r) => s + r.pax, 0);
   const connecting = rows.filter((r) => r.path.length > 2).reduce((s, r) => s + r.pax, 0);
   const hasPartner = viaPartner > 0;
+  // Only direct travellers: the figure is already in the load tile, so the card would say nothing new.
+  if (!connecting && !hasPartner) return null;
   const partnerRoute = (r: TravellerRow) => r.partner && open ? () => open(r.partner!.airline, r.partner!.key, routeKey) : undefined;
   return (
     <section className="bridge" aria-label="旅客怎麼轉">
-      <div className="bridge-head">
-        <h3>旅客怎麼轉</h3>
-      </div>
       <div className="bridge-split" role="img" aria-label={`直飛 ${count(direct)} 人，轉機 ${count(connecting)} 人`}>
         <i className="direct" style={{ flexGrow: direct }} />
         <i className="transit" style={{ flexGrow: connecting }} />
@@ -95,12 +94,6 @@ export function TravellerBridge({ net, routeKey, directPax }: { net: NetworkResu
       </ul>
       {hidden > 0 && <button className="bridge-more" aria-expanded={all} onClick={() => setAll(true)}>再看 {hidden} 條</button>}
       {all && rows.length > SHOWN && <button className="bridge-more" aria-expanded onClick={() => setAll(false)}>收起</button>}
-      <div className="bridge-legend">
-        <span><i className="jy-leg own here" />這條航線</span>
-        <span><i className="jy-leg own" />你的航班</span>
-        {hasPartner && <span><i className="jy-leg partner" style={{ '--c': 'var(--muted)' } as CSSProperties} />夥伴航班</span>}
-        <span><i className="jy-dot via" />轉機</span>
-      </div>
     </section>
   );
 }

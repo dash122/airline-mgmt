@@ -90,7 +90,7 @@ export function RouteRow({ name, sub, swatch, figures, daily, onOpen, onAdd, onR
           <span className="route-row-meta">
             {status && <Badge n={h.icon} tone={h.tone}>{h.label}</Badge>}
             {figures && <span className="route-row-load"><Meter value={figures.loadFactor} tone={lfTone(figures.loadFactor)} label={`載客率 ${pct(figures.loadFactor)}`} /><b className={lfTone(figures.loadFactor)}>{pct(figures.loadFactor)}</b></span>}
-            <small className="route-row-sub">{frequencyLabel(daily)}{sub ? ` · ${sub}` : ''}</small>
+            <small className="route-row-sub" title={frequencyLabel(daily)}><Icon n="plane" />{daily >= 1 ? `×${Number.isInteger(daily) ? daily : daily.toFixed(1)}` : `1/${Math.round(1 / (daily || 1))}日`}{sub ? ` ${sub}` : ''}</small>
           </span>
         </span>
         <span className="chev" aria-hidden="true" />

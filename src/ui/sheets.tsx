@@ -397,13 +397,12 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
         <button className={why === 'lf' ? 'on' : ''} onClick={tap('lf')} aria-expanded={why === 'lf'}>
           <small>載客率</small>
           <span className="route-kpi-v"><Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={22} stroke={4} /><b className={tone(result.loadFactor)}>{pct(result.loadFactor)}</b></span>
-          <small>{short(result.pax)}/{short(result.seats)} 人</small>
         </button>
         <button className={why === 'profit' ? 'on' : ''} onClick={tap('profit')} aria-expanded={why === 'profit'}>
-          <small>航線週損益</small><b className={profit >= 0 ? 'good' : 'bad'}>{profit >= 0 ? '+' : ''}{money(profit)}</b><small>HK$ · 不含租金</small>
+          <small title="HK$／週，不含租金">週損益</small><b className={profit >= 0 ? 'good' : 'bad'}>{profit >= 0 ? '+' : ''}{money(profit)}</b>
         </button>
         <button className={why === 'share' ? 'on' : ''} onClick={tap('share')} aria-expanded={why === 'share'}>
-          <small>市占</small><b>{pct(result.marketShare)}</b><small>{result.spill > 1 ? `溢出 ${short(result.spill)}` : '這條航線'}</small>
+          <small>市占</small><b>{pct(result.marketShare)}</b>
         </button>
       </div>}
       {explained && <ExplainCard e={explained} onClose={() => setWhy(null)} />}
@@ -647,7 +646,6 @@ export function ResultsSheet({ result, history, balance, onPick, onClose }: {
           </div>
         </>
       )}
-      <div className="list-cap"><span>航線 · 載客率</span><span>週損益（不含租金）</span></div>
       <ul className="report">
         {rows.map((r) => {
           const p = r.revenue - r.flyingCost;
