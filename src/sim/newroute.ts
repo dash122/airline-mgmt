@@ -79,15 +79,21 @@ export function destination(plan: Plan, from: string, to: string, served?: Set<s
 const servedFrom = (plan: Plan, code: string) =>
   new Set(routePairs(plan).filter((r) => r.a === code || r.b === code).map((r) => (r.a === code ? r.b : r.a)));
 
-/** Every place worth flying from `from`, most travellers first. Only airports with a market (not the same city, at least 100 km away). */
+/**
+ * Every place worth flying from `from`, most travellers first. Only airports with a market (not the same city, at least 100 km away).
+ * A small airport lists its domestic destinations before international ones: a local network comes first, then international.
+ */
 export function destinationsFrom(plan: Plan, from: string): Destination[] {
   const served = servedFrom(plan, from);
+  const origin = AIRPORT_BY_CODE[from];
   const out: Destination[] = [];
   for (const a of AIRPORTS) {
     if (a.code === from || !marketBetween(from, a.code)) continue;
     out.push(destination(plan, from, a.code, served));
   }
-  return out.sort((x, y) => Number(!!x.problem) - Number(!!y.problem) || y.est - x.est);
+  // 0 = domestic (or any airport that isn't small), 1 = international from a small airport.
+  const intlRank = (d: Destination) => (origin.size === 'small' && AIRPORT_BY_CODE[d.code].country !== origin.country ? 1 : 0);
+  return out.sort((x, y) => Number(!!x.problem) - Number(!!y.problem) || intlRank(x) - intlRank(y) || y.est - x.est);
 }
 
 export type DistanceBand = 'all' | 'short' | 'medium' | 'long' | 'open';

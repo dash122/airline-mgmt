@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AIRPORT_BY_CODE } from '../data/airports';
+import { AIRPORTS, AIRPORT_BY_CODE } from '../data/airports';
 import { leaseFor } from './schedule';
 import { emptyPlan, localMinutes, simulate } from './simulate';
 import { applyChoice, destination, destinationsFrom, inBand, previewChoice, routeChoices, searchAirports } from './newroute';
@@ -24,6 +24,23 @@ describe('destinationsFrom', () => {
     const ok = list.filter((d) => !d.problem);
     for (let i = 1; i < ok.length; i++) expect(ok[i - 1].est).toBeGreaterThanOrEqual(ok[i].est);
     expect(list.findIndex((d) => d.problem)).toBeGreaterThanOrEqual(ok.length);
+  });
+  it('lists domestic destinations before international ones from a small airport', () => {
+    const isDomestic = (code: string, country: string) => AIRPORT_BY_CODE[code].country === country;
+    // First small airport that has both a domestic and an international destination it can fly.
+    let checked = 0;
+    for (const a of AIRPORTS) {
+      if (a.size !== 'small' || checked > 40) continue;
+      const ok = destinationsFrom(emptyPlan(a.code), a.code).filter((d) => !d.problem);
+      const hasDom = ok.some((d) => isDomestic(d.code, a.country));
+      const hasIntl = ok.some((d) => !isDomestic(d.code, a.country));
+      if (!hasDom || !hasIntl) continue;
+      checked++;
+      const lastDom = ok.map((d) => isDomestic(d.code, a.country)).lastIndexOf(true);
+      const firstIntl = ok.findIndex((d) => !isDomestic(d.code, a.country));
+      expect(lastDom).toBeLessThan(firstIntl);
+    }
+    expect(checked).toBeGreaterThan(0);
   });
   it('filters by distance band', () => {
     expect(list.filter((d) => inBand(d, 'long')).every((d) => d.distKm >= 5000)).toBe(true);
