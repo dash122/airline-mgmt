@@ -8,7 +8,7 @@ import { pairKey } from '../sim/markets';
 import { byAirport, dayMark, timeline, zoneDiffHours, type ClockBasis } from '../sim/airports';
 import { shiftUnit } from '../sim/schedule';
 import { hhmm, routePairs, routeProblem, rotationInfo, runwayFits, topMarketsFrom, type Aircraft, type NetworkResult, type Plan } from '../sim/simulate';
-import { count, hkSigned, money, pct } from './format';
+import { count, money, pct } from './format';
 import { at, DayBar, PullDown, routeColor, Sheet, shortType, UtilBar } from './sheets';
 import { LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
