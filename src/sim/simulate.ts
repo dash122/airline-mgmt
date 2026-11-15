@@ -821,12 +821,12 @@ export function rivalConnections(o: string, d: string): RivalConnection[] {
   for (const { to: h, services } of rivalsAt(o)) {
     const H = AIRPORT_BY_CODE[h];
     if (h === d || H.metro === O.metro || H.metro === D.metro) continue;
-    const first = marketBetween(o, h), second = marketBetween(h, d);
-    if (!first || !second || first.distKm + second.distKm > m.distKm * RIVAL_CONNECT_DETOUR) continue;
     // Only a hub carrier can sell this connection. Avoid generating the
-    // onward market's whole timetable when no incoming carrier qualifies.
+    // onward market's whole timetable when no incoming carrier qualifies. (Checked first: it needs no market lookups.)
     const feeders = services.filter(s => s.airline.kind !== 'low' && s.airline.bases.includes(h));
     if (!feeders.length) continue;
+    const first = marketBetween(o, h), second = marketBetween(h, d);
+    if (!first || !second || first.distKm + second.distKm > m.distKm * RIVAL_CONNECT_DETOUR) continue;
     const onward = rivalsFrom(h, d);
     if (!onward.length) continue;
     for (const s1 of feeders) {
@@ -1192,15 +1192,39 @@ function dealDistance(a: Plan, b: Plan): number {
 /** Each market's demand by its itinerary list (lists are shared between structures that differ in a deal elsewhere). */
 const marketDemand = new WeakMap<Itinerary[], { fares: string; perIt: Float64Array; info: { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] } }>();
 
+/**
+ * Per-itinerary working arrays, reused by every simulation instead of allocated again (a simulation runs to the end
+ * without calling another, and nothing keeps them). Demand, carried and the market flags start at zero; `pricedAt` is
+ * always written before it is read.
+ */
+const scratch = { size: 0, demand: new Float64Array(0), has: new Uint8Array(0), pricedAt: new Float64Array(0), carried: new Float64Array(0) };
+function scratchFor(count: number) {
+  if (count > scratch.size) {
+    scratch.size = Math.max(count, Math.ceil(scratch.size * 1.5));
+    scratch.demand = new Float64Array(scratch.size); scratch.has = new Uint8Array(scratch.size);
+    scratch.pricedAt = new Float64Array(scratch.size); scratch.carried = new Float64Array(scratch.size);
+  } else {
+    scratch.demand.fill(0, 0, count); scratch.has.fill(0, 0, count); scratch.carried.fill(0, 0, count);
+  }
+  return scratch;
+}
+/** A market key's two airports and its direction-free key, split once instead of in every simulation. */
+const marketEndsCache = new Map<string, { mo: string; md: string; mk: string }>();
+function marketEnds(k: string) {
+  let e = marketEndsCache.get(k);
+  if (!e) {
+    const [mo, md] = k.split('>');
+    marketEndsCache.set(k, e = { mo, md, mk: mo < md ? `${mo}|${md}` : `${md}|${mo}` });
+  }
+  return e;
+}
 function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   const st = structureOf(plan);
   const { flights, partners, every, itins, blocks, partnerLinks, count } = st;
   const linkPax = new Map<Flight, Map<Flight, number>>();
   const partnerWanted = new Map<Flight, number>();
   // Demand per itinerary (daily), by itinerary idx; `has` marks itineraries in a market that exists.
-  const demand = new Float64Array(count);
-  const has = new Uint8Array(count);
-  const pricedAt = new Float64Array(count);
+  const { demand, has, pricedAt, carried } = scratchFor(count);
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
   const faresKey = JSON.stringify(plan.fares ?? {});
   for (const [k, list] of itins) {
@@ -1212,7 +1236,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       marketInfo.set(k, hit.info);
       continue;
     }
-    const [o, d] = k.split('>');
+    const { mo: o, md: d } = marketEnds(k);
     const m = marketBetween(o, d);
     if (!m) continue;
     // An itinerary that runs less often than daily attracts proportionally fewer travellers.
@@ -1292,7 +1316,6 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   }
   // Never more travellers than seats.
   load();
-  const carried = new Float64Array(count);
   for (let i = 0; i < itList.length; i++) {
     const legs = legList[i];
     let fit = 1;
@@ -1345,8 +1368,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
-    const [mo, md] = k.split('>');
-    const mk = mo < md ? `${mo}|${md}` : `${md}|${mo}`;
+    const { mo, md, mk } = marketEnds(k);
     const mr: MarketResult = markets[k] = { airTotal: info.airTotal, connecting: info.connecting, rivals: info.rivals, rivalVia: info.rivalVia, nonstop: 0, via: {}, wanted: info.mine };
     for (const it of list) {
       const n = carried[it.idx!];
