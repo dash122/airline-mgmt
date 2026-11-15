@@ -2710,3 +2710,8 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .svc-cancel, .danger-text { color: var(--bad); }
 .svc-cancel { align-self: flex-start; min-height: 44px; padding: 0 4px; background: none; font-size: var(--fs-sm); }
 .link-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; background: none; color: var(--accent); font-size: var(--fs-sm); }
+
+/* Codeshare sheet: gain shown inside the share button, per-size change vs the current block, two-tap stop. */
+.cs-foot .primary.wide .cs-foot-gain { margin-left: 6px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
+.cs-share-seg .cs-delta { display: block; color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.cs-foot button.danger.confirm { background: var(--bad); color: #fff; border-color: var(--bad); }
