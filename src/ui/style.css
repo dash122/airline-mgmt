@@ -2677,3 +2677,8 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .al-glance .al-tail + div::before { display: none; }
 /* Cover the strip above the sticky control too, so scrolled rows never peek out between it and the title. */
 .sheet .seg.ap-seg { top: 0; box-shadow: 0 -16px 0 var(--bg); }
+
+/* Codeshare sheet: gain shown inside the share button, per-size change vs the current block, two-tap stop. */
+.cs-foot .primary.wide .cs-foot-gain { margin-left: 6px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
+.cs-share-seg .cs-delta { display: block; color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.cs-foot button.danger.confirm { background: var(--bad); color: #fff; border-color: var(--bad); }
