@@ -42,7 +42,8 @@ const PALETTE = {
 
 const SIZE_PRIORITY = { hub: 2, major: 3, large: 4, medium: 5, small: 6 } as const;
 /** Same hues as --good / --warn / --bad in style.css. */
-export const LF_COLORS = { good: '#2a9447', ok: '#d98b00', bad: '#d7261e' };
+import { LF_COLORS } from './map-colors';
+export { LF_COLORS };
 const lfColor = (lf: number) => (lf >= 0.8 ? LF_COLORS.good : lf >= 0.6 ? LF_COLORS.ok : LF_COLORS.bad);
 
 const ARC_STEPS = 32;

@@ -1,6 +1,7 @@
 import { analyzeAirport } from './airport-analysis.worker';
 import { destinationsFrom, previewChoice } from '../sim/newroute';
 import { simulate, type Plan } from '../sim/simulate';
+import { prepareMarkets } from '../sim/markets';
 import { fareCurveSteps, type FarePoint } from '../sim/fares';
 import { routeWhatIfSteps } from '../sim/route-whatif';
 import { bestShare, codeshareImpact, codeshareIdeaSteps, codeshareOptionSteps, hostedChoices, hostedImpact, hostedIdeaSteps, hostedOptionSteps, shareChoices, type CodeshareIdea, type HostedOption } from '../sim/codeshare';
@@ -16,8 +17,11 @@ const HOSTED_CANDIDATES = 10;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const ranked = <T extends { active: boolean; gain: number }>(list: T[]) => [...list].sort((x, y) => Number(y.active) - Number(x.active) || y.gain - x.gain);
 
-self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare'; port: MessagePort }>) => {
+self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare' | 'warm'; port: MessagePort }>) => {
   const { scope, port } = event.data;
+  // Sent once the page has loaded: builds the world demand model now, while the player is still choosing a base, so the
+  // first simulation doesn't spend its first two seconds on it.
+  if (scope === 'warm') { setTimeout(() => prepareMarkets(Infinity), 0); return; }
   let version = 0;
   const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
   port.onmessage = async (event) => {
