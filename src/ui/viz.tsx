@@ -113,6 +113,14 @@ const PATHS = {
   calendar: 'M4 6h16v14H4z M4 10h16 M8 3.5V7 M16 3.5V7',
   link: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1 M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
   filter: 'M4 6h16 M7 12h10 M10 18h4',
+  sun: 'M12 8a4 4 0 1 0 0.01 0 M12 2.5v2 M12 19.5v2 M2.5 12h2 M19.5 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4',
+  moon: 'M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z',
+  reset: 'M4 12a8 8 0 1 0 2.5-5.8 M4 4v4.5h4.5',
+  skip: 'M4 5v14l9-7z M14 5v14l9-7z',
+  chart: 'M4 20V10 M10 20V4 M16 20v-7 M22 20H2',
+  minus: 'M5 12h14',
+  back: 'M13 6l-6 6 6 6 M19 6l-6 6 6 6',
+  fwd: 'M11 6l6 6-6 6 M5 6l6 6-6 6',
 } as const;
 export type IconName = keyof typeof PATHS;
 

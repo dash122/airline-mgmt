@@ -12,7 +12,7 @@ import { count, hkSigned, money, pct } from './format';
 import { at, DayBar, PullDown, routeColor, Sheet, shortType, UtilBar } from './sheets';
 import { LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
-import { Badge, hm, IN, Icon } from './viz';
+import { Badge, hm, IN, Icon, Meter } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = hm;
@@ -276,6 +276,8 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
   const fitsBase = (t: AircraftModel) => runwayFits(AIRCRAFT[t], base);
   const [pick, setPick] = useState<AircraftModel>(() => MODEL_ORDER.find((t) => t === 'A20N' && fitsBase(t)) ?? MODEL_ORDER.find(fitsBase)!);
   const dests = topMarketsFrom(plan.base, plan, 40).filter((m) => !routeProblem(plan.base, m.to, pick)).slice(0, 8);
+  const maxSeats = Math.max(...MODEL_ORDER.map((t) => AIRCRAFT[t].seats)), maxRange = Math.max(...MODEL_ORDER.map((t) => AIRCRAFT[t].rangeKm));
+  const costs = MODEL_ORDER.map(seatKmCost), cheapest = Math.min(...costs), priciest = Math.max(...costs);
   const flyable = (t: AircraftModel) => routes.filter((r) => !routeProblem(r.a, r.b, t)).length;
   return (
     <Sheet over size="full" title="租飛機" sub={<IN n="base" v={base.name} label="停在" w="停在" />} onClose={onClose}
@@ -291,26 +293,27 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
         </div>
         <button className="ghost" onClick={() => onLease(pick, null)}>只租，稍後排班</button>
       </div>}>
-      <div className="cmp-wrap">
-        <table className="cmp">
-          <thead><tr><th>機型</th><th>座位</th><th>航程</th><th>租金/週</th><th>每座公里</th>{routes.length > 0 && <th>可飛</th>}</tr></thead>
-          <tbody>
-            {MODEL_ORDER.map((t) => {
-              const s = AIRCRAFT[t];
-              const ok = fitsBase(t);
-              return (
-                <tr key={t} className={`${pick === t ? 'pick' : ''}${ok ? '' : ' dim'}`} onClick={() => ok && setPick(t)}>
-                  <td><b>{shortType(t)}</b></td>
-                  <td>{s.seats}</td>
-                  <td>{count(s.rangeKm)}</td>
-                  <td>{money(s.ownershipPerWeek)}</td>
-                  <td>{seatKmCost(t).toFixed(2)}</td>
-                  {routes.length > 0 && <td>{flyable(t)}/{routes.length}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="lease-cards" role="listbox" aria-label="機型">
+        {MODEL_ORDER.map((t) => {
+          const s = AIRCRAFT[t];
+          const ok = fitsBase(t);
+          const eff = 1 - Math.min(1, Math.max(0, (seatKmCost(t) - cheapest) / (priciest - cheapest || 1)));
+          return (
+            <button key={t} role="option" aria-selected={pick === t} className={`lease-card${pick === t ? ' pick' : ''}${ok ? '' : ' dim'}`} onClick={() => ok && setPick(t)}>
+              <span className="lease-head">
+                <b>{shortType(t)}</b>
+                {!ok && <Icon n="lock" label="跑道太短" />}
+                {routes.length > 0 && <small title="可飛的航線"><Icon n="route" /> {flyable(t)}/{routes.length}</small>}
+                <span className="price" title="租金/週"><Icon n="lease" /> {money(s.ownershipPerWeek)}</span>
+              </span>
+              <span className="lease-bars">
+                <span title="座位"><em><Icon n="seat" />{s.seats}</em><Meter value={s.seats / maxSeats} /></span>
+                <span title="航程 km"><em><Icon n="long" />{count(s.rangeKm)}</em><Meter value={s.rangeKm / maxRange} tone="accent" /></span>
+                <span title="越長越省（每座公里）"><em><Icon n="fast" />{seatKmCost(t).toFixed(2)}</em><Meter value={eff} tone="good" /></span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </Sheet>
   );
@@ -320,15 +323,19 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
 
 export function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep: number; lo: number; hi: number; onChange: (dep: number) => void }) {
   const set = (d: number) => onChange(Math.max(lo, Math.min(hi, dep + d)));
-  const steps = [-60, -15, 15, 60];
   return (
     <div className="timepick">
-      {steps.slice(0, 2).map((d) => <button key={d} onClick={() => set(d)} disabled={dep + d < lo && dep <= lo}>{d}</button>)}
-      <output>{at(code, dep)}</output>
-      {steps.slice(2).map((d) => <button key={d} onClick={() => set(d)} disabled={dep + d > hi && dep >= hi}>+{d}</button>)}
+      <div className="tp-row">
+        <button onClick={() => set(-60)} disabled={dep <= lo} aria-label="早 1 小時" title="−1h"><Icon n="back" size={20} /></button>
+        <button onClick={() => set(-15)} disabled={dep <= lo} aria-label="早 15 分鐘" title="−15m"><Icon n="minus" size={20} /></button>
+        <output>{at(code, dep)}</output>
+        <button onClick={() => set(15)} disabled={dep >= hi} aria-label="晚 15 分鐘" title="+15m"><Icon n="plus" size={20} /></button>
+        <button onClick={() => set(60)} disabled={dep >= hi} aria-label="晚 1 小時" title="+1h"><Icon n="fwd" size={20} /></button>
+      </div>
+      {hi > lo && <input type="range" min={lo} max={hi} step={15} value={Math.max(lo, Math.min(hi, dep))} aria-label="出發時間" onChange={(e) => onChange(Number(e.target.value))} />}
+      {hi > lo && <div className="tp-ends"><span>{at(code, lo)}</span><span>{at(code, hi)}</span></div>}
     </div>
   );
 }
-
 
 export { UtilBar };
