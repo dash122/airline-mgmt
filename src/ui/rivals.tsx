@@ -162,7 +162,7 @@ export function MarketShare({ a, b, result, net, split: given, title = '市場�
         </ul>
       </Fragment>)}
       {ownTurnedAway >= 1 && (
-        <div className="ms-turned"><b>想搭你但客滿</b><span>{count(ownTurnedAway)} 人／週 · 未包含在上方市占</span></div>
+        <p className="ap-note warn">另有 {count(ownTurnedAway)} 人／週想搭你但客滿（不在市占內）</p>
       )}
       {hidden > 0 && <button className="share-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "收起" : `再看 ${hidden} 項`}</button>}
     </div>

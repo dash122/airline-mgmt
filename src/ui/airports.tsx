@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { CLASS_NAMES } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { useAirportAnalysis } from './airport-analysis';
-import { hubOf, spokes, stations, viaGroup, type Spoke } from '../sim/airports';
+import { hubOf, spokes, stations, viaGroup } from '../sim/airports';
 import { FromHubView, HubTransitView } from './transit';
 import {
   HUB_COST_PER_WEEK, HUB_MCT_CUT, minConnect,
@@ -11,13 +11,14 @@ import {
 import { count, money, short } from './format';
 import { PullDown, routeColor, Sheet, type Pager } from './sheets';
 import { RouteRow } from './route-health';
-import { AirportCompetition, AirportDaySchedule, AirportMarkets, AirportTiles, type AirportSection, type Tile } from './airport-views';
-import { rivalsAt } from '../sim/competitors';
+import { AirportCarriers, AirportDaySchedule, AirportDestinations, AirportSegments, type AirportSection } from './airport-views';
+import { airlinesAt, rivalsAt } from '../sim/competitors';
+import { countryName } from '../sim/networks';
+import { airportTraffic } from '../sim/airports';
 import { Badge, IN, Icon } from './viz';
 
 const EMPTY_IDEAS: NonNullable<ReturnType<typeof useAirportAnalysis>>['ideas'] = [];
 
-const lfClass = (lf: number | null) => (lf === null ? 'idle' : lf >= 0.8 ? 'good' : lf >= 0.6 ? 'warn' : 'bad');
 
 /** Nudge bearings apart so neighbouring labels do not sit on top of each other. */
 export function spreadAngles(bearings: number[], minGap = 26): number[] {
@@ -40,34 +41,6 @@ export function spreadAngles(bearings: number[], minGap = 26): number[] {
   return out;
 }
 
-/** The airport at the centre, one spoke per direct route: direction is the real bearing, length grows with distance. */
-function Radial({ code, list, onPick }: { code: string; list: Spoke[]; onPick: (key: string) => void }) {
-  const W = 320, H = 210, cx = W / 2, cy = H / 2;
-  const maxD = Math.max(...list.map((s) => s.distKm), 1);
-  const maxP = Math.max(...list.map((s) => s.pax), 1);
-  const angle = spreadAngles(list.map((s) => s.bearing));
-  return (
-    <svg className="radial" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${code} 的直飛航線`}>
-      {[0.5, 1].map((k) => <ellipse key={k} cx={cx} cy={cy} rx={118 * k} ry={78 * k} className="ring" />)}
-      {list.map((s, i) => {
-        const r = 0.28 + 0.72 * Math.sqrt(s.distKm / maxD);
-        const x = cx + Math.sin((angle[i] * Math.PI) / 180) * 118 * r, y = cy - Math.cos((angle[i] * Math.PI) / 180) * 78 * r;
-        const w = 2 + 6 * Math.sqrt(s.pax / maxP);
-        return (
-          <g key={s.key} className={`spoke ${lfClass(s.loadFactor)}`} onClick={() => onPick(s.key)} role="button" aria-label={`${s.other}，每日 ${s.flightsPerDay} 班`}>
-            <line x1={cx} y1={cy} x2={x} y2={y} className="hit" />
-            <line x1={cx} y1={cy} x2={x} y2={y} className="line" strokeWidth={s.loadFactor === null ? 2 : w} />
-            <circle cx={x} cy={y} r="4.5" className="node" />
-            <text x={x} y={y + (y > cy ? 15 : -8)} textAnchor="middle">{s.other}</text>
-          </g>
-        );
-      })}
-      <circle cx={cx} cy={cy} r="8" className="center" />
-      <text x={cx} y={cy + 20} textAnchor="middle" className="center-t">{code}</text>
-    </svg>
-  );
-}
-
 export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onOpenPair, onSuggest, onOpenRoute, onToggleHub, onShowSchedule, onPickAirport, onHint, onClose, action, onPickAirline, onAddFlight, onRemoveFlight }: {
   pager?: Pager; plan: Plan; result: NetworkResult | null; code: string; onConnect: () => void; onOpen: (to: string) => void; onOpenPair: (a: string, b: string) => void;
   onSuggest: (from: string, to: string, localMin: number) => void; onOpenRoute: (key: string) => void;
@@ -77,7 +50,7 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
   onAddFlight?: (key: string) => void; onRemoveFlight?: (key: string) => void;
 }) {
   // Open on what the player can act on: their routes here, or where to fly if they don't fly here yet.
-  const [tab, setTab] = useState<AirportSection>(() => (weeklyDepartures(plan, code) > 0 ? 'routes' : 'market'));
+  const [tab, setTab] = useState<AirportSection>(() => (weeklyDepartures(plan, code) > 0 ? 'routes' : 'dest'));
   const persp = hubOf(plan);
   const isPersp = code === persp;
   const analysis = useAirportAnalysis(plan, result, code, tab === 'transfer');
@@ -110,44 +83,46 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
   const isHub = plan.hub === code;
   const transfer = result?.transfers[code];
   const served = used > 0;
-  const carriers = analysis?.carriers ?? [];
+  const carriers = airlinesAt(code);
   const ourPax = list.reduce((s, x) => s + x.pax, 0);
-  const tiles: Tile[] = [
-    { key: 'routes', icon: 'route', label: '航線', value: list.length ? `${list.length}` : '—' },
-    { key: 'market', icon: 'market', label: '市場', value: '—' },
-    isPersp
-      ? { key: 'transfer', icon: 'transfer', label: '轉機', value: '—' }
-      : { key: 'transfer', icon: 'transfer', label: `經${persp}轉機`, value: '—' },
-    { key: 'rivals', icon: 'rival', label: '對手', value: carriers.length ? `${carriers.length}` : '—' },
-    { key: 'schedule', icon: 'calendar', label: '時刻表', value: '—' },
+  const traffic = airportTraffic(result, code);
+  const sections: { key: AirportSection; label: string; n?: number }[] = [
+    { key: 'routes', label: '航線', n: list.length },
+    { key: 'dest', label: '目的地' },
+    { key: 'transfer', label: '轉機' },
+    { key: 'airlines', label: '航空公司', n: carriers.length },
   ];
   return (
     <Sheet size="half" pager={pager} className="airport-sheet" title={a.name} onClose={onClose} action={action}
-      sub={<span className="ins">{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
+      sub={<span className="ins ap-sub"><span>{code} · {countryName(a.country)}</span>{code === plan.base && <Badge n="base" tone="accent">基地</Badge>}{isHub && <Badge n="hub" tone="accent">轉運站</Badge>}</span>}
       info={<p>直飛 {directDestinations.size} 個航點、{directCountries.size} 個國家／地區（含對手航班）· 腹地人口 {count(a.catchment / 1e4)} 萬 · 模擬年旅客 {analysis ? (analysis.annualPax / 1e6).toFixed(1) : '?'} 百萬 · 時間帶 {used}/{a.slotCap} 班/週 · 跑道 {count(a.runwayM)} 公尺（最大 {CLASS_NAMES[a.maxClass]}）</p>}>
       <div className="airport-glance">
-        <div><b>{used}</b><small>每週出發</small></div>
-        <div><b>{short(ourPax)}</b><small>你的旅客/週</small></div>
-        <div><b>{directDestinations.size}</b><small>直飛航點</small></div>
+        <div><small>每週旅客</small><b>{short(traffic.total)}</b></div>
+        <div><small>直飛航點</small><b>{directDestinations.size}</b></div>
+        <div>{served
+          ? <><small>搭你</small><b className="acc">{short(ourPax)}</b></>
+          : <><small>你</small><b className="muted">未開航</b></>}</div>
       </div>
-      <button className="primary airport-cta" onClick={onConnect}><Icon n="plus" /> 從{a.name}開新航線</button>
-      <AirportTiles tiles={tiles} on={tab} onPick={setTab} />
-      {!analysis && <div className="hint" role="status">正在載入機場分析…</div>}
+      <div className="ap-actions">
+        <button className="primary" onClick={onConnect}><Icon n="plus" /> 開新航線</button>
+        <button className={`ap-act${tab === 'schedule' ? ' on' : ''}`} onClick={() => setTab(tab === 'schedule' ? (served ? 'routes' : 'dest') : 'schedule')} aria-pressed={tab === 'schedule'}><Icon n="calendar" />時刻表</button>
+        {(served || isHub) && <button className={`ap-act${isHub ? ' on' : ''}`} onClick={onToggleHub} aria-pressed={isHub} title={`轉機時間縮短 ${HUB_MCT_CUT} 分鐘，每週 ${money(HUB_COST_PER_WEEK)}`}><Icon n="hub" />{isHub ? '轉運站' : '設轉運站'}</button>}
+      </div>
+      <AirportSegments items={sections} on={tab} onPick={setTab} />
+      {!analysis && tab === 'transfer' && <div className="hint" role="status">正在載入機場分析…</div>}
 
       {tab === 'routes' && (
         <>
-          {!served && <div className="airport-empty"><span aria-hidden="true">✈</span><div><b>準備好開拓新航點？</b><p>這裡還沒有你的航班。先探索市場，或直接規劃一條航線。</p><button onClick={() => setTab('market')}>探索目的地<span className="chev inline" aria-hidden="true" /></button></div></div>}
+          {!served && <div className="ap-empty"><b>你還沒飛{a.name}</b><button className="link-btn" onClick={() => setTab('dest')}>看這裡的目的地<span className="chev inline" aria-hidden="true" /></button></div>}
           {list.length > 0 && <div className="list-cap"><span>航線 · 載客率</span><span>週損益</span></div>}
-          <ul className="route-rows">
+          {list.length > 0 && <ul className="route-rows">
             {list.map((s) => {
               const res = result?.routes[s.key];
               return <RouteRow key={s.key} name={AIRPORT_BY_CODE[s.other].name} swatch={routeColor(s.key)} daily={s.flightsPerDay}
                 figures={res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null}
                 onOpen={() => onOpenRoute(s.key)} onAdd={onAddFlight && (() => onAddFlight(s.key))} onRemove={onRemoveFlight && (() => onRemoveFlight(s.key))} />;
             })}
-          </ul>
-          {served && <button className="link-btn airport-schedule-link" onClick={onShowSchedule}><Icon n="calendar" /> 在班表看這裡的航班<span className="chev inline" aria-hidden="true" /></button>}
-          {list.length > 0 && <details className="route-adjust"><summary>查看航線分布</summary><Radial code={code} list={list} onPick={onOpenRoute} /></details>}
+          </ul>}
           {view && (view.rows.length > 0 || !view.legFlown) && (
             <button className="hubteaser" onClick={() => setTab('transfer')}>
               <span className="grow"><b><Icon n="transfer" /> 經{persp}轉機</b>
@@ -157,18 +132,7 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
               <span className="chev" aria-hidden="true" />
             </button>
           )}
-          {served && (
-            <details className="route-adjust">
-            <summary>轉運站設定</summary>
-            <div className="hubbox">
-              <div className="grow">
-                <b><Icon n="hub" /> 轉運站{isHub && <> <Badge n="check" tone="good" label="已啟用" /></>}</b>
-                <span className="ins"><IN n="fast" v={`−${HUB_MCT_CUT}m`} label="轉機時間縮短" w="轉機" /><IN n="money" v={`${money(HUB_COST_PER_WEEK)}/週`} label="每週費用（只能設一個）" w="費用" /></span>
-              </div>
-              <button className={isHub ? 'secondary' : 'primary small'} onClick={onToggleHub}>{isHub ? '取消' : '設為轉運站'}</button>
-            </div>
-            </details>
-          )}
+          {served && <button className="link-btn airport-schedule-link" onClick={onShowSchedule}><Icon n="calendar" /> 在班表調整這裡的航班<span className="chev inline" aria-hidden="true" /></button>}
         </>
       )}
 
@@ -185,9 +149,9 @@ export function AirportSheet({ pager, plan, result, code, onConnect, onOpen, onO
 
       {tab === 'schedule' && <AirportDaySchedule plan={plan} code={code} />}
 
-      {tab === 'rivals' && <AirportCompetition plan={plan} result={result} code={code} onOpenRoute={onOpenRoute} onOpen={onOpen} onPickAirline={onPickAirline} />}
+      {tab === 'airlines' && <AirportCarriers plan={plan} result={result} code={code} onPickAirline={onPickAirline} />}
 
-      {tab === 'market' && <AirportMarkets plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}
+      {tab === 'dest' && <AirportDestinations plan={plan} result={result} code={code} onOpen={onOpen} onOpenRoute={onOpenRoute} />}
     </Sheet>
   );
 }

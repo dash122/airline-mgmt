@@ -119,7 +119,7 @@ export function HostedHub({ plan, deals, onOpen, onShare }: { plan: Plan; deals:
           })}
         </ul>
       )}
-      {ideas && ideas.ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN)}>再顯示 {Math.min(SHOWN, ideas.ideas.length - shown)} 個</button>}
+      {ideas && ideas.ideas.length > shown && <button className="bridge-more" onClick={() => setShown(shown + SHOWN)}>再看 {Math.min(SHOWN, ideas.ideas.length - shown)} 個</button>}
     </>
   );
 }

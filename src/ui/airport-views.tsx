@@ -1,38 +1,29 @@
-﻿// The airport sheet's competition and market potential sections, and the summary tiles that lead to each section.
-import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+// The airport sheet's sections: the section control, where travellers from here go (destinations), the airlines here,
+// and the full-day board.
+import { useContext, useMemo, useState } from 'react';
 import { AIRPORT_BY_CODE, AIRPORTS } from '../data/airports';
 import { airlinesAt, rivalsAt, rivalsBetween, type Airline, type RivalService } from '../sim/competitors';
 import { countryName } from '../sim/networks';
 import type { NetworkResult } from '../sim/simulate';
 import { marketSplit, type ShareRow } from '../sim/share';
-import { allFlights, marketPotential, type AirportPotential, type MarketPotential } from '../sim/airports';
+import { allFlights, marketPotential } from '../sim/airports';
 import { LONG_HAUL_KM, marketBetween, pairKey } from '../sim/markets';
-import { blockMinutes, canCodeshare, hasCodeshare, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
+import { blockMinutes, canCodeshare, competitionFor, hasCodeshare, hhmm, localMinutes, utcFromLocal, type Plan } from '../sim/simulate';
 import { CodeshareLink } from './codeshare';
 import { CompactTimetable } from './CompactTimetable';
-import { AirlineName } from './rivals';
-import { count, pct } from './format';
-import { Head } from './sheets';
-import { Badge, IN, Icon, type IconName } from './viz';
+import { count, pct, short } from './format';
+import { PullDown } from './sheets';
+import { Icon } from './viz';
 
-export type AirportSection = 'routes' | 'rivals' | 'market' | 'transfer' | 'schedule';
+export type AirportSection = 'routes' | 'dest' | 'transfer' | 'airlines' | 'schedule';
 
-export interface Tile {
-  key: AirportSection;
-  icon: IconName;
-  label: string;
-  value: string;
-  sub?: ReactNode;
-}
-
-/** Four tiles, the same for every airport, in the same order. Each one opens its section. */
-export function AirportTiles({ tiles, on, onPick }: { tiles: Tile[]; on: AirportSection; onPick: (s: AirportSection) => void }) {
+/** One segmented control, the same four sections for every airport, in the same order. A count shows only where useful. */
+export function AirportSegments<K extends string = AirportSection>({ items, on, onPick }: { items: { key: K; label: string; n?: number }[]; on: K; onPick: (s: K) => void }) {
   return (
-    <div className="ap-tiles" role="tablist" aria-label="機場資訊">
-      {tiles.map((t) => (
+    <div className="seg ap-seg" role="tablist" aria-label="機場資訊" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+      {items.map((t) => (
         <button key={t.key} role="tab" aria-selected={on === t.key} className={on === t.key ? 'on' : ''} onClick={() => onPick(t.key)}>
-          <span className="label"><Icon n={t.icon} /> {t.label}</span>
-          <span className="ap-tab-count">{t.value !== '—' && t.value !== '?' ? t.value : ''}</span>
+          {t.label}{t.n ? <small>{t.n}</small> : null}
         </button>
       ))}
     </div>
@@ -62,7 +53,7 @@ export function AirportDaySchedule({ plan, code }: { plan: Plan; code: string })
       <button className={direction === 'departures' ? 'on' : ''} aria-pressed={direction === 'departures'} onClick={() => setDirection('departures')}>出發</button>
       <button className={direction === 'arrivals' ? 'on' : ''} aria-pressed={direction === 'arrivals'} onClick={() => setDirection('arrivals')}>抵達</button>
     </div>
-    <Head>{direction === 'departures' ? `${code} 全日出發` : `${code} 全日抵達`} <small>本地時間 · {flights.length} 班/日</small></Head>
+    <div className="list-cap"><span>{direction === 'departures' ? '全日出發' : '全日抵達'} · 本地時間</span><span>{flights.length} 班/日</span></div>
     {!flights.length ? <div className="hint center">今天沒有定期航班</div> : <ul className="airport-day-flights">
       {flights.map((f) => <li key={f.id}>
         <span className="airport-day-times"><time>{hhmm(localMinutes(direction === 'departures' ? code : f.other, f.dep))}</time><span>→</span><time>{hhmm(localMinutes(direction === 'departures' ? f.other : code, f.arr))}</time></span>
@@ -113,9 +104,8 @@ export function partnersOn(a: string, b: string): Airline[] {
   return [...by.values()].sort((x, y) => y.freq - x.freq).map((x) => x.airline);
 }
 
-const PAGE = 10;
-type RouteFilter = 'all' | 'short' | 'long';
-type RouteView = RouteFilter | Continent;
+const PAGE = 12;
+type Scope = 'all' | 'short' | 'long' | Continent;
 type Continent = 'asia' | 'europe' | 'africa' | 'northAmerica' | 'southAmerica' | 'oceania';
 const CONTINENT_LABELS: Record<Continent, string> = { asia: '亞洲', europe: '歐洲', africa: '非洲', northAmerica: '北美洲', southAmerica: '南美洲', oceania: '大洋洲' };
 const CONTINENT_COUNTRIES: Record<Continent, Set<string>> = {
@@ -128,282 +118,191 @@ const CONTINENT_COUNTRIES: Record<Continent, Set<string>> = {
 };
 const continentOf = (country: string): Continent => Object.entries(CONTINENT_COUNTRIES).find(([, countries]) => countries.has(country))?.[0] as Continent ?? 'asia';
 
-/** Routes from this airport with the player against each competitor: flights and share of travellers. */
-export function AirportCompetition({ plan, result, code, onOpenRoute, onOpen, onPickAirline }: {
-  plan: Plan; result: NetworkResult | null; code: string; onOpenRoute: (key: string) => void; onOpen: (to: string) => void; onPickAirline?: (id: string) => void;
+/** One place travellers from this airport go: market size, who flies it, and (unflown) what a daily flight would carry. */
+interface Dest { to: string; key: string; distKm: number; flown: boolean; total: number | null; rivalFlights: number; estimate: number; seats: number; spill: number }
+
+/**
+ * Where travellers from this airport go, biggest market first. One list replaces the old 市場 and 對手 lists, which
+ * showed the same destinations twice. A row is a name, one grey line of facts and a bar: its length is the market
+ * against the biggest one, the coloured part is your share. Tap a row to open it in place.
+ */
+export function AirportDestinations({ plan, result, code, onOpen, onOpenRoute }: {
+  plan: Plan; result: NetworkResult | null; code: string; onOpen: (to: string) => void; onOpenRoute: (key: string) => void;
 }) {
   const [shown, setShown] = useState(PAGE);
-  const [filter, setFilter] = useState<RouteView>('all');
+  const [scope, setScope] = useState<Scope>('all');
   const [open, setOpen] = useState<string | null>(null);
-  const openCodeshare = useContext(CodeshareLink);
-  const carriers = airlinesAt(code);
-  const dests = useMemo(() => {
-    const ours = new Set(Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).map((r) => (r.a === code ? r.b : r.a)));
-    const rival = rivalsAt(code).map((r) => r.to);
-    return [...ours, ...rival.filter((d) => !ours.has(d))];
-  }, [result, code]);
-  const filteredDests = useMemo(() => dests.filter((to) => {
-    const dist = marketBetween(code, to)?.distKm ?? 0;
-    if (filter === 'all') return true;
-    if (filter === 'long') return dist > LONG_HAUL_KM;
-    if (filter === 'short') return dist <= LONG_HAUL_KM;
-    return continentOf(AIRPORT_BY_CODE[to].country) === filter;
-  }), [dests, code, filter]);
-  const routeFilters = useMemo(() => {
-    const counts: Record<RouteView, number> = { all: dests.length, short: 0, long: 0, asia: 0, europe: 0, africa: 0, northAmerica: 0, southAmerica: 0, oceania: 0 };
-    for (const to of dests) {
-      const dist = marketBetween(code, to)?.distKm ?? 0;
-      counts[dist > LONG_HAUL_KM ? 'long' : 'short']++;
-      counts[continentOf(AIRPORT_BY_CODE[to].country)]++;
-    }
-    return counts;
-  }, [dests, code]);
-  const rows = useMemo(() => filteredDests.slice(0, shown).map((to) => {
-    const r = result?.routes[pairKey(code, to)];
-    return { to, flown: !!r, split: marketSplit(code, to, r, result) };
-  }), [filteredDests, shown, result, code]);
-  const ourFlights = Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).reduce((s, r) => s + r.flightsPerWeek / 2, 0);
-  const rivalFlights = carriers.reduce((s, c) => s + c.flights, 0);
-  const [allCarriers, setAllCarriers] = useState(false);
-  if (!dests.length) return <div className="hint center">沒有對手，你會是第一家</div>;
-  useEffect(() => {
-    if (filter !== 'all' && routeFilters[filter] === 0) setFilter('all');
-  }, [filter, routeFilters]);
-  const topFlights = Math.max(1, ...carriers.map((c) => c.flights));
+  const all = useMemo<Dest[]>(() => {
+    const pot = marketPotential(plan, result, code);
+    const out = new Map<string, Dest>();
+    for (const m of pot.rows) out.set(m.to, { ...m, total: m.flown ? m.total : Math.max(m.total, 0) });
+    // Smaller places rivals fly to, after the big markets; their size is worked out when they come on screen.
+    const rest = rivalsAt(code).filter((r) => !out.has(r.to)).map((r) => ({ to: r.to, rf: [competitionFor(code, r.to), competitionFor(r.to, code)].reduce((s, c) => s + c.services.reduce((t, x) => t + x.freq, 0), 0) }));
+    rest.sort((x, y) => y.rf - x.rf);
+    for (const r of rest) out.set(r.to, { to: r.to, key: pairKey(code, r.to), distKm: marketBetween(code, r.to)?.distKm ?? 0, flown: false, total: null, rivalFlights: r.rf, estimate: 0, seats: 0, spill: 0 });
+    return [...out.values()];
+  }, [plan, result, code]);
+  const inScope = (d: Dest, s: Scope) => s === 'all' || (s === 'long' ? d.distKm > LONG_HAUL_KM : s === 'short' ? d.distKm <= LONG_HAUL_KM : continentOf(AIRPORT_BY_CODE[d.to].country) === s);
+  const scopes = useMemo(() => {
+    const keys: Scope[] = ['all', 'short', 'long', ...(Object.keys(CONTINENT_LABELS) as Continent[])];
+    return keys.map((k) => [k, all.filter((d) => inScope(d, k)).length] as const)
+      // A choice that shows everything or nothing is not a choice.
+      .filter(([k, n]) => k === 'all' || (n > 0 && n < all.length))
+      .map(([k, n]) => [k, `${k === 'all' ? '全部' : k === 'short' ? '短程' : k === 'long' ? '長程' : CONTINENT_LABELS[k as Continent]} ${n}`] as const);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all]);
+  const list = all.filter((d) => inScope(d, scope));
+  const page = list.slice(0, shown).map((d) => (d.total === null ? { ...d, total: marketSplit(code, d.to, undefined, result).total } : d));
+  const top = Math.max(1, ...page.map((d) => d.total ?? 0));
+  if (!all.length) return <div className="hint center">這裡還沒有航線市場</div>;
   return (
     <>
-      <div className="vs-head">
-        <div><b>{count(ourFlights)}</b><small>你 · 班/週</small></div>
-        <span>vs</span>
-        <div><b>{count(rivalFlights)}</b><small>{carriers.length} 家對手 · 班/週</small></div>
+      <div className="list-head">
+        {scopes.length > 1 ? <PullDown label="範圍" items={scopes} value={scope} onPick={(v) => { setScope(v); setShown(PAGE); setOpen(null); }} /> : <span />}
+        <span className="list-cap-r">每週旅客</span>
       </div>
-      <div className="share-track airport-competition-share" role="group" aria-label={`每週航班：你 ${count(ourFlights)} 班，對手 ${count(rivalFlights)} 班`}>
-        {[
-          { id: 'own', name: '你', flights: ourFlights, color: OWN },
-          ...carriers.map((c) => ({ id: c.airline.id, name: c.airline.name, flights: c.flights, color: c.airline.color })),
-        ].map((segment) => {
-          const label = `${segment.name}：${count(segment.flights)} 班/週`;
+      <ul className="ap-list">
+        {page.map((d) => {
+          const r = result?.routes[d.key];
+          const share = d.flown && r ? r.marketShare : 0;
+          const isOpen = open === d.to;
+          const ownFreq = r ? r.flightsPerWeek / 2 : 0;
+          const facts = [
+            d.flown ? `你 ${count(ownFreq)} 班` : null,
+            d.rivalFlights ? `對手 ${count(d.rivalFlights)} 班` : '沒人直飛',
+            !d.flown && d.estimate >= 1 ? `每日一班約 ${short(d.estimate)} 人` : null,
+          ].filter(Boolean).join(' · ');
           return (
-            <div key={segment.id} className="airport-competition-segment" tabIndex={0} aria-label={label} style={{ width: `${(100 * segment.flights) / Math.max(1, ourFlights + rivalFlights)}%`, background: segment.color }}>
-              <span className="airport-competition-tooltip" role="tooltip"><i style={{ background: segment.color }} /><span><b>{segment.name}</b><small>每週航班</small></span><strong>{count(segment.flights)}<small>班</small></strong></span>
-            </div>
-          );
-        })}
-      </div>
-      <Head info={<><p>每週、雙向。<span className="k" style={{ color: OWN }}>■</span> 你 <span className="k spill">■</span> 想搭你但客滿，其他顏色是各家對手。你飛的航線點了開航線；沒飛的點了看對手班表。對手的班表和票價固定。</p><p>對手的航班可以共享：把它的座位賣給轉乘你航班的旅客，要付共享費。</p></>}>每條航線</Head>
-      <div className="airport-route-filters" role="group" aria-label="航線篩選">
-        {([
-          ['all', `全部 ${routeFilters.all}`],
-          ['short', `短程 ${routeFilters.short}`],
-          ['long', `長程 ${routeFilters.long}`],
-          ...Object.entries(CONTINENT_LABELS).map(([key, label]) => [key, `${label} ${routeFilters[key as Continent]}`] as [RouteView, string]),
-        ] as [RouteView, string][]).filter(([key]) => key === 'all' || routeFilters[key] > 0).map(([key, label]) => (
-          <button key={key} className={`chip${filter === key ? ' strong' : ''}`} aria-pressed={filter === key} onClick={() => { setFilter(key); setShown(PAGE); }}>{label}</button>
-        ))}
-      </div>
-      <ul className="vs-list">
-        {rows.map(({ to, flown, split }) => {
-          const own = split.rows.find((x) => x.kind === 'own');
-          const rivals = split.rows.filter((x) => x.kind === 'rival');
-          const directRows = split.rows.filter((x) => !transitRow(x));
-          const directPax = directRows.reduce((sum, row) => sum + row.pax, 0);
-          const transitRows = split.rows.filter(transitRow);
-          const transitPax = transitRows.reduce((sum, row) => sum + row.pax, 0);
-          const connectionRows = transitRows.filter((x) => x.kind === 'ownVia' || x.kind === 'rivalVia');
-          const rf = rivals.reduce((s, x) => s + x.freq, 0);
-          const isOpen = open === to;
-          const key = pairKey(code, to);
-          const sharing = (plan.codeshares ?? []).some((c) => c.key === key);
-          const partners = isOpen ? partnersOn(code, to) : [];
-          return (
-            <li key={to} className={flown ? 'flown' : ''}>
-              <div className="vs-top" role="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : to)}>
-                <span className="name"><b>{AIRPORT_BY_CODE[to].name} {to}</b>
-                  <span className="ins">{flown && <IN n="plane" v={count(own?.freq ?? 0)} label="你的班次/週" w="你" u="班" tone="accent" />}<IN n="rival" v={count(rf)} label="對手班次/週" w="對手" u="班" /><IN n="pax" v={count(split.total)} label="旅客/週" u="人/週" />{sharing && <Badge n="link" tone="good" label="共享中" />}</span></span>
-                <span className="rival-share">{flown ? pct(own?.share ?? 0) : '—'}<small>{flown ? '市占' : '未開航'}</small></span>
-              </div>
-              {!isOpen && <div className="airport-row-summary">
-                <div className="airport-row-summary-track" role="img" aria-label={`直飛 ${pct(directPax / Math.max(1, split.total))}，轉機 ${pct(transitPax / Math.max(1, split.total))}`}>
-                  <i className="direct" style={{ width: `${100 * directPax / Math.max(1, split.total)}%` }} />
-                  <i className="connecting" style={{ width: `${100 * transitPax / Math.max(1, split.total)}%` }} />
-                </div>
-                <div><span>直飛 {pct(directPax / Math.max(1, split.total))}</span><span>轉機 {pct(transitPax / Math.max(1, split.total))}</span><small>展開</small></div>
-              </div>}
-              {isOpen && <div className="vs-actions">
-                {flown
-                  ? <button className="chip strong" onClick={() => onOpenRoute(pairKey(code, to))}>查看航線 {code} ⇄ {to}</button>
-                  : <button className="chip strong" onClick={() => onOpen(to)}>開航 {code} ⇄ {to}</button>}
-                {openCodeshare && partners.slice(0, 4).map((al) => {
-                  const on = hasCodeshare(plan, al.id, key);
-                  return <button key={al.id} className={`chip${on ? ' on' : ''}`} onClick={() => openCodeshare(al.id, key)}><Icon n="link" /> {on ? `${al.name} · 共享中` : `共享 ${al.name}`}</button>;
-                })}
-              </div>}
-              {isOpen && <div className="airport-share-groups">
-                {[{ key: 'direct', label: '直飛', rows: directRows }, { key: 'connecting', label: '轉機', rows: transitRows }].map((group) => group.rows.length > 0 && (
-                  <section className={`airport-share-group ${group.key}`} key={group.key}>
-                    <div className="airport-share-group-title"><b>{group.label}</b><span>{pct(group.rows.reduce((sum, x) => sum + x.pax, 0) / Math.max(1, split.total))}</span></div>
-                    <div className="share-track thin" role="img" aria-label={`${group.label}：${group.rows.map((x) => `${shareRowName(x)} ${pct(x.share)}`).join('、')}`}>
-                      {group.rows.map((x) => <i key={x.id} title={`${shareRowName(x)} · ${pct(x.share)} · ${count(x.pax)} 人/週`} style={{ width: `${100 * x.pax / Math.max(1, group.rows.reduce((sum, row) => sum + row.pax, 0))}%`, background: rowColor(x) }} />)}
-                    </div>
-                    <ul className="airport-share-legend">{group.rows.map((x) => <li key={x.id}><i style={{ background: rowColor(x) }} /><span>{shareRowName(x)}</span><b>{pct(x.share)}</b></li>)}</ul>
-                  </section>
-                ))}
-                {split.ownTurnedAway >= 1 && <div className="airport-share-lost">另有 {count(split.ownTurnedAway)} 人／週想搭你但客滿</div>}
-              </div>}
-              {isOpen && (
-                <div className="vs-more">
-                  <div className="airport-direct-schedules"><h5>直飛航班時刻</h5><CompactTimetable from={code} to={to} services={rivalsBetween(code, to).filter((s) => s.from === code)} plan={plan} showFilters={false} /></div>
-                  {transitPax > 0 && <div className="airport-transit-share">
-                    <div className="airport-transit-heading"><b>轉機旅客</b><span>{pct(transitPax / Math.max(1, split.total))} · {count(transitPax)} 人／週</span></div>
-                    <div className="airport-connection-schedules">
-                      <h5>轉機航班時刻</h5>
-                      {connectionRows.map((connection) => {
-                        const firstLeg = connection.kind === 'rivalVia'
-                          ? rivalsBetween(code, connection.via!).filter((s) => s.from === code && s.airline.id === connection.airline?.id)
-                          : [];
-                        const secondLeg = connection.kind === 'rivalVia'
-                          ? rivalsBetween(connection.via!, to).filter((s) => s.from === connection.via && s.airline.id === connection.airline?.id)
-                          : [];
-                        const bridges = connection.kind === 'ownVia' && plan ? ownBridgeOptions(plan, code, connection.via!, to) : rivalBridgeOptions(firstLeg, secondLeg);
-                        return <section className="airport-connection-card" key={connection.id}>
-                          <div className="airport-connection-title"><span><i style={{ background: rowColor(connection) }} />{shareRowName(connection)}</span><b>{pct(connection.share)}</b></div>
-                          <div className="airport-connection-path"><b>{code}</b><span>→ {connection.via} →</span><b>{to}</b><small>{count(connection.pax)} 人／週</small></div>
-                          {bridges.length ? <ol className="airport-bridge-options">{bridges.map((bridge, i) => <li key={`${bridge.dep1}-${bridge.dep2}`}>
-                            <span className="bridge-index">{i + 1}</span>
-                            <span><small>{code} 出發</small><b>{hhmm(localMinutes(code, bridge.dep1))}</b></span>
-                            <span className="bridge-leg"><small>抵達 {connection.via}</small><b>{hhmm(localMinutes(connection.via!, bridge.arr1))}</b></span>
-                            <span className="bridge-wait"><small>轉機等候</small><b>{Math.floor(bridge.wait / 60)}小時{bridge.wait % 60 ? `${bridge.wait % 60}分` : ''}</b></span>
-                            <span><small>{to} 抵達</small><b>{hhmm(localMinutes(to, bridge.arr2))}</b></span>
-                          </li>)}</ol> : <p className="airport-connection-note">目前沒有能在 30 分鐘至 8 小時內銜接的班次。</p>}
-                        </section>;
-                      })}
-                      {transitRows.some((x) => x.kind === 'connecting') && <p className="airport-connection-note">其他航空轉機的市場占比已計入；模型未提供其承運航空與分段班表。</p>}
-                      {connectionRows.some((x) => x.kind === 'ownVia') && <p className="airport-connection-note">你的轉機旅客經營運班表銜接；請在上方航線班表查看各段航班。</p>}
-                    </div>
-                  </div>}
-                </div>
-              )}
+            <li key={d.to} className={isOpen ? 'open' : ''}>
+              <button className="ap-row" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : d.to)}>
+                <span className="ap-row-text">
+                  <b>{AIRPORT_BY_CODE[d.to].name} <em>{d.to}</em>{d.flown && <span className="ap-tag">你 {pct(share)}</span>}</b>
+                  <small>{facts}</small>
+                </span>
+                <span className="ap-row-num">{short(d.total ?? 0)}</span>
+                <span className={`chev${isOpen ? ' open' : ''}`} aria-hidden="true" />
+                <span className="ap-bar" aria-hidden="true"><i style={{ width: `${(100 * (d.total ?? 0)) / top}%` }}><i style={{ width: `${100 * share}%` }} /></i></span>
+              </button>
+              {isOpen && <DestDetail plan={plan} result={result} from={code} d={d} onOpen={() => onOpen(d.to)} onOpenRoute={() => onOpenRoute(d.key)} />}
             </li>
           );
         })}
       </ul>
-      {filteredDests.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, filteredDests.length - shown)} 條</button>}
-      <h4><Icon n="rival" /> 航空公司 <small>{carriers.length}</small></h4>
-      <ul className="competitor-list">
-        {(allCarriers ? carriers : carriers.slice(0, 8)).map((c) => (
-          <li key={c.airline.id} className={`carrier${c.airline.bases.includes(code) ? ' airport-carrier-hub' : ''}`}>
-            <span className="name">{onPickAirline ? <button className="airline link" onClick={() => onPickAirline(c.airline.id)} aria-label={`查看 ${c.airline.name} 航空公司資料`}><i style={{ background: c.airline.color }} />{c.airline.name}<span className="chev" aria-hidden="true" /></button> : <AirlineName airline={c.airline} />}
-              <small className="airport-carrier-meta">{countryName(c.airline.country)} · {c.airline.bases[0] === code ? '主要樞紐' : c.airline.bases.includes(code) ? '基地' : `樞紐：${c.airline.bases[0]}`}</small>
-              <span className="carrier-bar"><i style={{ width: `${(100 * c.flights) / topFlights}%`, background: c.airline.color }} /></span></span>
-            {c.airline.bases[0] === code ? <Badge n="hub" tone="accent" label="主要樞紐" /> : c.airline.bases.includes(code) ? <Badge n="base" tone="muted" label="基地" /> : null}
-            <span className="rival-share" title={`${c.destinations} 個航點`}>{count(c.flights)}<small>班/週</small></span>
-          </li>
-        ))}
-      </ul>
-      {!allCarriers && carriers.length > 8 && <button className="secondary" onClick={() => setAllCarriers(true)}>其他 {carriers.length - 8} 家</button>}
+      {list.length > shown && <button className="bridge-more" onClick={() => setShown(shown + PAGE * 2)}>再看 {Math.min(PAGE * 2, list.length - shown)} 個</button>}
     </>
   );
 }
 
-/** Demand available at this airport against what the player captures, market by market. */
-export function AirportMarkets({ plan, result, code, onOpen, onOpenRoute }: {
-  plan: Plan; result: NetworkResult | null; code: string; onOpen: (to: string) => void; onOpenRoute: (key: string) => void;
-}) {
-  const [shown, setShown] = useState(PAGE);
-  const pot = useMemo(() => marketPotential(plan, result, code), [plan, result, code]);
+/** A destination opened in place: the one action, who carries its travellers, then timetables on demand. */
+function DestDetail({ plan, result, from, d, onOpen, onOpenRoute }: { plan: Plan; result: NetworkResult | null; from: string; d: Dest; onOpen: () => void; onOpenRoute: () => void }) {
+  const openCodeshare = useContext(CodeshareLink);
+  const split = useMemo(() => marketSplit(from, d.to, result?.routes[d.key], result), [from, d.to, d.key, result]);
+  const partners = useMemo(() => partnersOn(from, d.to), [from, d.to]);
+  const rows = [...split.rows].sort((x, y) => y.pax - x.pax);
+  const total = Math.max(1, rows.reduce((s, x) => s + x.pax, 0));
+  const legend = rows.slice(0, 4);
+  const restShare = rows.slice(4).reduce((s, x) => s + x.share, 0);
+  const connections = split.rows.filter((x) => x.kind === 'ownVia' || x.kind === 'rivalVia');
+  const services = rivalsBetween(from, d.to).filter((s) => s.from === from);
   return (
-    <>
-      <PotentialHead pot={pot} />
-      <Head info={<p>每週、雙向。沒飛的市場用和模擬一樣的算法估：每天一班來回、平均時段、你的票價，未扣座位上限。</p>}>市場</Head>
-      <div className="market-list-heading"><span>目的地</span><span>每週旅客 · 點擊查看</span></div>
-      <ul className="pot-list">
-        {pot.rows.slice(0, shown).map((m) => <PotentialRow key={m.to} m={m} from={code} plan={plan} result={result} onOpen={() => onOpen(m.to)} onOpenRoute={() => onOpenRoute(m.key)} />)}
-      </ul>
-      {pot.rows.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, pot.rows.length - shown)} 個</button>}
-    </>
-  );
-}
-
-function PotentialHead({ pot }: { pot: AirportPotential }) {
-  const share = pot.total > 0 ? pot.ours / pot.total : 0;
-  return (
-    <div className="pot-head">
-      <div className="pot-nums">
-        <div><b>{count(pot.total)}</b><small>人/週</small></div>
-        <div><b className="acc">{count(pot.ours)}</b><small>搭你直飛 {pct(share)}</small></div>
-        {pot.transfer >= 1 && <div><b>{count(pot.transfer)}</b><small>在這裡轉機</small></div>}
+    <div className="ap-detail">
+      <div className="ap-detail-acts">
+        {d.flown ? <button className="primary small" onClick={onOpenRoute}>查看航線</button>
+          : d.seats > 0 ? <button className="primary small" onClick={onOpen}><Icon n="plus" /> 開航 {from}⇄{d.to}</button>
+            : <span className="hint">沒有適合的機型</span>}
+        {openCodeshare && partners.slice(0, 3).map((al) => {
+          const on = hasCodeshare(plan, al.id, d.key);
+          return <button key={al.id} className={`chip${on ? ' on' : ''}`} onClick={() => openCodeshare(al.id, d.key)}><Icon n="link" /> {on ? `${al.name} 共享中` : `共享 ${al.name}`}</button>;
+        })}
       </div>
-      <div className="share-track"><div style={{ width: `${Math.min(100, share * 100)}%`, background: OWN }} /></div>
+      {rows.length > 0 && <>
+        <div className="share-track ap-share" role="img" aria-label={rows.map((x) => `${shareRowName(x)} ${pct(x.share)}`).join('、')}>
+          {rows.map((x) => <i key={x.id} className={transitRow(x) ? 'via' : ''} style={{ width: `${(100 * x.pax) / total}%`, background: rowColor(x) }} />)}
+        </div>
+        <ul className="ap-legend">
+          {legend.map((x) => <li key={x.id}><i style={{ background: rowColor(x) }} className={transitRow(x) ? 'via' : ''} /><span>{shareRowName(x)}</span><b>{pct(x.share)}</b></li>)}
+          {restShare >= 0.005 && <li><i style={{ background: 'var(--line-strong)' }} /><span>其他 {rows.length - 4} 項</span><b>{pct(restShare)}</b></li>}
+        </ul>
+      </>}
+      {d.flown && d.spill >= 1 && <p className="ap-note warn">另有 {count(d.spill)} 人／週想搭你但客滿</p>}
+      {(services.length > 0 || d.flown) && <details className="ap-more">
+        <summary>直飛時刻<small>{services.reduce((s, x) => s + x.times.length, 0) || ''}</small></summary>
+        <CompactTimetable from={from} to={d.to} services={services} plan={plan} showFilters={false} />
+      </details>}
+      {connections.length > 0 && <details className="ap-more">
+        <summary>轉機行程<small>{connections.length}</small></summary>
+        <ConnectionCards plan={plan} from={from} to={d.to} rows={connections} />
+      </details>}
     </div>
   );
 }
 
-function PotentialRow({ m, from, plan, result, onOpen, onOpenRoute }: { m: MarketPotential; from: string; plan: Plan; result: NetworkResult | null; onOpen: () => void; onOpenRoute: () => void }) {
-  const [open, setOpen] = useState(false);
-  const split = marketSplit(from, m.to, result?.routes[m.key], result);
-  const directRows = split.rows.filter((x) => !transitRow(x));
-  const transitRows = split.rows.filter(transitRow);
-  const directPax = directRows.reduce((sum, x) => sum + x.pax, 0);
-  const transitPax = transitRows.reduce((sum, x) => sum + x.pax, 0);
-  const connectionRows = transitRows.filter((x) => x.kind === 'ownVia' || x.kind === 'rivalVia');
+function ConnectionCards({ plan, from, to, rows }: { plan: Plan; from: string; to: string; rows: ShareRow[] }) {
+  return <div className="airport-connection-schedules">
+    {rows.map((connection) => {
+      const first = connection.kind === 'rivalVia' ? rivalsBetween(from, connection.via!).filter((s) => s.from === from && s.airline.id === connection.airline?.id) : [];
+      const second = connection.kind === 'rivalVia' ? rivalsBetween(connection.via!, to).filter((s) => s.from === connection.via && s.airline.id === connection.airline?.id) : [];
+      const bridges = connection.kind === 'ownVia' ? ownBridgeOptions(plan, from, connection.via!, to) : rivalBridgeOptions(first, second);
+      return <section className="airport-connection-card" key={connection.id}>
+        <div className="airport-connection-title"><span><i style={{ background: rowColor(connection) }} />{shareRowName(connection)}</span><b>{pct(connection.share)}</b></div>
+        <div className="airport-connection-path"><b>{from}</b><span>→ {connection.via} →</span><b>{to}</b><small>{count(connection.pax)} 人／週</small></div>
+        {bridges.length ? <ol className="airport-bridge-options">{bridges.map((bridge, i) => <li key={`${bridge.dep1}-${bridge.dep2}`}>
+          <span className="bridge-index">{i + 1}</span><span><small>{from} 出發</small><b>{hhmm(localMinutes(from, bridge.dep1))}</b></span>
+          <span className="bridge-leg"><small>抵達 {connection.via}</small><b>{hhmm(localMinutes(connection.via!, bridge.arr1))}</b></span>
+          <span className="bridge-wait"><small>轉機等候</small><b>{Math.floor(bridge.wait / 60)}小時{bridge.wait % 60 ? `${bridge.wait % 60}分` : ''}</b></span>
+          <span><small>{to} 抵達</small><b>{hhmm(localMinutes(to, bridge.arr2))}</b></span>
+        </li>)}</ol> : <p className="airport-connection-note">沒有 30 分鐘至 8 小時內銜接的班次。</p>}
+      </section>;
+    })}
+  </div>;
+}
+
+/**
+ * The airlines at this airport: one bar of everyone's weekly flights (you first), the four biggest named under it, then
+ * one row per airline. Tap a name for its profile.
+ */
+export function AirportCarriers({ plan, result, code, onPickAirline }: { plan: Plan; result: NetworkResult | null; code: string; onPickAirline?: (id: string) => void }) {
+  const [all, setAll] = useState(false);
+  const carriers = airlinesAt(code);
+  const ours = Object.values(result?.routes ?? {}).filter((r) => r.a === code || r.b === code).reduce((s, r) => s + r.flightsPerWeek / 2, 0);
+  const segs = [...(ours > 0 ? [{ id: 'own', name: '你', flights: ours, color: OWN }] : []), ...carriers.map((c) => ({ id: c.airline.id, name: c.airline.name, flights: c.flights, color: c.airline.color }))];
+  const sum = Math.max(1, segs.reduce((s, x) => s + x.flights, 0));
+  const top = Math.max(1, ...carriers.map((c) => c.flights));
+  if (!carriers.length) return <div className="hint center">沒有對手，你會是第一家</div>;
+  const named = segs.slice(0, 4);
+  const rest = segs.slice(4).reduce((s, x) => s + x.flights, 0);
+  void plan;
   return (
-    <li className={`potential-card vs-card${m.flown ? ' flown' : ''}${open ? ' expanded' : ''}`}>
-      <button className="potential-toggle vs-top" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="potential-destination name"><b>{AIRPORT_BY_CODE[m.to].name} {m.to}</b><span className="ins">
-          <IN n="rival" v={count(m.rivalFlights)} label="對手班次／週" w="對手" u="班" />
-          <IN n="pax" v={count(m.total)} label="市場旅客／週" u="人／週" />
-          {!m.flown && m.seats > 0 && <IN n="plane" v={`約 ${count(m.estimate)}`} label="每日一班估計旅客／週" w="估計" u="人／週" />}
-        </span></span>
-        <span className="rival-share">{m.flown ? pct(split.rows.find((x) => x.kind === 'own')?.share ?? 0) : '—'}<small>{m.flown ? '你的市占' : '未開航'}</small></span>
-        <span className="chev potential-chevron" aria-hidden="true" />
-      </button>
-      {!open && <div className="airport-row-summary">
-        <div className="airport-row-summary-track" role="img" aria-label={`直飛 ${pct(directPax / Math.max(1, split.total))}，轉機 ${pct(transitPax / Math.max(1, split.total))}`}>
-          <i className="direct" style={{ width: `${100 * directPax / Math.max(1, split.total)}%` }} /><i className="connecting" style={{ width: `${100 * transitPax / Math.max(1, split.total)}%` }} />
+    <>
+      <div className="ap-carrier-head">
+        <div className="share-track ap-share" role="img" aria-label={segs.map((x) => `${x.name} ${count(x.flights)} 班/週`).join('、')}>
+          {segs.map((x) => <i key={x.id} style={{ width: `${(100 * x.flights) / sum}%`, background: x.color }} />)}
         </div>
-        <div><span>直飛 {pct(directPax / Math.max(1, split.total))}</span><span>轉機 {pct(transitPax / Math.max(1, split.total))}</span><small>展開</small></div>
-      </div>}
-      {open && <>
-        <div className="vs-actions market-row-action">
-          {m.flown ? <button className="chip strong" onClick={onOpenRoute}>查看航線 {from} ⇄ {m.to}</button>
-            : m.seats > 0 ? <button className="chip strong" onClick={onOpen}>規劃航線 {from} ⇄ {m.to}</button>
-              : <span className="potential-unavailable">目前沒有適合的機型</span>}
-        </div>
-        <div className="airport-share-groups">
-          {[{ key: 'direct', label: '直飛', rows: directRows }, { key: 'connecting', label: '轉機', rows: transitRows }].map((group) => group.rows.length > 0 && <section className={`airport-share-group ${group.key}`} key={group.key}>
-            <div className="airport-share-group-title"><b>{group.label}</b><span>{pct(group.rows.reduce((sum, x) => sum + x.pax, 0) / Math.max(1, split.total))}</span></div>
-            <div className="share-track thin" role="img" aria-label={`${group.label}：${group.rows.map((x) => `${shareRowName(x)} ${pct(x.share)}`).join('、')}`}>
-              {group.rows.map((x) => <i key={x.id} title={`${shareRowName(x)} · ${pct(x.share)} · ${count(x.pax)} 人／週`} style={{ width: `${100 * x.pax / Math.max(1, group.rows.reduce((sum, row) => sum + row.pax, 0))}%`, background: rowColor(x) }} />)}
-            </div>
-            <ul className="airport-share-legend">{group.rows.map((x) => <li key={x.id}><i style={{ background: rowColor(x) }} /><span>{shareRowName(x)}</span><b>{pct(x.share)}</b></li>)}</ul>
-          </section>)}
-        </div>
-        <div className="vs-more market-row-details">
-          <div className="airport-direct-schedules"><h5>直飛航班時刻</h5><CompactTimetable from={from} to={m.to} services={rivalsBetween(from, m.to).filter((s) => s.from === from)} plan={plan} showFilters={false} /></div>
-          {transitPax > 0 && <div className="airport-transit-share"><div className="airport-transit-heading"><b>轉機旅客</b><span>{pct(transitPax / Math.max(1, split.total))} · {count(transitPax)} 人／週</span></div>
-            <div className="airport-connection-schedules"><h5>轉機航班時刻</h5>
-              {connectionRows.map((connection) => {
-                const first = connection.kind === 'rivalVia' ? rivalsBetween(from, connection.via!).filter((s) => s.from === from && s.airline.id === connection.airline?.id) : [];
-                const second = connection.kind === 'rivalVia' ? rivalsBetween(connection.via!, m.to).filter((s) => s.from === connection.via && s.airline.id === connection.airline?.id) : [];
-                const bridges = connection.kind === 'ownVia' ? ownBridgeOptions(plan, from, connection.via!, m.to) : rivalBridgeOptions(first, second);
-                return <section className="airport-connection-card" key={connection.id}>
-                  <div className="airport-connection-title"><span><i style={{ background: rowColor(connection) }} />{shareRowName(connection)}</span><b>{pct(connection.share)}</b></div>
-                  <div className="airport-connection-path"><b>{from}</b><span>→ {connection.via} →</span><b>{m.to}</b><small>{count(connection.pax)} 人／週</small></div>
-                  {bridges.length ? <ol className="airport-bridge-options">{bridges.map((bridge, i) => <li key={`${bridge.dep1}-${bridge.dep2}`}>
-                    <span className="bridge-index">{i + 1}</span><span><small>{from} 出發</small><b>{hhmm(localMinutes(from, bridge.dep1))}</b></span>
-                    <span className="bridge-leg"><small>抵達 {connection.via}</small><b>{hhmm(localMinutes(connection.via!, bridge.arr1))}</b></span>
-                    <span className="bridge-wait"><small>轉機等候</small><b>{Math.floor(bridge.wait / 60)}小時{bridge.wait % 60 ? `${bridge.wait % 60}分` : ''}</b></span>
-                    <span><small>{m.to} 抵達</small><b>{hhmm(localMinutes(m.to, bridge.arr2))}</b></span>
-                  </li>)}</ol> : <p className="airport-connection-note">目前沒有能在 30 分鐘至 8 小時內銜接的班次。</p>}
-                </section>;
-              })}
-              {transitRows.some((x) => x.kind === 'connecting') && <p className="airport-connection-note">其他航空轉機的旅客已計入，但沒有可用的分段班表。</p>}
-            </div>
-          </div>}
-        </div>
-        {!m.flown && m.seats > 0 && <p className="airport-connection-note market-estimate-note">未開航估算以每日一班來回計算，尚未扣除座位上限。</p>}
-        {m.flown && m.spill >= 1 && <p className="airport-connection-note">另有 {count(m.spill)} 人／週想搭你但客滿。</p>}
-      </>}
-    </li>
+        <ul className="ap-legend">
+          {named.map((x) => <li key={x.id}><i style={{ background: x.color }} /><span>{x.name}</span><b>{pct(x.flights / sum)}</b></li>)}
+          {rest > 0 && <li><i style={{ background: 'var(--line-strong)' }} /><span>其他 {segs.length - 4} 家</span><b>{pct(rest / sum)}</b></li>}
+        </ul>
+      </div>
+      <div className="list-cap"><span>{carriers.length} 家航空公司</span><span>班/週</span></div>
+      <ul className="ap-list">
+        {(all ? carriers : carriers.slice(0, 8)).map((c) => {
+          const role = c.airline.bases[0] === code ? '主要樞紐' : c.airline.bases.includes(code) ? '基地' : `樞紐 ${c.airline.bases[0]}`;
+          return (
+            <li key={c.airline.id}>
+              <button className="ap-row" onClick={() => onPickAirline?.(c.airline.id)} disabled={!onPickAirline}>
+                <span className="ap-row-text">
+                  <b><i className="ap-dot" style={{ background: c.airline.color }} />{c.airline.name}</b>
+                  <small>{countryName(c.airline.country)} · {role} · {c.destinations} 航點</small>
+                </span>
+                <span className="ap-row-num">{count(c.flights)}</span>
+                <span className="chev" aria-hidden="true" />
+                <span className="ap-bar" aria-hidden="true"><i style={{ width: `${(100 * c.flights) / top}%`, background: c.airline.color }} /></span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {!all && carriers.length > 8 && <button className="bridge-more" onClick={() => setAll(true)}>再看 {carriers.length - 8} 家</button>}
+    </>
   );
 }

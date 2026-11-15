@@ -12,6 +12,7 @@ import { CompactTimetable } from './CompactTimetable';
 import { count, pct, price, short } from './format';
 import { Head, Sheet, shortType } from './sheets';
 import { Badge, IN, Icon, type IconName } from './viz';
+import { AirportSegments } from './airport-views';
 
 /** Opens an airline's profile from anywhere an airline name is shown. */
 export const AirlineLink = createContext<((id: string) => void) | null>(null);
@@ -150,28 +151,20 @@ export function AirlineSheet({ plan, result, id, focus, onFocus, onPickAirport, 
       ? { key: 'hubs', icon: 'hub', label: '主要機場', value: main.code, sub: '點對點' }
       : { key: 'hubs', icon: 'hub', label: '樞紐', value: net.hubs.length > 1 ? `${net.hubs.length}` : main.code, sub: net.hubs.length > 1 ? hubCodes(net) : <IN n="share" v={pct(main.share)} label="占班次" w="占" u="班次" /> },
     { key: 'fleet', icon: 'plane', label: '機隊', value: `≈${count(aircraft)}`, sub: `架 · ${net.fleet.length} 型` },
-    { key: 'vs', icon: 'rival', label: '和你', value: overlap.routes.length ? `${overlap.routes.length}` : '—', sub: overlap.routes.length ? <IN n="route" v="同線" label="同航線競爭" /> : overlap.airports.length ? <IN n="base" v={overlap.airports.length} label="同機場" u="個同機場" /> : undefined },
+    { key: 'vs', icon: 'rival', label: '同線', value: overlap.routes.length ? `${overlap.routes.length}` : '—', sub: overlap.routes.length ? <IN n="route" v="同線" label="同航線競爭" /> : overlap.airports.length ? <IN n="base" v={overlap.airports.length} label="同機場" u="個同機場" /> : undefined },
     { key: 'share', icon: 'link', label: '共享', value: shared ? `${shared}` : '—', sub: !canCodeshare(a) ? '不共享' : shared ? '條共享中' : '挑航線' },
   ];
   return (
     <Sheet title={a.name} onClose={onClose}
       sub={<span className="ins"><span>{countryName(a.country)} · {KIND_NAMES[a.kind]}</span><IN n="market" v={count(net.countries.length)} label="飛的國家" w="飛" u="國" /></span>}
       info={<p>{blurb(net)} {net.pointToPoint ? '最大機場' : '主樞紐'}：{name(main.code)} {main.code}。對手的班表和票價固定，不會因為你而改變。</p>}>
-      <div className="al-head">
-        <Tail net={net} size={44} />
-        <div className="grow">
-          <div className="al-facts">
-            <span><b>{short(net.flights)}</b><small>班/週</small></span>
-          </div>
-        </div>
+      <div className="airport-glance al-glance">
+        <div className="al-tail"><Tail net={net} size={40} /></div>
+        <div><small>每週航班</small><b>{short(net.flights)}</b></div>
+        <div><small>航點</small><b>{count(net.airports.length)}</b></div>
+        <div><small>機隊</small><b>≈{count(aircraft)}</b></div>
       </div>
-      <div className="ap-tiles five" role="tablist">
-        {tiles.map((t) => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
-            <span className="label"><Icon n={t.icon} /> {t.label}</span><span className="value">{t.value}</span>{t.sub && <small>{t.sub}</small>}
-          </button>
-        ))}
-      </div>
+      <AirportSegments<Section> items={tiles.map((t) => ({ key: t.key, label: t.label === '主要機場' ? '機場' : t.label, n: t.key === 'vs' || t.key === 'share' ? Number(t.value) || undefined : undefined }))} on={tab} onPick={setTab} />
       {tab === 'routes' && <RouteList plan={plan} net={net} focus={focus} onFocus={onFocus} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} onCodeshare={onCodeshare} />}
       {tab === 'share' && <CodeshareTab plan={plan} net={net} onToggle={onCodeshare} />}
       {tab === 'hubs' && <Hubs net={net} onPickAirport={onPickAirport} onShowRoutes={() => setTab('routes')} />}
@@ -225,7 +218,7 @@ function RouteList({ plan, net, focus, onFocus, onPickAirport, onOpenRoute, onOp
             onToggle={() => onFocus(focus === r.key ? null : r.key)} onPickAirport={onPickAirport} onOpenRoute={onOpenRoute} onOpen={onOpen} onCodeshare={() => onCodeshare(r.key)} />
         ))}
       </ul>
-      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + PAGE * 2)}>再顯示 {Math.min(PAGE * 2, list.length - shown)} 條</button>}
+      {list.length > shown && <button className="bridge-more" onClick={() => setShown(shown + PAGE * 2)}>再看 {Math.min(PAGE * 2, list.length - shown)} 條</button>}
       {!list.length && <div className="hint center">沒有符合的航線</div>}
     </>
   );
@@ -344,7 +337,7 @@ function Fleet({ net }: { net: AirlineNetwork }) {
           </li>
         ))}
       </ul>
-      {deps.length > shown && <button className="secondary" onClick={() => setShown(shown + 40)}>再顯示 {Math.min(40, deps.length - shown)} 班</button>}
+      {deps.length > shown && <button className="bridge-more" onClick={() => setShown(shown + 40)}>再看 {Math.min(40, deps.length - shown)} 班</button>}
     </>
   );
 }
