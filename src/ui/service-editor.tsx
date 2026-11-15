@@ -30,9 +30,9 @@ const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet
 const windowText = (code: string, lo: number, hi: number) =>
   hi - lo >= DAY - 5 ? '全天可飛' : lo === hi ? '沒有空檔可移動' : `可 ${at(code, lo)}–${at(code, hi)} 出發`;
 
-/** The whole network's weekly profit (lease included) for a draft plan, worked out off the main thread. */
-function useDraftProfit(draft: Plan | null): number | null | 'pending' {
-  const [answer, setAnswer] = useState<{ plan: Plan; profit: number } | null>(null);
+/** The whole network's result for a draft plan (profit and every flight's loads), worked out off the main thread. */
+function useDraftResult(draft: Plan | null): NetworkResult | null | 'pending' {
+  const [answer, setAnswer] = useState<{ plan: Plan; result: NetworkResult } | null>(null);
   const worker = useRef<Worker | null>(null);
   const seq = useRef(0);
   useEffect(() => {
@@ -40,7 +40,7 @@ function useDraftProfit(draft: Plan | null): number | null | 'pending' {
     const w = worker.current ??= createComputeClient('simulation');
     const id = ++seq.current;
     const onMessage = (e: MessageEvent<{ id: number; result?: NetworkResult }>) => {
-      if (e.data.id === id && e.data.result) setAnswer({ plan: draft, profit: e.data.result.revenue - e.data.result.cost });
+      if (e.data.id === id && e.data.result) setAnswer({ plan: draft, result: e.data.result });
     };
     w.addEventListener('message', onMessage);
     // Wait for the stepper to settle, so holding a button doesn't queue a simulation per tap.
@@ -49,7 +49,7 @@ function useDraftProfit(draft: Plan | null): number | null | 'pending' {
   }, [draft]);
   useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
   if (!draft) return null;
-  return answer?.plan === draft ? answer.profit : 'pending';
+  return answer?.plan === draft ? answer.result : 'pending';
 }
 
 export function ServiceEditor({ plan, result, target, onApply, onClose }: {
@@ -113,26 +113,28 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
   const slot = src ? null : a ? slotProblem(plan, a, b) : null;
 
   // The draft: what the plan would be if the player confirmed now.
-  const draft = useMemo((): { plan: Plan; msg: string } | null => {
+  // `trip` says where the round trip's two legs sit in the draft plan, so their loads can be read from its result.
+  const draft = useMemo((): { plan: Plan; msg: string; trip: { acId: string; k: number } } | null => {
     if (!a) return null;
     if (choice === 'keep') {
       if (!src || !unit || !srcLeg || cur === srcLeg.dep) return null;
-      return { plan: withAc(plan, shiftUnit(src, unit, cur - srcLeg.dep)), msg: `${src.reg} 改成 ${at(from, cur)} 出發` };
+      return { plan: withAc(plan, shiftUnit(src, unit, cur - srcLeg.dep)), msg: `${src.reg} 改成 ${at(from, cur)} 出發`, trip: { acId: src.id, k: unit.start } };
     }
     if (slot) return null;
     const start = src && unit ? withAc(plan, removeUnit(src, unit)) : plan;
     if (chosen) {
       const ac = start.fleet.find((x) => x.id === chosen.acId)!;
-      return { plan: withAc(start, insertRoundTrip(ac, chosen.k, chosen.from, chosen.to, cur)), msg: `${src ? '已換到' : '已排入'} ${ac.reg}：${at(chosen.from, cur)} ${chosen.from}→${chosen.to} 與回程` };
+      return { plan: withAc(start, insertRoundTrip(ac, chosen.k, chosen.from, chosen.to, cur)), msg: `${src ? '已換到' : '已排入'} ${ac.reg}：${at(chosen.from, cur)} ${chosen.from}→${chosen.to} 與回程`, trip: { acId: ac.id, k: chosen.k } };
     }
     if (choice === 'lease' && leaseType) {
       const r = leaseFor(start, a, b, leaseType, cur);
       const reg = r.plan.fleet.find((x) => x.id === r.aircraftId)!.reg;
-      return { plan: r.plan, msg: `租了新飛機 ${reg}（${AIRCRAFT[leaseType].name}），${at(from, cur)} 出發` };
+      return { plan: r.plan, msg: `租了新飛機 ${reg}（${AIRCRAFT[leaseType].name}），${at(from, cur)} 出發`, trip: { acId: r.aircraftId, k: 0 } };
     }
     return null;
   }, [plan, a, b, choice, chosen, leaseType, cur, src, unit, srcLeg, slot, from]);
-  const draftProfit = useDraftProfit(draft?.plan ?? null);
+  const draftResult = useDraftResult(draft?.plan ?? null);
+  const draftProfit = draftResult && draftResult !== 'pending' ? draftResult.revenue - draftResult.cost : draftResult;
   const nowProfit = result ? result.revenue - result.cost : null;
   const gain = typeof draftProfit === 'number' && nowProfit !== null ? draftProfit - nowProfit : null;
 
@@ -154,6 +156,12 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
     : choice === 'keep' ? `改成 ${at(from, cur)} 出發`
     : `${src ? '換到' : '加開'} ${at(from, cur)} ${from}→${to}${isTrip ? ' 與回程' : ''}`);
   const legs = src && unit ? Array.from({ length: unit.count }, (_, k) => unit.start + k) : [];
+  // Loads follow the pending change: while a draft is still being simulated, no pill rather than the old time's load.
+  const loadOf = (i: number) => {
+    if (!src || !unit) return undefined;
+    if (draft) return draftResult && draftResult !== 'pending' ? draftResult.byFlight[`${draft.trip.acId}#${draft.trip.k + i - unit.start}`] : undefined;
+    return result?.byFlight[`${src.id}#${i}`];
+  };
 
   return (
     <Sheet over size="half" title={src ? (isTrip ? `${srcLeg!.from} ⇄ ${srcLeg!.to}` : `${srcLeg!.from} → ${srcLeg!.to}`) : '加一班來回'}
@@ -167,7 +175,7 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
       {onBack && <button className="link-back" onClick={onBack}><span className="chev back" aria-hidden="true" />換目的地</button>}
       {legs.length > 0 && <ul className="timetable">
         {legs.map((i) => {
-          const f = result?.byFlight[`${src!.id}#${i}`];
+          const f = loadOf(i);
           return (
             <li key={i}>
               <span className="t">{at(src!.legs[i].from, src!.legs[i].dep + (choice === 'keep' ? delta : 0))}</span>
@@ -193,10 +201,10 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
           </button>
           {showOthers && <div className="options">
             {src && choice !== 'keep' && <button className="opt" onClick={() => pick('keep')}><b>{src.reg} · {shortType(src.type)}</b><small>目前的飛機</small></button>}
-            {opts.map((o, i) => i === choice ? null : (
-              <button key={o.ac.id} className="opt" disabled={!o.placement} onClick={() => pick(i)}>
+            {opts.map((o, i) => i === choice || !o.placement ? null : (
+              <button key={o.ac.id} className="opt" onClick={() => pick(i)}>
                 <b>{o.ac.reg} · {shortType(o.ac.type)}</b>
-                {o.placement ? <small>利用率 {pct(o.utilBefore)}→{pct(o.utilAfter)}</small> : <small>{o.reason}</small>}
+                <small>利用率 {pct(o.utilBefore)}→{pct(o.utilAfter)}</small>
               </button>
             ))}
             {types.map((ty) => choice === 'lease' && leaseType === ty ? null : (
