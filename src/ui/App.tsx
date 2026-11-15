@@ -298,8 +298,8 @@ export default function App() {
   const homeNav: SheetNav = {
     detent, onDetent: setDetent,
     switcher: <div className="switcher" role="tablist" aria-label="主要導覽">
-      {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-selected={section === id} className={section === id ? 'on' : ''}
-        onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} />{label}</button>)}
+      {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-label={label} aria-selected={section === id} className={section === id ? 'on' : ''}
+        onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} /><span className="tl">{label}</span></button>)}
     </div>,
     menu: section === 'fleet' ? { items: [['fleet', '飛機'], ['schedule', '班表']], value: panel, onPick: (id) => openTab(id as Panel) }
       : section === 'market' ? { items: [['airports', '機場'], ['airlines', '航空公司']], value: panel, onPick: (id) => openTab(id as Panel) }

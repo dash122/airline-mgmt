@@ -2745,3 +2745,15 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .timepick .tp-row button:disabled { opacity: .35; }
 .timepick input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 4px 0 0; }
 .timepick .tp-ends { display: flex; justify-content: space-between; width: 100%; font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Compact layout: KPI tiles, icon-only inactive tabs ---------- */
+.kpis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin: 0 0 8px; }
+.kpi { display: grid; gap: 4px; padding: 9px 12px; border-radius: 14px; background: var(--surface-2); min-width: 0; }
+.kpi-l { display: flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
+.kpi-v { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.kpi-v b { font-size: var(--fs-lg); line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-v small { color: var(--muted); font-size: var(--fs-2xs); }
+.kpi.good .kpi-v b { color: var(--good); } .kpi.bad .kpi-v b { color: var(--bad); } .kpi.warn .kpi-v b, .kpi.warn .kpi-l { color: var(--warn); }
+.list-tools { display: flex; justify-content: flex-end; margin: 0 0 4px; }
+.switcher button:not(.on) .tl { display: none; }
+.sheet-head { min-height: 0 !important; padding-top: 10px !important; padding-bottom: 6px !important; }

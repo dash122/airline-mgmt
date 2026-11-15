@@ -12,7 +12,7 @@ import { count, hkSigned, money, pct } from './format';
 import { at, DayBar, PullDown, routeColor, Sheet, shortType, UtilBar } from './sheets';
 import { LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
-import { Badge, hm, IN, Icon, Meter } from './viz';
+import { Badge, hm, IN, Icon, Kpi, Meter } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = hm;
@@ -55,6 +55,8 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
   };
   const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
   const shown = rows.slice().sort(by[sort]);
+  const loads = rows.filter((r) => r.figures).map((r) => r.figures!.loadFactor);
+  const avgLoad = loads.length ? loads.reduce((x, y) => x + y, 0) / loads.length : 0;
   const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   const groups = [...new Set(shown.map((r) => r.home))]
@@ -62,7 +64,6 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
     .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
-      sub={rows.length > 0 && view === 'own' ? <>每日 {daily} 班來回{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</> : undefined}
       info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。金額是港幣（HK$）。航線週損益不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length > 0 && (
@@ -82,10 +83,15 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
         </div>
       )}
       {rows.length > 0 && (
-        <div className="routes-summary">
-          <span><small>週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
-          {rows.length > 1 && <PullDown label="排序" items={SORTS} value={sort} onPick={setSort} />}
-        </div>
+        <>
+          <div className="kpis">
+            <Kpi n="money" label="週損益" v={`${total >= 0 ? '+' : ''}${money(total)}`} tone={total >= 0 ? 'good' : 'bad'} />
+            <Kpi n="seat" label="載客" v={pct(avgLoad)} ring={avgLoad} tone={avgLoad >= 0.8 ? 'good' : avgLoad >= 0.6 ? 'warn' : 'bad'} />
+            <Kpi n="plane" label="班/日" v={daily} />
+            {todo.length > 0 && <Kpi n="warn" label="待處理" v={todo.length} tone="warn" />}
+          </div>
+          {rows.length > 1 && <div className="list-tools"><PullDown label="排序" items={SORTS} value={sort} onPick={setSort} /></div>}
+        </>
       )}
       {groups.map((g) => {
         const sum = g.rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
@@ -107,7 +113,6 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
           </section>
         );
       })}
-      {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">左右滑動 −/＋ 班</p>}
       </>}
     </Sheet>
   );
@@ -226,8 +231,7 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
 }) {
   const avg = plan.fleet.length ? plan.fleet.reduce((s, a) => s + rotationInfo(a).utilisation, 0) / plan.fleet.length : 0;
   return (
-    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`} sub={<span className="ins"><IN n="util" v={pct(avg)} label="平均利用率" w="利用率" /><IN n="lease" v={`${money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))}/週`} label="租金" w="租金" /></span>}
-      info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
+    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`}       info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
       onClose={onClose} action={plan.fleet.length > 0 && <button className="primary small" onClick={onLease}>租飛機</button>}>
       {plan.fleet.length === 0 && (
         <div className="empty-cta">
@@ -237,7 +241,12 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           <button className="primary wide" onClick={onLease}>租飛機</button>
         </div>
       )}
-      {plan.fleet.length > 0 && <div className="list-cap"><span>飛機的一天</span><span>週損益</span></div>}
+      {plan.fleet.length > 0 && (
+        <div className="kpis">
+          <Kpi n="util" label="利用率" v={pct(avg)} ring={avg} tone={avg >= 0.5 ? 'good' : 'warn'} />
+          <Kpi n="lease" label="租金/週" v={money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))} />
+        </div>
+      )}
       <ul className="fleet">
         {plan.fleet.map((ac) => {
           const info = rotationInfo(ac);

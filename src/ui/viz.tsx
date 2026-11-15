@@ -158,3 +158,13 @@ export const hm = (min: number) => {
   const m = Math.round(min);
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
 };
+
+/** A tile for one headline figure: tiny icon + label on top, the number big below (optionally with a ring beside it). */
+export function Kpi({ n, v, label, tone, ring, u }: { n: IconName; v: ReactNode; label: string; tone?: Tone; ring?: number; u?: string }) {
+  return (
+    <div className={`kpi${tone ? ` ${tone}` : ''}`} title={label}>
+      <span className="kpi-l"><Icon n={n} />{label}</span>
+      <span className="kpi-v">{ring != null && <Ring value={ring} size={26} stroke={4} tone={tone ?? 'accent'} label={label} />}<b>{v}</b>{u && <small>{u}</small>}</span>
+    </div>
+  );
+}
