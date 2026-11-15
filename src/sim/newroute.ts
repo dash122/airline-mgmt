@@ -1,12 +1,12 @@
 // Planning one new route between two airports: where to fly, on which aircraft, and what it would earn.
 import { AIRCRAFT, type AircraftModel } from '../data/aircraft';
 import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
-import { marketBetween, pairKey } from './markets';
+import { marketBetween, marketsAt, pairKey } from './markets';
 import { distanceKm } from './geo';
 import { departureQuality } from './choice';
 import { estimateNonstop } from './airports';
 import { insertRoundTrip, leaseFor, placementOptions, placeOn, typesFor, type Placement } from './schedule';
-import { blockMinutes, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
+import { blockMinutes, competitionFor, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
 
 /** Chinese country names, for searching "日本" or "泰國" and for the destination list. */
 export const COUNTRY_ZH: Record<string, string> = {
@@ -78,6 +78,21 @@ export function destination(plan: Plan, from: string, to: string, served?: Set<s
 
 const servedFrom = (plan: Plan, code: string) =>
   new Set(routePairs(plan).filter((r) => r.a === code || r.b === code).map((r) => (r.a === code ? r.b : r.a)));
+
+/**
+ * Fills the competitor caches that `destinationsFrom(_, origin)` reads: both directions of every market at `origin`.
+ * They don't depend on any plan, so the calculation worker can do this in slices after a simulation, and the first
+ * New Route view from that airport then doesn't wait on them (about 0.5 s cold, about 20 ms warm).
+ */
+export function* warmOriginSteps(origin: string): Generator<void, void, void> {
+  for (const m of marketsAt(origin)) {
+    const other = m.a === origin ? m.b : m.a;
+    competitionFor(origin, other);
+    yield;
+    competitionFor(other, origin);
+    yield;
+  }
+}
 
 /**
  * Every place worth flying from `from`, most travellers first. Only airports with a market (not the same city, at least 100 km away).

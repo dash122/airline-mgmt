@@ -1,5 +1,5 @@
 import { analyzeAirport } from './airport-analysis.worker';
-import { destinationsFrom, previewChoice } from '../sim/newroute';
+import { destinationsFrom, previewChoice, warmOriginSteps } from '../sim/newroute';
 import { simulate, type Plan } from '../sim/simulate';
 import { prepareMarkets } from '../sim/markets';
 import { fareCurveSteps, type FarePoint } from '../sim/fares';
@@ -28,6 +28,27 @@ const yieldTask = () => new Promise<void>((resolve) => {
 const BACKGROUND_DEBOUNCE_MS = 150;
 const ranked = <T extends { active: boolean; gain: number }>(list: T[]) => [...list].sort((x, y) => Number(y.active) - Number(x.active) || y.gain - x.gain);
 
+/** Airports whose competitor caches the background warm-up has filled (or is filling). */
+const warmedOrigins = new Set<string>();
+/**
+ * The New Route list from an airport reads competitor data for every market there. It is filled in slices after a
+ * simulation from that airport, stepping aside for open sheets, so the first list doesn't wait on it.
+ */
+async function warmOrigin(code: string) {
+  if (warmedOrigins.has(code)) return;
+  warmedOrigins.add(code);
+  const steps = warmOriginSteps(code);
+  let sliceStart = performance.now();
+  for (;;) {
+    while (urgent > 0) await sleep(25);
+    if (steps.next().done) return;
+    if (performance.now() - sliceStart > 30) {
+      await yieldTask();
+      sliceStart = performance.now();
+    }
+  }
+}
+
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare' | 'warm'; port: MessagePort }>) => {
   const { scope, port } = event.data;
   // Sent once the page has loaded: builds the world demand model now, while the player is still choosing a base, so the
@@ -47,7 +68,10 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
     }
     const { id, request, kind, plan, result, code, transfer, from, to, choices, near, routeKey, a, b, airline, share } = event.data;
     try {
-      if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
+      if (scope === 'simulation') {
+        port.postMessage({ id, result: simulate(plan) });
+        if (plan?.base) void warmOrigin(plan.base);
+      }
       else if (scope === 'airport') port.postMessage({ id, data: analyzeAirport(plan, result, code, transfer) });
       else if (scope === 'codeshare' && kind === 'deals') {
         // The impact of every codeshare and hosted deal in the plan: a whole week's simulation for each, so in slices,
