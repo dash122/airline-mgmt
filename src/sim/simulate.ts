@@ -37,7 +37,7 @@ export interface Plan {
   version: 2;
   base: string;
   fleet: Aircraft[];
-  /** Fare multiple per market (pairKey), 0.7 to 1.4. Default 1. */
+  /** Fare multiple per market (pairKey), 0.7 to 2. Default 1. */
   fares: Record<string, number>;
   /** Optional transfer hub: shorter minimum connections there, for a weekly fee. */
   hub?: string;
@@ -726,7 +726,7 @@ export const PAX_COST_PER_SEGMENT = 250;
 /** Share of ticket revenue that goes on sales, distribution and card fees. */
 export const SALES_COST_SHARE = 0.12;
 
-/** The player's fare multiple on a route (0.7 to 1.4, default 1). */
+/** The player's fare multiple on a route (0.7 to 2, default 1). */
 export const fareMultOf = (plan: Plan, key: string) => plan.fares[key] ?? 1;
 
 /** The plan's codeshare flights, as flights the player can sell connections on. */

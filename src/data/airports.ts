@@ -28,9 +28,9 @@ export interface Airport {
 
 /**
  * The data file carries a base weekly slot figure per airport size (hub 140, major 84, large 56, medium 35, small 14).
- * Slots were the limit on growing a network, so the game multiplies them: a hub allows about 20 departures an hour.
+ * Slots were the limit on growing a network, so the game multiplies them: a hub allows about 40 departures an hour.
  */
-export const SLOT_SCALE = 10;
+export const SLOT_SCALE = 20;
 
 const CURATED_PLACES = ['JP', 'TW', 'HK', 'MO'];
 /** Most people a small airport (one without a traffic figure) is taken to serve. */
