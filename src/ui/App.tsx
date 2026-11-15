@@ -1,5 +1,5 @@
 import { createComputeClient } from './compute-client';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
@@ -8,7 +8,10 @@ import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, loca
 import { CodeshareLink, CodeshareSheet } from './codeshare';
 import { HostedLink, HostedSheet } from './hosted';
 import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
-import MapCanvas, { LF_COLORS, type Selection, type Theme } from './MapCanvas';
+import { LF_COLORS } from './map-colors';
+import type { Selection, Theme } from './MapCanvas';
+// The map and its world geography (about 1 MB) load after the start screen, not before it.
+const MapCanvas = lazy(() => import('./MapCanvas'));
 import { AircraftSheet, ResultsSheet, RouteSheet, Sheet, SheetNavContext, routeName, type SheetNav, type SheetSize } from './sheets';
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
@@ -321,6 +324,7 @@ export default function App() {
     <CodeshareLink.Provider value={openCodeshare}>
     <HostedLink.Provider value={openHosted}>
     <div className={`app${stacked ? ' sheet-stacked' : ''}${homeCovered ? ' home-covered' : ''}${detent === 'compact' && !homeCovered ? ' map-mode' : ''}`} data-nav={navMove}>
+      <Suspense fallback={null}>
       <MapCanvas
         plan={plan}
         result={result}
@@ -343,6 +347,7 @@ export default function App() {
         onTapEmpty={() => { if (newRoute) return; if (stack.length) select(null); else setDetent('compact'); }}
         onDragRoute={(a, b) => planRoute(a, b)}
       />
+      </Suspense>
 
       <Island clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} note={toast}
         theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
