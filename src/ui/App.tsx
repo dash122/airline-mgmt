@@ -7,7 +7,7 @@ import { marketsReady, prepareMarkets } from '../sim/markets';
 import { addRoundTrip, airlineName, cycleOf, emptyPlan, hasCodeshare, hhmm, localMinutes, newAircraft, routePairs, setCodeshareShare, setHostedShare, toggleHosted, toggleCodeshare, utcFromLocal, warmCompetition, type NetworkResult, type Plan } from '../sim/simulate';
 import { CodeshareLink, CodeshareSheet } from './codeshare';
 import { HostedLink, HostedSheet } from './hosted';
-import { closeRoute, leaseFor, removeOneRoundTrip, unitOf, type Unit } from '../sim/schedule';
+import { closeRoute, leaseFor, removeOneRoundTrip, unitOf } from '../sim/schedule';
 import { LF_COLORS } from './map-colors';
 import type { Selection, Theme } from './MapCanvas';
 // The map and its world geography (about 1 MB) load after the start screen, not before it.
@@ -16,10 +16,16 @@ import { AircraftSheet, ResultsSheet, RouteSheet, Sheet, SheetNavContext, routeN
 import { AirportSheet, AirportsPanel } from './airports';
 import { airlines } from '../sim/competitors';
 import { AirlineLink, AirlineSheet, AirlinesPanel, type Section as AirlineSection } from './airlines';
-import { AddFlightSheet, FleetPanel, FlightEditor, GapSheet, LeaseSheet, RoutesPanel, SchedulePanel, type RoutesView } from './panels';
+import { FleetPanel, LeaseSheet, RoutesPanel, SchedulePanel, type RoutesView } from './panels';
+import { ServiceEditor, type ServiceTarget } from './service-editor';
 import { hkSigned, money } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
+import { loadNudges, NudgeCard, pickNudge, saveNudges, type NudgeMemory } from './nudge';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type GameState, type Speed } from './clock';
+
+const FASTEST = SPEEDS[SPEEDS.length - 1];
+/** The fast-forward button steps through these, then back to normal speed. */
+const RUN_SPEEDS = SPEEDS.filter((s): s is Exclude<Speed, 0> => s !== 0);
 
 const SAVE_KEY = 'waypoint.plan.v2';
 const GAME_KEY = 'waypoint.game.v1';
@@ -52,10 +58,8 @@ type Page = (Selection & { full?: boolean }) | { kind: 'report' };
 /** How the last page change should move: slide in, slide back, rise from the map, or not at all. */
 type NavMove = 'push' | 'back' | 'rise' | 'none';
 type Overlay =
-  | { kind: 'edit'; acId: string; leg: number }
-  | { kind: 'add'; key: string; prefer?: { from: string; dep: number; acId?: string; gap?: number }; returnGap?: { acId: string; t: number } }
-  | { kind: 'move'; acId: string; unit: Unit; key: string }
-  | { kind: 'gap'; acId: string; t: number }
+  /** The one service editor: add, move, retime, switch aircraft or cancel, depending on where it was opened. */
+  | { kind: 'svc'; target: ServiceTarget }
   | { kind: 'lease' }
   | { kind: 'codeshare'; airline: string; key: string; focus?: string }
   | { kind: 'hosted'; key: string; airline?: string }
@@ -125,6 +129,19 @@ export default function App() {
   const [airlineRoute, setAirlineRoute] = useState<string | null>(null);
   const [airlineTab, setAirlineTab] = useState<AirlineSection | undefined>(undefined);
   const [routesView, setRoutesView] = useState<RoutesView>('own');
+  // Hints and the first-session guide. A save that has already booked a few days skips the guide.
+  const [nudges, setNudges] = useState<NudgeMemory>(() => {
+    const m = loadNudges();
+    return !m.guideDone && (load<GameState>(GAME_KEY)?.history.length ?? 0) > 2 ? { ...m, guideDone: true } : m;
+  });
+  useEffect(() => saveNudges(nudges), [nudges]);
+  /** Fast-forward to the next booked day, then go back to the speed the player had. */
+  const skipping = useRef<Speed | null>(null);
+  const bookedDays = game?.history.length ?? 0;
+  useEffect(() => {
+    if (skipping.current === null || !clockRef.current) return;
+    clockRef.current.setSpeed(skipping.current); setSpeedState(skipping.current); skipping.current = null;
+  }, [bookedDays]);
 
   useEffect(() => { if (plan) save(SAVE_KEY, plan); }, [plan]);
   useEffect(() => { if (game) save(GAME_KEY, game); }, [game]);
@@ -212,7 +229,8 @@ export default function App() {
     setOverlay({ kind: 'new', from: base, to: null, pick: 'to' });
   }} />;
   const clock = clockRef.current;
-  const setSpeed = (s: Speed) => { clock.setSpeed(s); setSpeedState(s); };
+  const setSpeed = (s: Speed) => { skipping.current = null; clock.setSpeed(s); setSpeedState(s); };
+  const skipToResult = () => { const resume = speed === 0 ? 1 : speed; setSpeed(FASTEST); skipping.current = resume; };
 
   const update = (next: Plan) => setPlan(next);
   const reset = () => { setOverlay(null); setAirlineRoute(null); setAirlineTab(undefined); };
@@ -289,11 +307,16 @@ export default function App() {
       : section === 'market' ? { items: [['airports', '機場'], ['airlines', '航空公司']], value: panel, onPick: (id) => openTab(id as Panel) }
       : undefined,
   };
-  const editing = overlay?.kind === 'edit' ? plan.fleet.find((a) => a.id === overlay.acId) : undefined;
-  const editingUnit = editing && overlay?.kind === 'edit' && editing.legs[overlay.leg] ? unitOf(editing, overlay.leg) : null;
+  const editTarget = overlay?.kind === 'svc' && overlay.target.kind === 'flight' ? overlay.target : null;
+  const editing = editTarget ? plan.fleet.find((a) => a.id === editTarget.acId) : undefined;
+  const editingUnit = editing && editTarget && editing.legs[editTarget.leg] ? unitOf(editing, editTarget.leg) : null;
   const schedSel = editing && editingUnit ? { acId: editing.id, legs: Array.from({ length: editingUnit.count }, (_, k) => editingUnit.start + k) } : null;
   /** The home sheet stays mounted under pages, hidden, so it comes back where it was. */
   const homeCovered = stack.length > 0 || !!newRoute;
+  const nudgeNow = pickNudge(plan, result, game?.history ?? [], nudges);
+  // The routes list's own empty state already offers a new route; don't say it twice.
+  const nudge = nudgeNow?.run.kind === 'new' && panel === 'routes' && detent !== 'compact' ? null : nudgeNow;
+  const wide = typeof matchMedia === 'function' && matchMedia('(min-width: 820px)').matches;
   const showPanel = panel;
   /** Previous / next item in a list, for swiping across route and airport sheets. */
   const pagerFor = (list: string[], id: string, go: (id: string) => void) => {
@@ -344,18 +367,34 @@ export default function App() {
           else select({ kind: 'airport', id: code });
         }}
         onTapRoute={(key) => select({ kind: 'route', id: key })}
+        onHoldAirport={(code) => { if (!newRoute) planRoute(code); }}
         onTapEmpty={() => { if (newRoute) return; if (stack.length) select(null); else setDetent('compact'); }}
         onDragRoute={(a, b) => planRoute(a, b)}
       />
       </Suspense>
 
-      <Island clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} note={toast}
+      <Island clock={clock} base={plan.base} speed={speed} onSpeed={setSpeed} onSkip={skipToResult} skipping={skipping.current !== null} result={result} balance={game?.balance ?? 0} history={game?.history ?? []} note={toast}
         theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReport={() => { if (!reportOpen) push({ kind: 'report' }); }}
         onReset={() => {
           if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel('routes'); setDetent('compact'); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
 
+      {nudge && !stack.length && !overlay && (detent === 'compact' || wide) && (
+        <NudgeCard nudge={nudge} onDismiss={() => setNudges((m) => (nudge.step ? { ...m, guideDone: true } : { ...m, dismissed: [...m.dismissed, nudge.id] }))}
+          onRun={() => {
+            const r = nudge.run;
+            if (r.kind === 'new') planRoute(plan.hub ?? plan.base);
+            else if (r.kind === 'skip') skipToResult();
+            else if (r.kind === 'report') { setNudges((m) => ({ ...m, guideDone: true })); push({ kind: 'report' }); }
+            else if (r.kind === 'route') openRoute(r.key);
+            else {
+              const ac = plan.fleet.find((x) => x.id === r.id);
+              push({ kind: 'aircraft', id: r.id });
+              if (ac) setOverlay({ kind: 'svc', target: { kind: 'gap', acId: ac.id, t: ac.legs.length ? ac.legs[ac.legs.length - 1].dep + 60 : utcMorning(plan.base) } });
+            }
+          }} />
+      )}
       {result && !stack.length && !overlay && detent === 'compact' && (
         <div className="map-legend" aria-label="地圖圖例：航線顏色是載客率，越粗旅客越多">
           <span><i style={{ background: LF_COLORS.good }} />80%+</span>
@@ -375,9 +414,9 @@ export default function App() {
         <SheetNavContext.Provider value={pageNav}>
         <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => swap({ kind: 'route', id: k, full: routeFull }))} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
-          onAdd={() => setOverlay({ kind: 'add', key: routeKey })}
+          onAdd={() => setOverlay({ kind: 'svc', target: { kind: 'route', key: routeKey } })}
           onRemoveOne={() => removeOne(routeKey)}
-          onEditFlight={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
+          onEditFlight={(acId, leg) => setOverlay({ kind: 'svc', target: { kind: 'flight', acId, leg } })}
           onCloseRoute={() => { update(closeRoute(plan, routeKey)); setToast('已停飛'); pop(); }}
           onClose={() => select(null)} />
         </SheetNavContext.Provider>
@@ -387,8 +426,8 @@ export default function App() {
         <AircraftSheet key={aircraft.id} plan={plan} ac={aircraft} result={result?.aircraft[aircraft.id]}
           onChange={(ac) => update({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) })}
           onRemove={() => { update({ ...plan, fleet: plan.fleet.filter((x) => x.id !== aircraft.id) }); setToast(`已退租 ${aircraft.reg}`); pop(); }}
-          onEditFlight={(leg) => setOverlay({ kind: 'edit', acId: aircraft.id, leg })}
-          onAddHere={() => setOverlay({ kind: 'gap', acId: aircraft.id, t: aircraft.legs.length ? aircraft.legs[aircraft.legs.length - 1].dep + 60 : utcMorning(plan.base) })}
+          onEditFlight={(leg) => setOverlay({ kind: 'svc', target: { kind: 'flight', acId: aircraft.id, leg } })}
+          onAddHere={() => setOverlay({ kind: 'svc', target: { kind: 'gap', acId: aircraft.id, t: aircraft.legs.length ? aircraft.legs[aircraft.legs.length - 1].dep + 60 : utcMorning(plan.base) } })}
           onClose={() => select(null)} />
         </SheetNavContext.Provider>
       )}
@@ -398,9 +437,9 @@ export default function App() {
           onConnect={() => planRoute(airport)}
           onOpen={(to: string) => planRoute(airport, to)}
           onOpenPair={(a: string, b: string) => addTrip(a, b, undefined, true)}
-          onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'add', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } })}
+          onSuggest={(from: string, to: string, local: number) => setOverlay({ kind: 'svc', target: { kind: 'route', key: [from, to].sort().join('-'), prefer: { from, dep: utcFromLocal(from, local) } } })}
           onOpenRoute={openRoute}
-          onAddFlight={(key) => setOverlay({ kind: 'add', key })}
+          onAddFlight={(key) => setOverlay({ kind: 'svc', target: { kind: 'route', key } })}
           onRemoveFlight={removeOne}
           onToggleHub={() => {
             const on = plan.hub === airport;
@@ -437,15 +476,15 @@ export default function App() {
       {showPanel === 'routes' && (
         <RoutesPanel plan={plan} result={result} history={game?.history ?? []} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
-          onAdd={(key) => setOverlay({ kind: 'add', key })} onRemoveOne={removeOne} onClose={() => setDetent('compact')} />
+          onAdd={(key) => setOverlay({ kind: 'svc', target: { kind: 'route', key } })} onRemoveOne={removeOne} onClose={() => setDetent('compact')} />
       )}
       {marketsBuilt && showPanel === 'airports' && (
         <AirportsPanel plan={plan} result={result} onPick={(code) => push({ kind: 'airport', id: code })} onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'schedule' && (
         <SchedulePanel key={schedAirport?.airport ?? 'all'} plan={plan} result={result} now={clock.now()} selected={schedSel} preset={schedAirport}
-          onPickLeg={(acId, leg) => setOverlay({ kind: 'edit', acId, leg })}
-          onGap={(acId, t) => setOverlay({ kind: 'gap', acId, t })}
+          onPickLeg={(acId, leg) => setOverlay({ kind: 'svc', target: { kind: 'flight', acId, leg } })}
+          onGap={(acId, t) => setOverlay({ kind: 'svc', target: { kind: 'gap', acId, t } })}
           onChange={(next, msg) => { update(next); setToast(msg); }}
           onClose={() => setDetent('compact')} />
       )}
@@ -454,16 +493,10 @@ export default function App() {
       )}
       </SheetNavContext.Provider>
 
-      {overlay?.kind === 'edit' && (
-        <FlightEditor plan={plan} result={result} acId={overlay.acId} leg={overlay.leg}
-          onChange={(next, msg) => { update(next); if (msg) setToast(msg); }}
-          onMove={(acId, unit) => { const l = plan.fleet.find((x) => x.id === acId)!.legs[unit.start]; setOverlay({ kind: 'move', acId, unit, key: [l.from, l.to].sort().join('-') }); }}
+      {overlay?.kind === 'svc' && (
+        <ServiceEditor key={JSON.stringify(overlay.target)} plan={plan} result={result} target={overlay.target}
+          onApply={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
           onClose={() => setOverlay(null)} />
-      )}
-      {(overlay?.kind === 'add' || overlay?.kind === 'move') && (
-        <AddFlightSheet key={JSON.stringify(overlay)} plan={plan} routeKey={overlay.key} move={overlay.kind === 'move' ? { acId: overlay.acId, unit: overlay.unit } : undefined} prefer={overlay.kind === 'add' ? overlay.prefer : undefined}
-          onDone={(next, msg) => { update(next); setToast(msg); setOverlay(null); }}
-          onClose={() => setOverlay(overlay.kind === 'move' ? { kind: 'edit', acId: overlay.acId, leg: overlay.unit.start } : overlay.returnGap ? { kind: 'gap', ...overlay.returnGap } : null)} />
       )}
       {marketsBuilt && newRoute && (
         <NewRouteSheet plan={plan} result={result} state={newRoute}
@@ -471,11 +504,6 @@ export default function App() {
           onHint={setTransitHint}
           onDone={(next, msg, key) => { update(next); setToast(msg); setTransitHint(null); select({ kind: 'route', id: key }); }}
           onClose={() => { setOverlay(null); setTransitHint(null); }} />
-      )}
-      {overlay?.kind === 'gap' && (
-        <GapSheet plan={plan} acId={overlay.acId} t={overlay.t}
-          onChoose={(key, prefer) => setOverlay({ kind: 'add', key, prefer, returnGap: { acId: overlay.acId, t: overlay.t } })}
-          onClose={() => setOverlay(null)} />
       )}
       {marketsBuilt && overlay?.kind === 'codeshare' && (
         <SheetNavContext.Provider value={overNav}>
@@ -554,8 +582,8 @@ function TabIcon({ tab }: { tab: Panel | null }) {
  * theme and restarting. Notes (a day's result, "added a flight") show inside it for a moment, so nothing lands on a
  * sheet.
  */
-function Island({ clock, base, speed, onSpeed, result, balance, history, note, theme, onTheme, onReport, onReset }: {
-  clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void; result: NetworkResult | null; balance: number; history: DayRecord[];
+function Island({ clock, base, speed, onSpeed, onSkip, skipping, result, balance, history, note, theme, onTheme, onReport, onReset }: {
+  clock: GameClock; base: string; speed: Speed; onSpeed: (s: Speed) => void; onSkip: () => void; skipping: boolean; result: NetworkResult | null; balance: number; history: DayRecord[];
   note: string | null; theme: Theme; onTheme: () => void; onReport: () => void; onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -587,14 +615,19 @@ function Island({ clock, base, speed, onSpeed, result, balance, history, note, t
           {speed === 0 ? <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor" /></svg>
             : <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 2.5h2.6v11H4zM9.4 2.5H12v11H9.4z" fill="currentColor" /></svg>}
         </button>
+        <button className={`island-ff${speed > 1 ? ' on' : ''}`} aria-label={`加速，現在 ${speed === 0 ? lastRun.current : speed} 倍`}
+          onClick={() => { const cur = speed === 0 ? lastRun.current : speed; onSpeed(RUN_SPEEDS[(RUN_SPEEDS.indexOf(cur) + 1) % RUN_SPEEDS.length]); }}>
+          {speed > 1 ? `${speed}×` : <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M1.5 3v10l6.5-5zM8 3v10l6.5-5z" fill="currentColor" /></svg>}
+        </button>
       </div>
       {note && !open && <div className="island-note" role="status" key={note}>{note}</div>}
       {open && <>
         <div className="island-card">
-          <div className="seg four island-speed" role="group" aria-label="時間速度">
-            {SPEEDS.map((sp) => <button key={sp} className={speed === sp ? 'on' : ''} onClick={() => onSpeed(sp)} aria-label={sp === 0 ? '暫停' : `${sp} 倍速`}>{sp === 0 ? '暫停' : `${sp}×`}</button>)}
-          </div>
           <div className="island-list">
+            <button onClick={() => { close(); onSkip(); }} disabled={skipping}>
+              <span className="grow">{skipping ? '正在跳到結算…' : '跳到下次結算'}</span>
+              <span className="island-val">基地午夜結算一天</span>
+            </button>
             <button onClick={() => { close(); onReport(); }} disabled={!result}>
               <span className="grow">報表</span>
               <span className="island-val">{last ? <>上日 <b className={toneOf(last.revenue - last.cost)}>{money(last.revenue - last.cost)}</b></> : '尚未結算'}</span>
