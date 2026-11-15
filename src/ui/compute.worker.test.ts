@@ -15,7 +15,8 @@ it('skips superseded simulation edits before calculating', async () => {
     runtime.onmessage({ data: { scope: 'simulation', port } });
     port.onmessage({ data: { id: 1, plan: 'old' } });
     port.onmessage({ data: { id: 2, plan: 'latest' } });
-    await vi.runAllTimersAsync();
+    // The worker yields through a message channel, which fake timers don't advance, so wait for the answer.
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalled());
     expect(model.simulate).toHaveBeenCalledExactlyOnceWith('latest');
     expect(port.postMessage).toHaveBeenCalledExactlyOnceWith({ id: 2, result: 'latest' });
   } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }

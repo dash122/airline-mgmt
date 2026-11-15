@@ -15,6 +15,17 @@ let urgent = 0;
 /** Partners tried for one of your routes: the sheet shows the best 8, and each one tried is a full simulation. */
 const HOSTED_CANDIDATES = 10;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/**
+ * Lets other queued messages run. A nested setTimeout(0) is clamped to 4 ms by browsers, which was about 4 ms of idle
+ * time per simulation in the fare curve and the partner lists; a message-channel turn costs about 0.02 ms.
+ */
+const yieldTask = () => new Promise<void>((resolve) => {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+  channel.port2.postMessage(null);
+});
+/** Background lists (partner ideas, deal impacts) wait this long after the last edit, so a burst of edits doesn't start searches that are dropped at once. */
+const BACKGROUND_DEBOUNCE_MS = 150;
 const ranked = <T extends { active: boolean; gain: number }>(list: T[]) => [...list].sort((x, y) => Number(y.active) - Number(x.active) || y.gain - x.gain);
 
 self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'preview' | 'codeshare' | 'warm'; port: MessagePort }>) => {
@@ -23,12 +34,17 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
   // first simulation doesn't spend its first two seconds on it.
   if (scope === 'warm') { setTimeout(() => prepareMarkets(Infinity), 0); return; }
   let version = 0;
-  const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
   port.onmessage = async (event) => {
     const current = ++version;
     // Collapse superseded edits before doing expensive work.
     await yieldTask();
     if (current !== version) return;
+    const { kind: requested } = event.data;
+    const isSheet = !!requested && (requested.endsWith('options') || requested.endsWith('detail'));
+    if (scope === 'codeshare' && !isSheet) {
+      await sleep(BACKGROUND_DEBOUNCE_MS);
+      if (current !== version) return;
+    }
     const { id, request, kind, plan, result, code, transfer, from, to, choices, near, routeKey, a, b, airline, share } = event.data;
     try {
       if (scope === 'simulation') port.postMessage({ id, result: simulate(plan) });
@@ -110,6 +126,8 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
         while (!step.done) {
           if (performance.now() - sliceStart > 30) {
             await yieldTask();
+            // A sheet on screen goes first: the list picks up again once its requests are done.
+            while (urgent > 0) { await sleep(25); if (current !== version) return; }
             if (current !== version) return;
             port.postMessage({ id, ideas: best(), partial: true });
             sliceStart = performance.now();
