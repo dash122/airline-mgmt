@@ -2726,3 +2726,45 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .cs-foot .primary.wide .cs-foot-gain { margin-left: 6px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
 .cs-share-seg .cs-delta { display: block; color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 .cs-foot button.danger.confirm { background: var(--bad); color: #fff; border-color: var(--bad); }
+
+/* ---------- Icon-first controls ---------- */
+.island-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.island-tiles button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 64px; border: 0; border-radius: 14px; background: var(--bg); color: var(--text); font: inherit; }
+.island-tiles button small { font-size: var(--fs-2xs); color: var(--muted); }
+.island-tiles button b { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.island-tiles b.good { color: var(--good); } .island-tiles b.bad { color: var(--bad); }
+.island-tiles .danger-text { color: var(--bad); }
+.island-tiles button:disabled { opacity: .45; }
+.island-tiles button:active { background: var(--accent-soft); }
+
+.lease-cards { display: grid; gap: 8px; }
+.lease-card { display: grid; gap: 8px; padding: 12px 14px; border: 1.5px solid transparent; border-radius: 16px; background: var(--surface-2); cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.lease-card.pick { border-color: var(--accent); background: var(--accent-soft); }
+.lease-card.dim { opacity: .4; cursor: default; }
+.lease-head { display: flex; align-items: center; gap: 8px; }
+.lease-head b { font-size: var(--fs-md); flex: 1; }
+.lease-head .price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lease-bars { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.lease-bars > span { display: grid; gap: 4px; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--muted); }
+.lease-bars > span > em { font-style: normal; display: flex; align-items: center; gap: 4px; color: var(--text); font-weight: 650; }
+.lease-bars .meter { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.lease-bars .meter i { display: block; height: 100%; border-radius: 3px; }
+
+.timepick { flex-wrap: wrap; }
+.timepick .tp-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.timepick .tp-row button { width: 44px; height: 44px; min-width: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+.timepick .tp-row button:disabled { opacity: .35; }
+.timepick input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 4px 0 0; }
+.timepick .tp-ends { display: flex; justify-content: space-between; width: 100%; font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Compact layout: KPI tiles, icon-only inactive tabs ---------- */
+.kpis { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; margin: 0 0 8px; }
+.kpi { display: grid; gap: 4px; padding: 9px 12px; border-radius: 14px; background: var(--surface-2); min-width: 0; }
+.kpi-l { display: flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
+.kpi-v { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.kpi-v b { font-size: var(--fs-lg); line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-v small { color: var(--muted); font-size: var(--fs-2xs); }
+.kpi.good .kpi-v b { color: var(--good); } .kpi.bad .kpi-v b { color: var(--bad); } .kpi.warn .kpi-v b, .kpi.warn .kpi-l { color: var(--warn); }
+.list-tools { display: flex; justify-content: flex-end; margin: 0 0 4px; }
+.switcher button:not(.on) .tl { display: none; }
+.sheet-head { min-height: 0 !important; padding-top: 10px !important; padding-bottom: 6px !important; }

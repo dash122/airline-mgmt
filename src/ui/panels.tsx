@@ -8,11 +8,11 @@ import { pairKey } from '../sim/markets';
 import { byAirport, dayMark, timeline, zoneDiffHours, type ClockBasis } from '../sim/airports';
 import { shiftUnit } from '../sim/schedule';
 import { hhmm, routePairs, routeProblem, rotationInfo, runwayFits, topMarketsFrom, type Aircraft, type NetworkResult, type Plan } from '../sim/simulate';
-import { count, hkSigned, money, pct } from './format';
+import { count, money, pct } from './format';
 import { at, DayBar, PullDown, routeColor, Sheet, shortType, UtilBar } from './sheets';
 import { LoadPill } from './FlightLoads';
 import { healthRank, RouteRow, routeHealth } from './route-health';
-import { Badge, hm, IN, Icon } from './viz';
+import { Badge, hm, IN, Icon, Kpi, Meter } from './viz';
 
 const withAc = (plan: Plan, ac: Aircraft): Plan => ({ ...plan, fleet: plan.fleet.map((x) => (x.id === ac.id ? ac : x)) });
 const dur = hm;
@@ -55,6 +55,8 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
   };
   const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
   const shown = rows.slice().sort(by[sort]);
+  const loads = rows.filter((r) => r.figures).map((r) => r.figures!.loadFactor);
+  const avgLoad = loads.length ? loads.reduce((x, y) => x + y, 0) / loads.length : 0;
   const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
   const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
   const groups = [...new Set(shown.map((r) => r.home))]
@@ -62,7 +64,6 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
     .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
-      sub={rows.length > 0 && view === 'own' ? <>每日 {daily} 班來回{todo.length > 0 && <> · <b className="warn">{todo.length} 條要處理</b></>}</> : undefined}
       info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。金額是港幣（HK$）。航線週損益不含租金。</p>}
       action={rows.length > 0 && <button className="primary small" onClick={onNew}>＋ 新航線</button>}>
       {rows.length > 0 && (
@@ -82,10 +83,15 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
         </div>
       )}
       {rows.length > 0 && (
-        <div className="routes-summary">
-          <span><small>週損益</small><b className={total >= 0 ? 'good' : 'bad'}>{hkSigned(total)}</b></span>
-          {rows.length > 1 && <PullDown label="排序" items={SORTS} value={sort} onPick={setSort} />}
-        </div>
+        <>
+          <div className="kpis">
+            <Kpi n="money" label="週損益" v={`${total >= 0 ? '+' : ''}${money(total)}`} tone={total >= 0 ? 'good' : 'bad'} />
+            <Kpi n="seat" label="載客" v={pct(avgLoad)} ring={avgLoad} tone={avgLoad >= 0.8 ? 'good' : avgLoad >= 0.6 ? 'warn' : 'bad'} />
+            <Kpi n="plane" label="班/日" v={daily} />
+            {todo.length > 0 && <Kpi n="warn" label="待處理" v={todo.length} tone="warn" />}
+          </div>
+          {rows.length > 1 && <div className="list-tools"><PullDown label="排序" items={SORTS} value={sort} onPick={setSort} /></div>}
+        </>
       )}
       {groups.map((g) => {
         const sum = g.rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
@@ -107,7 +113,6 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
           </section>
         );
       })}
-      {rows.length > 0 && <p className="swipe-hint" aria-hidden="true">左右滑動 −/＋ 班</p>}
       </>}
     </Sheet>
   );
@@ -226,8 +231,7 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
 }) {
   const avg = plan.fleet.length ? plan.fleet.reduce((s, a) => s + rotationInfo(a).utilisation, 0) / plan.fleet.length : 0;
   return (
-    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`} sub={<span className="ins"><IN n="util" v={pct(avg)} label="平均利用率" w="利用率" /><IN n="lease" v={`${money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))}/週`} label="租金" w="租金" /></span>}
-      info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
+    <Sheet size="full" title={`機隊 · ${plan.fleet.length}`}       info={plan.fleet.length > 0 && <p>損益是每週，含租金。色條是飛機的一天（{AIRPORT_BY_CODE[plan.base].name}時間），每個色塊是一個航班。</p>}
       onClose={onClose} action={plan.fleet.length > 0 && <button className="primary small" onClick={onLease}>租飛機</button>}>
       {plan.fleet.length === 0 && (
         <div className="empty-cta">
@@ -237,7 +241,12 @@ export function FleetPanel({ plan, result, onPick, onLease, onClose }: {
           <button className="primary wide" onClick={onLease}>租飛機</button>
         </div>
       )}
-      {plan.fleet.length > 0 && <div className="list-cap"><span>飛機的一天</span><span>週損益</span></div>}
+      {plan.fleet.length > 0 && (
+        <div className="kpis">
+          <Kpi n="util" label="利用率" v={pct(avg)} ring={avg} tone={avg >= 0.5 ? 'good' : 'warn'} />
+          <Kpi n="lease" label="租金/週" v={money(plan.fleet.reduce((s, a) => s + AIRCRAFT[a.type].ownershipPerWeek, 0))} />
+        </div>
+      )}
       <ul className="fleet">
         {plan.fleet.map((ac) => {
           const info = rotationInfo(ac);
@@ -276,6 +285,8 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
   const fitsBase = (t: AircraftModel) => runwayFits(AIRCRAFT[t], base);
   const [pick, setPick] = useState<AircraftModel>(() => MODEL_ORDER.find((t) => t === 'A20N' && fitsBase(t)) ?? MODEL_ORDER.find(fitsBase)!);
   const dests = topMarketsFrom(plan.base, plan, 40).filter((m) => !routeProblem(plan.base, m.to, pick)).slice(0, 8);
+  const maxSeats = Math.max(...MODEL_ORDER.map((t) => AIRCRAFT[t].seats)), maxRange = Math.max(...MODEL_ORDER.map((t) => AIRCRAFT[t].rangeKm));
+  const costs = MODEL_ORDER.map(seatKmCost), cheapest = Math.min(...costs), priciest = Math.max(...costs);
   const flyable = (t: AircraftModel) => routes.filter((r) => !routeProblem(r.a, r.b, t)).length;
   return (
     <Sheet over size="full" title="租飛機" sub={<IN n="base" v={base.name} label="停在" w="停在" />} onClose={onClose}
@@ -291,26 +302,27 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
         </div>
         <button className="ghost" onClick={() => onLease(pick, null)}>只租，稍後排班</button>
       </div>}>
-      <div className="cmp-wrap">
-        <table className="cmp">
-          <thead><tr><th>機型</th><th>座位</th><th>航程</th><th>租金/週</th><th>每座公里</th>{routes.length > 0 && <th>可飛</th>}</tr></thead>
-          <tbody>
-            {MODEL_ORDER.map((t) => {
-              const s = AIRCRAFT[t];
-              const ok = fitsBase(t);
-              return (
-                <tr key={t} className={`${pick === t ? 'pick' : ''}${ok ? '' : ' dim'}`} onClick={() => ok && setPick(t)}>
-                  <td><b>{shortType(t)}</b></td>
-                  <td>{s.seats}</td>
-                  <td>{count(s.rangeKm)}</td>
-                  <td>{money(s.ownershipPerWeek)}</td>
-                  <td>{seatKmCost(t).toFixed(2)}</td>
-                  {routes.length > 0 && <td>{flyable(t)}/{routes.length}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="lease-cards" role="listbox" aria-label="機型">
+        {MODEL_ORDER.map((t) => {
+          const s = AIRCRAFT[t];
+          const ok = fitsBase(t);
+          const eff = 1 - Math.min(1, Math.max(0, (seatKmCost(t) - cheapest) / (priciest - cheapest || 1)));
+          return (
+            <button key={t} role="option" aria-selected={pick === t} className={`lease-card${pick === t ? ' pick' : ''}${ok ? '' : ' dim'}`} onClick={() => ok && setPick(t)}>
+              <span className="lease-head">
+                <b>{shortType(t)}</b>
+                {!ok && <Icon n="lock" label="跑道太短" />}
+                {routes.length > 0 && <small title="可飛的航線"><Icon n="route" /> {flyable(t)}/{routes.length}</small>}
+                <span className="price" title="租金/週"><Icon n="lease" /> {money(s.ownershipPerWeek)}</span>
+              </span>
+              <span className="lease-bars">
+                <span title="座位"><em><Icon n="seat" />{s.seats}</em><Meter value={s.seats / maxSeats} /></span>
+                <span title="航程 km"><em><Icon n="long" />{count(s.rangeKm)}</em><Meter value={s.rangeKm / maxRange} tone="accent" /></span>
+                <span title="越長越省（每座公里）"><em><Icon n="fast" />{seatKmCost(t).toFixed(2)}</em><Meter value={eff} tone="good" /></span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </Sheet>
   );
@@ -320,15 +332,19 @@ export function LeaseSheet({ plan, onLease, onClose }: { plan: Plan; onLease: (t
 
 export function TimeStepper({ code, dep, lo, hi, onChange }: { code: string; dep: number; lo: number; hi: number; onChange: (dep: number) => void }) {
   const set = (d: number) => onChange(Math.max(lo, Math.min(hi, dep + d)));
-  const steps = [-60, -15, 15, 60];
   return (
     <div className="timepick">
-      {steps.slice(0, 2).map((d) => <button key={d} onClick={() => set(d)} disabled={dep + d < lo && dep <= lo}>{d}</button>)}
-      <output>{at(code, dep)}</output>
-      {steps.slice(2).map((d) => <button key={d} onClick={() => set(d)} disabled={dep + d > hi && dep >= hi}>+{d}</button>)}
+      <div className="tp-row">
+        <button onClick={() => set(-60)} disabled={dep <= lo} aria-label="早 1 小時" title="−1h"><Icon n="back" size={20} /></button>
+        <button onClick={() => set(-15)} disabled={dep <= lo} aria-label="早 15 分鐘" title="−15m"><Icon n="minus" size={20} /></button>
+        <output>{at(code, dep)}</output>
+        <button onClick={() => set(15)} disabled={dep >= hi} aria-label="晚 15 分鐘" title="+15m"><Icon n="plus" size={20} /></button>
+        <button onClick={() => set(60)} disabled={dep >= hi} aria-label="晚 1 小時" title="+1h"><Icon n="fwd" size={20} /></button>
+      </div>
+      {hi > lo && <input type="range" min={lo} max={hi} step={15} value={Math.max(lo, Math.min(hi, dep))} aria-label="出發時間" onChange={(e) => onChange(Number(e.target.value))} />}
+      {hi > lo && <div className="tp-ends"><span>{at(code, lo)}</span><span>{at(code, hi)}</span></div>}
     </div>
   );
 }
-
 
 export { UtilBar };

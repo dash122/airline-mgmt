@@ -21,6 +21,7 @@ import { ServiceEditor, type ServiceTarget } from './service-editor';
 import { hkSigned, money } from './format';
 import { NewRouteSheet, type NewRouteState } from './NewRoute';
 import { loadNudges, NudgeCard, pickNudge, saveNudges, type NudgeMemory } from './nudge';
+import { Icon } from './viz';
 import { dayAt, GameClock, HISTORY_DAYS, newGame, SPEEDS, type DayRecord, type GameState, type Speed } from './clock';
 
 const FASTEST = SPEEDS[SPEEDS.length - 1];
@@ -300,8 +301,8 @@ export default function App() {
   const homeNav: SheetNav = {
     detent, onDetent: setDetent,
     switcher: <div className="switcher" role="tablist" aria-label="主要導覽">
-      {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-selected={section === id} className={section === id ? 'on' : ''}
-        onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} />{label}</button>)}
+      {SECTIONS.map(([id, label, first]) => <button key={id} role="tab" aria-label={label} aria-selected={section === id} className={section === id ? 'on' : ''}
+        onClick={() => { if (section !== id) openTab(first); else if (detent === 'compact') setDetent('half'); }}><TabIcon tab={first} /><span className="tl">{label}</span></button>)}
     </div>,
     menu: section === 'fleet' ? { items: [['fleet', '飛機'], ['schedule', '班表']], value: panel, onPick: (id) => openTab(id as Panel) }
       : section === 'market' ? { items: [['airports', '機場'], ['airlines', '航空公司']], value: panel, onPick: (id) => openTab(id as Panel) }
@@ -623,18 +624,19 @@ function Island({ clock, base, speed, onSpeed, onSkip, skipping, result, balance
       {note && !open && <div className="island-note" role="status" key={note}>{note}</div>}
       {open && <>
         <div className="island-card">
-          <div className="island-list">
-            <button onClick={() => { close(); onSkip(); }} disabled={skipping}>
-              <span className="grow">{skipping ? '正在跳到結算…' : '跳到下次結算'}</span>
-              <span className="island-val">基地午夜結算一天</span>
+          <div className="island-tiles">
+            <button onClick={() => { close(); onSkip(); }} disabled={skipping} aria-label="跳到下次結算" title="跳到下次結算">
+              <Icon n="skip" size={22} />
             </button>
-            <button onClick={() => { close(); onReport(); }} disabled={!result}>
-              <span className="grow">報表</span>
-              <span className="island-val">{last ? <>上日 <b className={toneOf(last.revenue - last.cost)}>{money(last.revenue - last.cost)}</b></> : '尚未結算'}</span>
-              <span className="chev" aria-hidden="true" />
+            <button onClick={() => { close(); onReport(); }} disabled={!result} aria-label="報表" title="報表">
+              <Icon n="chart" size={22} />{last ? <b className={toneOf(last.revenue - last.cost)}>{money(last.revenue - last.cost)}</b> : null}
             </button>
-            <button onClick={() => { onTheme(); }}><span className="grow">{theme === 'day' ? '夜間模式' : '日間模式'}</span></button>
-            <button className="danger-text" onClick={() => { close(); onReset(); }}><span className="grow">重新開始</span></button>
+            <button onClick={() => { onTheme(); }} aria-label={theme === 'day' ? '夜間模式' : '日間模式'} title={theme === 'day' ? '夜間模式' : '日間模式'}>
+              <Icon n={theme === 'day' ? 'moon' : 'sun'} size={22} />
+            </button>
+            <button className="danger-text" onClick={() => { close(); onReset(); }} aria-label="重新開始" title="重新開始">
+              <Icon n="reset" size={22} />
+            </button>
           </div>
         </div>
       </>}
