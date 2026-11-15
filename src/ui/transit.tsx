@@ -139,7 +139,7 @@ function More({ list, page, render }: { list: Linkage[]; page: number; render: (
   return (
     <>
       <ul className="trs">{list.slice(0, shown).map(render)}</ul>
-      {list.length > shown && <button className="secondary" onClick={() => setShown(shown + page * 2)}>再顯示 {Math.min(page * 2, list.length - shown)} 個</button>}
+      {list.length > shown && <button className="bridge-more" onClick={() => setShown(shown + page * 2)}>再看 {Math.min(page * 2, list.length - shown)} 個</button>}
     </>
   );
 }
@@ -150,7 +150,7 @@ function ShowSome<T>({ list, page, className, render }: { list: T[]; page: numbe
   return (
     <>
       <ul className={className}>{(all ? list : list.slice(0, page)).map(render)}</ul>
-      {!all && list.length > page && <button className="secondary" onClick={() => setAll(true)}>再顯示 {list.length - page} 個</button>}
+      {!all && list.length > page && <button className="bridge-more" onClick={() => setAll(true)}>再看 {list.length - page} 個</button>}
     </>
   );
 }
@@ -256,7 +256,7 @@ export function HubTransitView({ hub, net, transit, ideas, transfer, onOpenPair,
         <>
           <h4>開新航線</h4>
           <HubIdeas hub={hub} ideas={ideas.slice(0, ideasShown)} onOpenPair={onOpenPair} />
-          {ideas.length > ideasShown && <button className="secondary" onClick={() => setIdeasShown(ideas.length)}>再顯示 {ideas.length - ideasShown} 條</button>}
+          {ideas.length > ideasShown && <button className="bridge-more" onClick={() => setIdeasShown(ideas.length)}>再看 {ideas.length - ideasShown} 條</button>}
         </>
       )}
     </>

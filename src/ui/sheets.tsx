@@ -433,7 +433,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
             {routeCompetitors.length > 4 && <span className="hint">及其他航空公司</span>}</div>}
         </details>
       </>}
-      {result && <div className="route-partners"><HostedNote net={net} routeKey={routeKey} /><RouteExtensions plan={plan} a={a} b={b} /></div>}
+      {result && tab === 'market' && <div className="route-partners"><HostedNote net={net} routeKey={routeKey} /><RouteExtensions plan={plan} a={a} b={b} /></div>}
     </Sheet>
   );
 }

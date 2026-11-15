@@ -122,7 +122,7 @@ function OutHub({ plan, deals, onOpen, onShare, onPartners }: {
           ))}
         </ul>
       )}
-      {ideas && ideas.ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN)}>再顯示 {Math.min(SHOWN, ideas.ideas.length - shown)} 條</button>}
+      {ideas && ideas.ideas.length > shown && <button className="bridge-more" onClick={() => setShown(shown + SHOWN)}>再看 {Math.min(SHOWN, ideas.ideas.length - shown)} 條</button>}
       <div className="chips"><button className="chip" onClick={onPartners}><Icon n="rival" /> 按航空公司找</button></div>
     </>
   );
@@ -233,7 +233,7 @@ export function CodeshareTab({ plan, net, onToggle }: { plan: Plan; net: Airline
       {!calc.done && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 正在比較各條航線</div>}
       {calc.done && ideas.length === 0 && <div className="hint center">它的航線接不上你的航班</div>}
       <ul className="cs-ideas">{ideas.slice(0, shown).map(row)}</ul>
-      {ideas.length > shown && <button className="secondary" onClick={() => setShown(shown + SHOWN * 2)}>再顯示 {Math.min(SHOWN * 2, ideas.length - shown)} 條</button>}
+      {ideas.length > shown && <button className="bridge-more" onClick={() => setShown(shown + SHOWN * 2)}>再看 {Math.min(SHOWN * 2, ideas.length - shown)} 條</button>}
     </>
   );
 }

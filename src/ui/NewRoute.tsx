@@ -127,6 +127,7 @@ function PickStep({ plan, from, field, ends, onChoose, onHint, onBack, onClose }
         <>
           {destinationWorkerError && <div className="hint">背景計算無法啟動，已改用本機計算。</div>}
           {rows.length === 0 && <div className="hint center">{destinationState?.plan !== plan || destinationState.from !== from ? '正在計算目的地…' : q.trim() ? '找不到' : '沒有可飛的目的地'}</div>}
+          {rows.length > 0 && <div className="list-cap"><span>目的地</span><span>每日一班 · 人/週</span></div>}
           <ul className="dests">
             {rows.map((d) => <DestRow key={d.code} from={from} d={d} onPick={() => onChoose(d.code)} />)}
           </ul>
@@ -164,7 +165,7 @@ function DestRow({ from, d, onPick }: { from: string; d: Destination; onPick: ()
         </span>
         {d.problem
           ? <span className="est muted">{d.problem}</span>
-          : <span className={`est ${seats && d.est >= seats * 0.8 ? 'good' : d.est >= seats * 0.5 ? 'warn' : 'bad'}`} title="每日一班直飛，每週約載"><b>{short(d.est)}</b><small>人/週</small></span>}
+          : <span className={`est ${seats && d.est >= seats * 0.8 ? 'good' : d.est >= seats * 0.5 ? 'warn' : 'bad'}`} title="每日一班直飛，每週約載"><b>{short(d.est)}</b></span>}
       </button>
     </li>
   );
