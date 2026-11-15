@@ -209,6 +209,8 @@ const gravityKm = (distKm: number) => {
 
 /** Annual passengers assumed for an airport outside the home region with no traffic figure (small airports carry 0.3M to 1.1M). */
 const NO_DATA_TRAFFIC_M = 0.6;
+/** Annual passengers (millions) assumed for a large airport with no traffic figure: the medium-tier floor. */
+const LARGE_NO_DATA_TRAFFIC_M = 1.2;
 
 /** Annual passengers (millions) from which an airport draws its full share of long-haul travel; below it, in proportion. */
 const LONG_HAUL_HUB_M = 60;
@@ -258,11 +260,12 @@ function* buildMarkets(): Generator<void, Map<string, Market>> {
   // Travellers changing planes are left out: Doha's 53 million passengers are mostly passing through, not Qatar's own.
   // An airport with no traffic figure is a small one (under about a million passengers a year), so it is sized like
   // one: by its people it drew as much as a 6-million-passenger airport, and tiny airports in Madagascar or Cambodia
-  // topped Tokyo's transit markets.
+  // topped Tokyo's transit markets. The exception is a large airport (OurAirports' large type), assumed at the medium
+  // floor, so that large airports without a figure can draw competitor service at all.
   const sizes = AIRPORTS.map((a) => {
     const curated = ['JP', 'TW', 'HK', 'MO'].includes(a.country);
     const size = curated ? a.catchment * (isIsland(a) ? ISLAND_PROPENSITY : 1)
-      : ((ANNUAL_TRAFFIC_M[a.code] ?? Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6)) * (1 - transferShare(a.code)) * 1e6) / 3;
+      : ((ANNUAL_TRAFFIC_M[a.code] ?? (a.size === 'large' ? LARGE_NO_DATA_TRAFFIC_M : Math.min(NO_DATA_TRAFFIC_M, (3 * a.catchment) / 1e6))) * (1 - transferShare(a.code)) * 1e6) / 3;
     return size * (TRAVEL_PROPENSITY[a.country] ?? 1) * a.tourism;
   });
   const mass = sizes.map((x) => Math.pow(x, MASS_EXPONENT));

@@ -6,8 +6,15 @@
 // Dublin: DAA full-year 2024 results, 34,645,335 passengers (includes about 1.35 million connecting). Wikidata has no figure,
 // so without this Dublin was sized as a small airport and drew no competitor service.
 // https://www.daa.ie/?p=11309
+// Large airports with no Wikidata figure, so they were sized as small airports with no competitor service.
+// Islamabad: about 6.2 million, fiscal 2023/24 (Wikipedia list of Pakistan airports, not a calendar-2024 report).
+// Yangon: 5.5 million, 85% of the 2019 record of 6.5 million (no 2024 figure found; the README's rule for missing years).
+// Only figures of 4 million or more are added: a smaller figure can put an airport among a hub's top transit destinations.
+// Left out: Vientiane (2.3M), Borg El Arab (2.0M) and Siem Reap (about 1.4M) for that reason; Kinshasa, La Paz and Kabul
+// because their only figures came from unverified aggregators or national totals.
 const ACI_AND_AIRPORT_REPORTS: Readonly<Record<string, number>> = {
   ATL: 108.1, DXB: 92.3, DFW: 87.8, HND: 85.9, LHR: 83.9, DUB: 34.6,
+  ISB: 6.2, RGN: 5.5,
   DEN: 82.4, IST: 80.1, ORD: 80, DEL: 77.8, PVG: 76.8,
   LAX: 76.6, CAN: 76.4, ICN: 70.7, CDG: 70.3, SIN: 67.7,
   PEK: 67.7, AMS: 66.8, MAD: 66.2, JFK: 63.3, BKK: 62.2,

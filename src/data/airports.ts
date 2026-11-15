@@ -48,7 +48,7 @@ for (const a of data as Airport[]) metroTraffic.set(metroKey(a), (metroTraffic.g
 export const AIRPORTS: Airport[] = (data as Airport[]).map((a) => {
   const traffic = ANNUAL_TRAFFIC_M[a.code];
   const curated = CURATED_PLACES.includes(a.country);
-  const size = traffic ? (curated ? (traffic >= 35 ? 'hub' : 'major') : tierFromTraffic(traffic)) : curated ? a.size : 'small';
+  const size = traffic ? (curated ? (traffic >= 35 ? 'hub' : 'major') : tierFromTraffic(traffic)) : curated || a.size === 'large' ? a.size : 'small';
   const pop = reference[a.code]?.pop;
   const share = !curated && pop ? Math.round(pop * ((traffic ?? 0.3) / (metroTraffic.get(metroKey(a)) ?? 1))) : a.catchment;
   // Some reference populations are a whole state or province (Noida 246M, Gwadar 224M). An airport with no traffic
