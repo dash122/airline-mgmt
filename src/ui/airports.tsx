@@ -164,7 +164,7 @@ const minConnectLabel = (plan: Plan, code: string) => {
 
 // ---------- Airports tab ----------
 
-const ORDERS = [['busy', '班次'], ['profit', '損益'], ['transfer', '轉機']] as const;
+const ORDERS = [['busy', '班次'], ['profit', '分攤損益'], ['transfer', '轉機']] as const;
 
 export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; result: NetworkResult | null; onPick: (code: string) => void; onClose: () => void }) {
   const [order, setOrder] = useState<'busy' | 'profit' | 'transfer'>('busy');
@@ -173,13 +173,13 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
   return (
     <Sheet size="full" title={`機場 · ${rows.length}`} onClose={onClose}
       info={<>
-        <p>損益：每條航線兩端各算一半，不含租金。色條是時間帶用量。</p>
+        <p>分攤損益：每條航線的週損益兩端各算一半（不含租金），所以全部機場加起來等於航線總和。色條是時間帶用量。</p>
         {plan.hub && <p>轉運站 {plan.hub}：每週 {money(HUB_COST_PER_WEEK)}，轉機最短時間縮短 {HUB_MCT_CUT} 分鐘。</p>}
       </>}>
       {rows.length === 0 && <div className="hint center">還沒有機場</div>}
       {rows.length > 1 && <div className="list-head">
         <PullDown label="排序" items={ORDERS} value={order} onPick={setOrder} />
-        <span className="list-cap-r">週損益</span>
+        <span className="list-cap-r">分攤損益/週</span>
       </div>}
       <ul className="stations">
         {rows.map((r) => {
@@ -191,7 +191,7 @@ export function AirportsPanel({ plan, result, onPick, onClose }: { plan: Plan; r
                   <span className="ins"><IN n="route" v={r.routes} label="航線" u="條航線" /><IN n="plane" v={r.departures} label="出發班次/週" u="班/週" />{order === 'transfer' && r.transferPax > 0
                     ? <IN n="transfer" v={count(r.transferPax)} label="轉機/週" w="轉機" u="人/週" />
                     : <IN n="pax" v={count(r.pax)} label="旅客/週" u="人/週" />}</span></span>
-                {r.profit !== null && <b className={`fleet-profit ${r.profit >= 0 ? 'good' : 'bad'}`} title="分攤到這個機場的航線週損益，不含租金">{r.profit >= 0 ? '+' : ''}{money(r.profit)}</b>}
+                {r.profit !== null && <b className={`fleet-profit ${r.profit >= 0 ? 'good' : 'bad'}`} title="每條航線兩端各分一半的週損益，不含租金" aria-label={`分攤損益 ${money(r.profit)}`}>{r.profit >= 0 ? '+' : ''}{money(r.profit)}</b>}
               </div>
               {use >= 0.7 && <div className="util" title={`時間帶 ${r.departures}/${r.slotCap}`}><div className={`util-fill ${use >= 0.9 ? 'bad' : 'warn'}`} style={{ width: `${Math.min(100, use * 100)}%` }} /></div>}
               {use >= 0.7 && <small className="slots"><IN n="calendar" v={`${r.departures}/${r.slotCap}`} label="時間帶（每週出發）" w="時間帶" tone={use >= 0.9 ? 'bad' : 'warn'} /></small>}

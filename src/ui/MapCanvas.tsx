@@ -31,6 +31,8 @@ interface Props {
   onTapRoute: (id: string) => void;
   onTapEmpty: () => void;
   onDragRoute: (a: string, b: string) => void;
+  /** Press and hold an airport: plan a new route from it (drag to another airport to pick both ends). */
+  onHoldAirport?: (code: string) => void;
 }
 
 const PALETTE = {
@@ -83,6 +85,9 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)));
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
+
+/** How long a press on an airport is held before it starts a new route from there. */
+const HOLD_MS = 450;
 
 export default function MapCanvas(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -570,6 +575,8 @@ export default function MapCanvas(props: Props) {
     let mode: 'none' | 'pan' | 'route' | 'pinch' = 'none';
     let downAt = { x: 0, y: 0 };
     let moved = 0;
+    let held = false;
+    let holdTimer: ReturnType<typeof setTimeout> | undefined;
     let pinchStart: { dist: number; view: View; mid: { x: number; y: number } } | null = null;
 
     const local = (e: PointerEvent | WheelEvent) => {
@@ -616,6 +623,15 @@ export default function MapCanvas(props: Props) {
       const ap = airportAt(pt.x, pt.y);
       mode = e.pointerType === 'mouse' && e.shiftKey && ap ? 'route' : 'pan';
       if (mode === 'route' && ap) dragRef.current = { from: ap, x: pt.x, y: pt.y };
+      held = false;
+      clearTimeout(holdTimer);
+      // Holding still on an airport turns the gesture into drawing a route from it.
+      if (mode === 'pan' && ap) holdTimer = setTimeout(() => {
+        if (mode !== 'pan' || moved >= 8 || pointers.size !== 1) return;
+        mode = 'route'; held = true;
+        dragRef.current = { from: ap, x: downAt.x, y: downAt.y };
+        navigator.vibrate?.(10);
+      }, HOLD_MS);
     };
     const onMove = (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return;
@@ -633,6 +649,7 @@ export default function MapCanvas(props: Props) {
         return;
       }
       moved = Math.max(moved, Math.hypot(pt.x - downAt.x, pt.y - downAt.y));
+      if (moved >= 8 && !held) clearTimeout(holdTimer);
       if (mode === 'pan') {
         const v = viewRef.current!;
         viewRef.current = { ...v, cx: v.cx - (pt.x - prev.x) / v.scale, cy: v.cy + (pt.y - prev.y) / v.scale };
@@ -644,6 +661,7 @@ export default function MapCanvas(props: Props) {
       if (!pointers.has(e.pointerId)) return;
       const pt = local(e);
       pointers.delete(e.pointerId);
+      clearTimeout(holdTimer);
       const p = propsRef.current;
       if (mode === 'pinch') {
         if (pointers.size === 0) mode = 'none';
@@ -653,11 +671,11 @@ export default function MapCanvas(props: Props) {
       if (mode === 'route' && dragRef.current) {
         const from = dragRef.current.from;
         dragRef.current = null;
-        if (tap) p.onTapAirport(from);
-        else {
-          const to = airportAt(pt.x, pt.y);
-          if (to && to !== from) p.onDragRoute(from, to);
-        }
+        const to = tap ? null : airportAt(pt.x, pt.y);
+        if (to && to !== from) p.onDragRoute(from, to);
+        else if (held && p.onHoldAirport) p.onHoldAirport(from);
+        else if (tap) p.onTapAirport(from);
+        held = false;
       } else if (mode === 'pan' && tap) {
         const ap = airportAt(pt.x, pt.y);
         if (ap) p.onTapAirport(ap);
@@ -671,6 +689,7 @@ export default function MapCanvas(props: Props) {
     };
     const onCancel = (e: PointerEvent) => {
       pointers.delete(e.pointerId);
+      clearTimeout(holdTimer); held = false;
       dragRef.current = null;
       mode = pointers.size ? 'pinch' : 'none';
       pinchStart = null;
@@ -692,6 +711,7 @@ export default function MapCanvas(props: Props) {
     draw(performance.now());
     return () => {
       cancelAnimationFrame(raf);
+      clearTimeout(holdTimer);
       ro.disconnect();
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);

@@ -22,12 +22,12 @@ These keep the screens consistent; new screens should follow them.
 - **One headline per screen.** A figure appears once. If a readout card already shows it, do not repeat it in a banner, a tile or a footer.
 - **Terms.** 租用 is said once where it matters (the plan readout), not on every tile.
 
-## Not built yet
-
-1. **One service editor.** Adding a round trip, moving one, switching aircraft and cancelling still go through separate sheets (`AddFlightSheet`, `GapSheet`, the edit overlay). Merge them into one editor that takes its defaults from where it was opened, previews in draft state, and applies on confirmation.
-2. **Next-action prompts.** One dismissible hint at a time, starting with an empty network, an idle aircraft and a loss-making route. Store dismissal separately from the plan and game saves.
-3. **First-session guidance.** Choose base → open first route → read the first booked result, with time controls explained before fast-forward is suggested.
-4. **Airport profit pill.** Each airport's profit is its share of the routes that touch it, so the figures add up to the network total but two ends of one route show the same number. A clearer label or a split view would help.
+- **One service editor** (`src/ui/service-editor.tsx`). Adding a round trip, retiming one, switching aircraft and cancelling all happen in one sheet. It takes its defaults from where it was opened (a flight, a route's ＋, or a gap in an aircraft's day, which first asks where to fly). Changes stay a draft and are previewed with the whole network's weekly profit change until the single apply button. Other aircraft and leases sit behind one 換飛機 row.
+- **Next-action prompts and first-session guide** (`src/ui/nudge.tsx`). One card under the status pill, one at a time: a three-step guide for new players (open a route → let a day pass → read the report), then hints for an empty network, an idle or barely used aircraft and the worst loss-making route. Dismissals are stored under `waypoint.hints.v1`, separate from plan and game saves.
+- **Time controls.** Play/pause plus one fast-forward button that cycles 1× / 4× / 12×. 跳到下次結算 in the pill's menu (and in the guide) runs at full speed until the next day is booked, then goes back to the previous speed.
+- **Fewer controls.** The schedule list's two switches (departures/arrivals and local/base time) are one 顯示 pull-down. The fleet list's empty state carries the lease button.
+- **Airport profit** is labelled 分攤損益 (each route's profit split half to each end), so it no longer reads as double counting.
+- **Map gestures.** Press and hold an airport to plan a route from it; keep holding and drag to another airport to pick both ends.
 
 ## Validation checklist
 
