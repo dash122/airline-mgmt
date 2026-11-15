@@ -18,7 +18,7 @@ describe('fares', () => {
   const hkg = trips(emptyPlan('TPE'), 'TPE', 'HKG', 3);
   test('every fare step changes demand, smoothly', () => {
     const curve = fareCurve(hkg, 'HKG-TPE');
-    expect(curve).toHaveLength(15);
+    expect(curve).toHaveLength(27);
     for (let i = 1; i < curve.length; i++) {
       expect(curve[i].demand).toBeLessThan(curve[i - 1].demand);
       // +5% never costs more than a fifth of the demand: no cliff.
@@ -53,7 +53,7 @@ describe('fares', () => {
     const best = bestFare(curve)!;
     for (const p of curve) expect(best.profit).toBeGreaterThanOrEqual(p.profit - 1);
     expect(best.mult).toBeGreaterThan(0.7);
-    expect(best.mult).toBeLessThan(1.4);
+    expect(best.mult).toBeLessThan(2);
   });
 });
 
@@ -84,8 +84,8 @@ describe('fare curve steps', () => {
     const steps = fareCurveSteps(plan, 'HKG-TPE', out);
     let coarse: number[] | null = null;
     for (let r = steps.next(); !r.done; r = steps.next()) if (r.value === 'coarse') coarse = out.map((p) => p.mult);
-    expect(coarse).toEqual([0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35]);
-    expect(out).toHaveLength(15);
+    expect(coarse).toEqual([0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65, 1.75, 1.85, 1.95]);
+    expect(out).toHaveLength(27);
     expect(out.map((p) => p.mult)).toEqual([...out.map((p) => p.mult)].sort((x, y) => x - y));
     for (const p of out) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
   });
