@@ -83,11 +83,13 @@ describe('fare curve steps', () => {
     const out: ReturnType<typeof fareCurve> = [];
     const steps = fareCurveSteps(plan, 'HKG-TPE', out);
     let coarse: number[] | null = null;
-    for (let r = steps.next(); !r.done; r = steps.next()) if (r.value === 'coarse') coarse = out.map((p) => p.mult);
+    for (let r = steps.next(); !r.done; r = steps.next()) if (r.value === 'coarse') coarse = out.filter((p) => !p.approx).map((p) => p.mult);
     expect(coarse).toEqual([0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65, 1.75, 1.85, 1.95]);
-    expect(out).toHaveLength(27);
+    // Only the steps next to the best one are simulated after that; the rest are drawn between neighbours.
+    expect(out.length).toBeGreaterThanOrEqual(25);
+    expect(out.filter((p) => !p.approx).length).toBeLessThanOrEqual(13 + 2);
     expect(out.map((p) => p.mult)).toEqual([...out.map((p) => p.mult)].sort((x, y) => x - y));
-    for (const p of out) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
+    for (const p of out.filter((p) => !p.approx)) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
   });
   test('simulating the same plan again returns the remembered result', () => {
     expect(simulate(hkg)).toBe(simulate(JSON.parse(JSON.stringify(hkg))));

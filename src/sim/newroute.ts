@@ -4,8 +4,7 @@ import { AIRPORTS, AIRPORT_BY_CODE, type Airport } from '../data/airports';
 import { marketBetween, marketsAt, pairKey } from './markets';
 import { distanceKm } from './geo';
 import { departureQuality } from './choice';
-import { estimateNonstop } from './airports';
-import { insertRoundTrip, leaseFor, placementOptions, placeOn, typesFor, type Placement } from './schedule';
+import { estimateNonstop } from './airports';import { insertRoundTrip, leaseFor, placementOptions, placeOn, typesFor, type Placement } from './schedule';
 import { blockMinutes, competitionFor, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
 
 /** Chinese country names, for searching "日本" or "泰國" and for the destination list. */
@@ -168,6 +167,23 @@ export function routeChoices(plan: Plan, from: string, to: string): RouteChoice[
     });
   const lease = typesFor(plan, from, to).map((t): RouteChoice => ({ id: `lease-${t}`, kind: 'lease', type: t }));
   return [...fleet, ...lease];
+}
+
+/** Leased types worth a full-week simulation each: the suggested one plus the closest fits to the demand. */
+export const LEASE_PREVIEWS = 6;
+
+/**
+ * Each choice is previewed with a whole-network simulation, and about twenty types can be leased on most routes. A type
+ * whose seats are far from what one daily nonstop draws is never the best one, so only the aircraft with room in the
+ * fleet, the suggested type and the closest-fitting leases (by weekly seats against estimated travellers) are previewed.
+ */
+export function shortlistChoices(plan: Plan, from: string, to: string, choices: RouteChoice[]): RouteChoice[] {
+  const leases = choices.filter((c) => c.kind === 'lease');
+  if (leases.length <= LEASE_PREVIEWS) return choices;
+  const want = Math.max(1, estimateNonstop(plan, from, to));
+  const misfit = (c: RouteChoice) => Math.abs(Math.log((AIRCRAFT[c.type].seats * 14) / want));
+  const keep = new Set([leases[0], ...[...leases].sort((x, y) => misfit(x) - misfit(y)).slice(0, LEASE_PREVIEWS - 1)]);
+  return choices.filter((c) => c.kind !== 'lease' || keep.has(c));
 }
 
 /** Where a choice's first flight leaves from: leased aircraft start at the base end, if there is one. */
