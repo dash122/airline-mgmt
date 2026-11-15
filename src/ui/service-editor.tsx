@@ -193,10 +193,10 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
           </button>
           {showOthers && <div className="options">
             {src && choice !== 'keep' && <button className="opt" onClick={() => pick('keep')}><b>{src.reg} · {shortType(src.type)}</b><small>目前的飛機</small></button>}
-            {opts.map((o, i) => i === choice ? null : (
-              <button key={o.ac.id} className="opt" disabled={!o.placement} onClick={() => pick(i)}>
+            {opts.map((o, i) => i === choice || !o.placement ? null : (
+              <button key={o.ac.id} className="opt" onClick={() => pick(i)}>
                 <b>{o.ac.reg} · {shortType(o.ac.type)}</b>
-                {o.placement ? <small>利用率 {pct(o.utilBefore)}→{pct(o.utilAfter)}</small> : <small>{o.reason}</small>}
+                <small>利用率 {pct(o.utilBefore)}→{pct(o.utilAfter)}</small>
               </button>
             ))}
             {types.map((ty) => choice === 'lease' && leaseType === ty ? null : (
