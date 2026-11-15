@@ -91,20 +91,12 @@ function OutHub({ plan, deals, onOpen, onShare, onPartners }: {
   // Totals need every row: until then a partial sum would look like the answer.
   const waiting = active.some((a) => a.imp === undefined);
   const gain = active.reduce((s, a) => s + (a.imp?.gain ?? 0), 0);
-  const pax = active.reduce((s, a) => s + (a.imp?.stats.pax ?? 0), 0);
   const maxIdea = Math.max(1, ...(ideas?.ideas ?? []).map((i) => i.gain));
   return (
     <>
       {active.length > 0 && (
-        <div className="routes-summary">
-          <span><small>每週</small>{waiting ? <b className="muted">—</b> : <b className={gain >= 0 ? 'good' : 'bad'}>{signed(gain)}</b>}</span>
-          <span><b className={waiting ? 'muted' : undefined}>{waiting ? '—' : count(pax)}</b><small>人/週</small></span>
-          <span><b>{active.length}</b><small>條共享</small></span>
-        </div>
-      )}
-      {active.length > 0 && (
         <>
-          <Head info={<CodeshareTerms />} right={!deals.done ? <small className="muted">更新中…</small> : undefined}>已共享</Head>
+          <Head info={<CodeshareTerms />} right={!deals.done || waiting ? <small className="muted">更新中…</small> : <small className={gain >= 0 ? 'good' : 'bad'}><b>{signed(gain)}</b>/週</small>}>已共享 · {active.length}</Head>
           <ul className="route-rows">
             {active.map((a) => <ActiveRow key={`${a.airline}|${a.key}`} airline={a.airline} routeKey={a.key} imp={a.imp} onOpen={() => onOpen(a.airline, a.key)} />)}
           </ul>
@@ -254,6 +246,17 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
   const active = current !== null;
   const [pick, setPick] = useState<number | null>(null);
   const [allJourneys, setAllJourneys] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
+  useEffect(() => {
+    if (!confirmStop) return;
+    const t = setTimeout(() => setConfirmStop(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmStop]);
+  const stopButton = (
+    <button className={`secondary danger${confirmStop ? ' confirm' : ''}`} onClick={() => (confirmStop ? onStop() : setConfirmStop(true))} aria-live="polite">
+      {confirmStop ? '再按一次確認取消' : <><Icon n="cross" /> 取消共享</>}
+    </button>
+  );
   // Worked out in the calculation worker; the last figures stay (dimmed) while a new block size is worked out.
   const calc = useCalc<{ choices: ShareChoice[]; share: number; imp: CodeshareImpact | null }>('cs-detail', plan, { airline, routeKey, share: active ? current : pick });
   const [a, b] = routeKey.split('-');
@@ -272,7 +275,7 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
   if (!imp) {
     return (
       <Sheet size="full" className="cs-sheet" title={routeName(a, b)} sub={sub} onClose={onClose}
-        footer={active ? <div className="cs-foot"><button className="secondary danger" onClick={onStop}><Icon n="cross" /> 取消共享</button></div> : undefined}>
+        footer={active ? <div className="cs-foot">{stopButton}</div> : undefined}>
         <div className="hint center">{airlineName(airline)} 不飛這條航線了</div>
       </Sheet>
     );
@@ -283,14 +286,33 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
   // The fullest of your flights it feeds, where an extra flight would take the travellers turned away.
   const fullRoute = [...imp.routes].sort((x, y) => y.lfAfter - x.lfAfter)[0];
   const fee = codeshareFee(share);
+  const picked = choices.find((c) => c.share === share);
+  const now = active ? choices.find((c) => c.share === current) : undefined;
   return (
     <Sheet size="full" className={`cs-sheet${calc.fresh ? '' : ' cs-stale'}`} title={routeName(a, b)} sub={sub} onClose={onClose} info={<CodeshareTerms />}
       footer={<div className="cs-foot">
         {active
-          ? <><span className="cs-foot-state"><Icon n="link" /> 共享中 · {pct(share)} 座位</span><button className="secondary danger" onClick={onStop}>取消共享</button></>
-          : <button className="primary wide" onClick={() => onShare(share)}><Icon n="link" /> 共享 {pct(share)} 座位 · {money(fee)}/週</button>}
+          ? <><span className="cs-foot-state"><Icon n="link" /> 共享中 · {pct(share)} 座位 · {money(fee)}/週</span>{stopButton}</>
+          : <button className="primary wide" onClick={() => onShare(share)} disabled={!calc.fresh}>
+              <Icon n="link" /> 共享 {pct(share)} 座位
+              {picked && <small className="cs-foot-gain">{signed(picked.gain)}/週</small>}
+            </button>}
       </div>}>
       <MoneySteps imp={imp} />
+
+      <Head info={<p>每班留給你的座位比例。座位越多，賣光的班次越少，但費用越高。每格下面是用那個大小時每週多賺多少（已扣費用），★ 是最賺的。{active ? '已共享時點一下就會直接改。' : ''}</p>}
+        right={best.share !== share ? <button className="chip small" onClick={() => (active ? onShare(best.share) : setPick(best.share))}>★ 改用 {pct(best.share)}</button> : <small className="good">已是最賺</small>}>共享座位</Head>
+      <div className="seg four cs-share-seg" role="radiogroup" aria-label="每班共享座位">
+        {choices.map((c) => (
+          <button key={c.share} role="radio" aria-checked={share === c.share} className={share === c.share ? 'on' : ''}
+            onClick={() => (active ? (c.share !== current && onShare(c.share)) : setPick(c.share))}>
+            <span>{c.share === best.share && <span className="star" aria-label="最賺">★</span>}{pct(c.share)}</span>
+            <small className={c.gain >= 0 ? 'good' : 'bad'}>{signed(c.gain)}</small>
+            {now && c.share !== current && <small className="cs-delta">比現在 {signed(c.gain - now.gain)}</small>}
+          </button>
+        ))}
+      </div>
+
 
       {s.journeys.length > 0 && (
         <>
@@ -309,17 +331,6 @@ export function CodeshareSheet({ plan, airline, routeKey, focus, onShare, onStop
           {s.journeys.length > JOURNEYS_SHOWN && <button className="cs-more" onClick={() => setAllJourneys((v) => !v)}>{allJourneys ? '收起' : `再看 ${s.journeys.length - JOURNEYS_SHOWN} 條`}</button>}
         </>
       )}
-
-      <Head info={<p>每班留給你的座位比例。座位越多，賣光的班次越少，但費用越高。每格下面是用那個大小時每週多賺多少（已扣費用），★ 是最賺的。</p>}>共享座位</Head>
-      <div className="seg four cs-share-seg" role="radiogroup" aria-label="每班共享座位">
-        {choices.map((c) => (
-          <button key={c.share} role="radio" aria-checked={share === c.share} className={share === c.share ? 'on' : ''}
-            onClick={() => (active ? (c.share !== current && onShare(c.share)) : setPick(c.share))}>
-            <span>{c.share === best.share && <span className="star" aria-label="最賺">★</span>}{pct(c.share)}</span>
-            <small className={c.gain >= 0 ? 'good' : 'bad'}>{signed(c.gain)}</small>
-          </button>
-        ))}
-      </div>
 
       <Head info={<p>想訂：選這個共享行程的旅客。賣出：真的坐上的（共享座位或你的航班客滿時會少一些）。座位：每週夥伴留給你的位子。</p>}>需求</Head>
       <DemandBar s={s} tone={seatTone(s)} />

@@ -1,6 +1,6 @@
 // Codeshare dashboard: one glance at both directions (net, travellers, seat use), the trend from the daily history,
 // and the few deals that need a look, each one tap from its sheet.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { airlineName, type Plan } from '../sim/simulate';
 import type { DayRecord } from './clock';
 import { signed, turnedAway } from './codeshare';
@@ -12,6 +12,7 @@ import { Badge, Ring, Spark, type Tone } from './viz';
 interface Alert { id: string; sev: number; tone: Tone; text: string; sub: string; open: () => void }
 
 const TREND_DAYS = 14;
+const ALERTS_SHOWN = 4;
 
 export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
   plan: Plan; history: DayRecord[]; deals: Deals; onOpen: (airline: string, key: string) => void; onOpenHosted: (key: string, airline?: string) => void;
@@ -53,6 +54,7 @@ export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
     alerts.sort((x, y) => y.sev - x.sev);
     return { deals: out.length + inn.length, alerts };
   }, [plan, deals, onOpen, onOpenHosted]);
+  const [allAlerts, setAllAlerts] = useState(false);
   if (!d) return null;
   // Totals come from their own two simulations, so they show at once; the previous plan's stay, greyed, until then.
   const t = deals.totals;
@@ -78,7 +80,7 @@ export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
       )}
       {d.alerts.length > 0 && (
         <ul className="cs-alerts">
-          {d.alerts.slice(0, 4).map((a) => (
+          {(allAlerts ? d.alerts : d.alerts.slice(0, ALERTS_SHOWN)).map((a) => (
             <li key={a.id}>
               <button onClick={a.open}>
                 <Badge n={a.tone === 'accent' ? 'spill' : 'warn'} tone={a.tone}>{a.text}</Badge>
@@ -88,6 +90,9 @@ export function CodeshareDash({ plan, history, deals, onOpen, onOpenHosted }: {
             </li>
           ))}
         </ul>
+      )}
+      {d.alerts.length > ALERTS_SHOWN && (
+        <button className="cs-more" onClick={() => setAllAlerts((v) => !v)}>{allAlerts ? '收起' : `還有 ${d.alerts.length - ALERTS_SHOWN} 條要注意`}</button>
       )}
     </div>
   );
