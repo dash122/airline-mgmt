@@ -6,7 +6,7 @@ import { marketBetween, pairKey } from '../sim/markets';
 import { marketSplit } from '../sim/share';
 import { slotProblem } from '../sim/schedule';
 import {
-  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports,
+  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports, shortlistChoices,
   TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
@@ -253,7 +253,7 @@ type PlanStepProps = {
 };
 function PlanStep(props: PlanStepProps) {
   const { plan, result, from, to, ends, onClose } = props;
-  const choices = useMemo(() => routeChoices(plan, from, to), [plan, from, to]);
+  const choices = useMemo(() => shortlistChoices(plan, from, to, routeChoices(plan, from, to)), [plan, from, to]);
   const [state, setState] = useState<{ plan: Plan; result: NetworkResult | null; from: string; to: string; previews: Map<string, RoutePreview> } | null>(null);
   const [error, setError] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
