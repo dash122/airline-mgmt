@@ -29,7 +29,7 @@ export const MIN_MARKET_KM = 100;
 /** Routes longer than this need a widebody and two big airports, and count against the long-haul budget. */
 export const LONG_HAUL_KM = 4500;
 /** Most nonstop destinations competitors serve from an airport, short and medium haul. */
-export const DESTINATIONS = { hub: 100, major: 60, large: 30, medium: 12, small: 4 } as const;
+export const DESTINATIONS = { hub: 110, major: 60, large: 35, medium: 12, small: 4 } as const;
 /** Annual passengers per resident of the catchment above which an airport is mostly a holiday destination. */
 const LEISURE_TRIPS_PER_RESIDENT = 20;
 /**
