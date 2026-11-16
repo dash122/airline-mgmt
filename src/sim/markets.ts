@@ -628,8 +628,21 @@ export function markets(): Map<string, Market> {
   return marketTable().all;
 }
 
+// The simulation asks for many pairs. Building and hashing a fresh "A-B" string for each ask against the 700,000-entry
+// map cost more than the rest of a simulation. Each airport instead gets, the first time it is asked about, a small map
+// from the other airport's code to the market, built from its own market list; lookups then hash only existing strings.
+const byOther = new Map<string, Map<string, Market>>();
+function otherMap(code: string): Map<string, Market> {
+  let map = byOther.get(code);
+  if (!map) {
+    map = new Map();
+    for (const m of marketsAt(code)) map.set(m.a === code ? m.b : m.a, m);
+    byOther.set(code, map);
+  }
+  return map;
+}
 export function marketBetween(a: string, b: string): Market | undefined {
-  return markets().get(pairKey(a, b));
+  return otherMap(a).get(b);
 }
 
 /** Modelled annual travellers starting or ending their trip at an airport today (both directions). */
