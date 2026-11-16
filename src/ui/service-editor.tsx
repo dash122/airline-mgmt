@@ -34,20 +34,27 @@ const windowText = (code: string, lo: number, hi: number) =>
 function useDraftResult(draft: Plan | null): NetworkResult | null | 'pending' {
   const [answer, setAnswer] = useState<{ plan: Plan; result: NetworkResult } | null>(null);
   const worker = useRef<Worker | null>(null);
+  const busy = useRef<{ id: number; plan: Plan } | null>(null);
+  const queued = useRef<Plan | null>(null);
   const seq = useRef(0);
+  const send = (w: Worker, plan: Plan) => { const id = ++seq.current; busy.current = { id, plan }; w.postMessage({ id, plan }); };
   useEffect(() => {
     if (!draft || typeof Worker === 'undefined') return;
     const w = worker.current ??= createComputeClient('simulation');
-    const id = ++seq.current;
     const onMessage = (e: MessageEvent<{ id: number; result?: NetworkResult }>) => {
-      if (e.data.id === id && e.data.result) setAnswer({ plan: draft, result: e.data.result });
+      const cur = busy.current;
+      if (!cur || e.data.id !== cur.id) return;
+      busy.current = null;
+      if (e.data.result) setAnswer({ plan: cur.plan, result: e.data.result });
+      // Latest-wins: while dragging, only the newest draft waits behind the one being worked out.
+      const next = queued.current; queued.current = null;
+      if (next) send(w, next);
     };
     w.addEventListener('message', onMessage);
-    // Wait for the stepper to settle, so holding a button doesn't queue a simulation per tap.
-    const t = setTimeout(() => w.postMessage({ id, plan: draft }), 250);
-    return () => { clearTimeout(t); w.removeEventListener('message', onMessage); };
+    if (busy.current) queued.current = draft; else send(w, draft);
+    return () => w.removeEventListener('message', onMessage);
   }, [draft]);
-  useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
+  useEffect(() => () => { worker.current?.terminate(); worker.current = null; busy.current = null; queued.current = null; }, []);
   if (!draft) return null;
   return answer?.plan === draft ? answer.result : 'pending';
 }
@@ -159,7 +166,7 @@ function Editor({ plan, result, target, onApply, onClose, onBack }: {
   // Loads follow the pending change: while a draft is still being simulated, no pill rather than the old time's load.
   const loadOf = (i: number) => {
     if (!src || !unit) return undefined;
-    if (draft) return draftResult && draftResult !== 'pending' ? draftResult.byFlight[`${draft.trip.acId}#${draft.trip.k + i - unit.start}`] : undefined;
+    if (draft) return draftResult && draftResult !== 'pending' ? draftResult.byFlight[`${draft.trip.acId}#${draft.trip.k + i - unit.start}`] : result?.byFlight[`${src.id}#${i}`];
     return result?.byFlight[`${src.id}#${i}`];
   };
 
