@@ -1190,7 +1190,7 @@ function dealDistance(a: Plan, b: Plan): number {
 }
 
 /** Each market's demand by its itinerary list (lists are shared between structures that differ in a deal elsewhere). */
-const marketDemand = new WeakMap<Itinerary[], { fares: string; perIt: Float64Array; info: { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] } }>();
+const marketDemand = new WeakMap<Itinerary[], { mults: Float64Array; perIt: Float64Array; info: { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] } }>();
 
 /**
  * Per-itinerary working arrays, reused by every simulation instead of allocated again (a simulation runs to the end
@@ -1226,12 +1226,15 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
   // Demand per itinerary (daily), by itinerary idx; `has` marks itineraries in a market that exists.
   const { demand, has, pricedAt, carried } = scratchFor(count);
   const marketInfo = new Map<string, { airTotal: number; refFare: number; mine: number; connecting: number; rivals: { id: string; pax: number }[]; rivalVia: MarketResult['rivalVia'] }>();
-  const faresKey = JSON.stringify(plan.fares ?? {});
   for (const [k, list] of itins) {
     // A market whose itineraries are the same list as in a structure this one came from (a deal elsewhere changed)
     // has the same demand at the same fares: reuse it.
+    // Only the fares of this market's own itineraries matter, so a fare changed on one route leaves every market that
+    // doesn't use it as it was (the fare curve changes one route's fare dozens of times).
     const hit = marketDemand.get(list);
-    if (hit && hit.fares === faresKey) {
+    let sameFares = !!hit;
+    if (hit) for (let i = 0; i < list.length; i++) if (hit.mults[i] !== list[i].fareMult) { sameFares = false; break; }
+    if (hit && sameFares) {
       for (let i = 0; i < list.length; i++) { demand[list[i].idx!] = hit.perIt[i]; has[list[i].idx!] = 1; }
       marketInfo.set(k, hit.info);
       continue;
@@ -1267,7 +1270,7 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
       rivalVia: comp.connections.map((x, i) => ({ id: x.airline.id, via: x.via, pax: airTotal * air.shares[rivals.length + 1 + i] })),
     };
     marketInfo.set(k, info);
-    marketDemand.set(list, { fares: faresKey, perIt, info });
+    marketDemand.set(list, { mults: Float64Array.from(list, (it) => it.fareMult), perIt, info });
   }
 
   // Capacity: where a flight is oversold, everyone who wants it (local and connecting) loses seats in the same

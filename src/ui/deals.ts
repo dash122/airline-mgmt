@@ -75,7 +75,8 @@ export function useDeals(plan: Plan): Deals {
     };
     w.addEventListener('message', onMessage);
     w.postMessage({ id, kind: 'deals', plan });
-    return () => w.removeEventListener('message', onMessage);
+    // Leaving the list (or a newer plan) stops the sweep in the worker, rather than letting it run to the end.
+    return () => { w.removeEventListener('message', onMessage); w.postMessage({ cancel: true }); };
   }, [plan, has]);
   useEffect(() => () => { worker.current?.terminate(); worker.current = null; }, []);
   if (!has) return NONE;
