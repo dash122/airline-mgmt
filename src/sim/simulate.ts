@@ -943,9 +943,11 @@ export function simulate(plan: Plan): NetworkResult {
 }
 
 /**
- * The same totals (revenue, cost, every route and flight) without the per-deal detail (journeys, feeds, markets,
- * departures) of codeshares and hosted deals. For the "without it" side of a deal's impact, which only reads totals,
- * and which is run once per deal: with hundreds of deals the detail is most of the work.
+ * The same totals (revenue, cost, every route and flight) without the detail: the per-deal journeys, feeds, markets and
+ * departures of codeshares and hosted deals, and the per-market rows and airport transfer flows of the whole network.
+ * For callers that only read totals and route figures, which run many simulations (each codeshare deal's "without it",
+ * every step of the fare curve). A full result already worked out for the same plan is returned as it is, so callers
+ * must not rely on the detail being absent either.
  */
 export function simulateLean(plan: Plan): NetworkResult {
   const full = recent.get(JSON.stringify(plan));
@@ -1368,11 +1370,13 @@ function simulateUncached(plan: Plan, lean: boolean): NetworkResult {
     if (pax > top * (1 + 1e-9) + 1e-12 || (pax >= top * (1 - 1e-9) - 1e-12 && via < row.via)) { row.via = via; viaPax.set(row, Math.max(top, pax)); }
   };
   const markets: Record<string, MarketResult> = {};
+  // The totals-only simulation doesn't return market rows: it tallies into one shared row instead of building one per market.
+  const sink: MarketResult | null = lean ? { airTotal: 0, connecting: 0, rivals: [], rivalVia: [], nonstop: 0, via: {}, wanted: 0 } : null;
   for (const [k, list] of itins) {
     const info = marketInfo.get(k);
     if (!info) continue;
     const { mo, md, mk } = marketEnds(k);
-    const mr: MarketResult = markets[k] = { airTotal: info.airTotal, connecting: info.connecting, rivals: info.rivals, rivalVia: info.rivalVia, nonstop: 0, via: {}, wanted: info.mine };
+    const mr: MarketResult = sink ?? (markets[k] = { airTotal: info.airTotal, connecting: info.connecting, rivals: info.rivals, rivalVia: info.rivalVia, nonstop: 0, via: {}, wanted: info.mine });
     for (const it of list) {
       const n = carried[it.idx!];
       const want = demand[it.idx!];

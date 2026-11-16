@@ -1,5 +1,5 @@
 // What the player's fare setting on one route does to the network: used to explain the trade-off and suggest a fare.
-import { simulate, type Plan } from './simulate';
+import { simulateLean, type Plan } from './simulate';
 
 export const FARE_MIN = 0.7;
 export const FARE_MAX = 3;
@@ -36,7 +36,8 @@ export function* fareCurveSteps(plan: Plan, key: string, out: FarePoint[] = []):
   const tried = new Map<number, FarePoint>();
   const run = (i: number) => {
     const mult = multAt(i);
-    const res = simulate(Math.abs(mult - today) < 1e-9 ? plan : { ...plan, fares: { ...plan.fares, [key]: mult } });
+    // Only totals and this route's figures are read, so the lean simulation (no market rows or transfer flows) will do.
+    const res = simulateLean(Math.abs(mult - today) < 1e-9 ? plan : { ...plan, fares: { ...plan.fares, [key]: mult } });
     const r = res.routes[key];
     if (r) tried.set(i, { mult, profit: res.revenue - res.cost, loadFactor: r.loadFactor, demand: r.demand, spill: r.spill });
   };
