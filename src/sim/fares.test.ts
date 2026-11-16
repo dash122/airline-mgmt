@@ -78,18 +78,28 @@ describe('airports in one city', () => {
 
 describe('fare curve steps', () => {
   const hkg = trips(emptyPlan('TPE'), 'TPE', 'HKG', 3);
-  test('every other step first, in line with today\'s fare, then the rest; same curve as all at once', () => {
+  test('every 4th step first, in line with today\'s fare, plus both ends; then only the steps near the best; same curve as all at once', () => {
     const plan = { ...hkg, fares: { 'HKG-TPE': 1.05 } };
     const out: ReturnType<typeof fareCurve> = [];
     const steps = fareCurveSteps(plan, 'HKG-TPE', out);
     let coarse: number[] | null = null;
     for (let r = steps.next(); !r.done; r = steps.next()) if (r.value === 'coarse') coarse = out.filter((p) => !p.approx).map((p) => p.mult);
-    expect(coarse).toEqual([0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45, 1.55, 1.65, 1.75, 1.85, 1.95, 2.05, 2.15, 2.25, 2.35, 2.45, 2.55, 2.65, 2.75, 2.85, 2.95]);
-    // Only the steps next to the best one are simulated after that; the rest are drawn between neighbours.
-    expect(out.length).toBeGreaterThanOrEqual(45);
-    expect(out.filter((p) => !p.approx).length).toBeLessThanOrEqual(23 + 2);
+    expect(coarse).toEqual([0.7, 0.85, 1.05, 1.25, 1.45, 1.65, 1.85, 2.05, 2.25, 2.45, 2.65, 2.85, 3]);
+    // The whole range is drawn, and only a few more steps are simulated around the best one; the rest are drawn between neighbours.
+    expect(out.length).toBe(47);
+    expect(out.filter((p) => !p.approx).length).toBeLessThanOrEqual(coarse!.length + 4);
     expect(out.map((p) => p.mult)).toEqual([...out.map((p) => p.mult)].sort((x, y) => x - y));
     for (const p of out.filter((p) => !p.approx)) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
+  });
+  test('the climb finds the same best fare as trying every step', () => {
+    const plan = { ...hkg, fares: { 'HKG-TPE': 1.05 } };
+    const everyStep = Array.from({ length: 47 }, (_, i) => {
+      const mult = Math.round((0.7 + i * 0.05) * 100) / 100;
+      const r = at(plan, 'HKG-TPE', mult);
+      return { mult, profit: r.revenue - r.cost };
+    });
+    const brute = everyStep.reduce((b, p) => (p.profit > b.profit ? p : b));
+    expect(bestFare(fareCurve(plan, 'HKG-TPE'))!.mult).toBe(brute.mult);
   });
   test('simulating the same plan again returns the remembered result', () => {
     expect(simulate(hkg)).toBe(simulate(JSON.parse(JSON.stringify(hkg))));
