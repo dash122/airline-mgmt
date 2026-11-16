@@ -6,7 +6,7 @@ import { marketBetween, pairKey } from '../sim/markets';
 import { marketSplit } from '../sim/share';
 import { slotProblem } from '../sim/schedule';
 import {
-  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, routeChoices, searchAirports, shortlistChoices,
+  applyChoice, BANDS, countryName, departsFrom, destination, destinationsFrom, flightMinutes, inBand, previewChoice, previewOrder, routeChoices, searchAirports, shortlistChoices,
   TIME_PRESETS, windowOf, type Destination, type DistanceBand, type RouteChoice, type RoutePreview,
 } from '../sim/newroute';
 import { blockMinutes, cycleOf, routePairs, utcFromLocal, type NetworkResult, type Plan } from '../sim/simulate';
@@ -254,7 +254,7 @@ type PlanStepProps = {
 function PlanStep(props: PlanStepProps) {
   const { plan, result, from, to, ends, onClose } = props;
   const choices = useMemo(() => shortlistChoices(plan, from, to, routeChoices(plan, from, to)), [plan, from, to]);
-  const [state, setState] = useState<{ plan: Plan; result: NetworkResult | null; from: string; to: string; previews: Map<string, RoutePreview> } | null>(null);
+  const [state, setState] = useState<{ plan: Plan; result: NetworkResult | null; from: string; to: string; previews: Map<string, RoutePreview>; done: boolean } | null>(null);
   const [error, setError] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   useEffect(() => {
@@ -262,26 +262,29 @@ function PlanStep(props: PlanStepProps) {
     setProgress(null);
     const worker = previewWorker ??= createComputeClient('preview');
     const request = ++previewRequest;
-    const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; progress?: number; total?: number; error?: string }>) => {
+    const onMessage = (event: MessageEvent<{ request: number; previews?: [string, RoutePreview][]; partial?: boolean; progress?: number; total?: number; error?: string }>) => {
       if (event.data.request !== request) return;
-      if (event.data.previews) setState({ plan, result, from, to, previews: new Map(event.data.previews) });
+      if (event.data.previews) setState({ plan, result, from, to, previews: new Map(event.data.previews), done: !event.data.partial });
       else if (event.data.progress !== undefined) setProgress({ done: event.data.progress, total: event.data.total ?? 0 });
       else setError(true);
     };
     const onError = () => { worker.terminate(); if (previewWorker === worker) previewWorker = null; setError(true); };
     worker.addEventListener('message', onMessage);
     worker.addEventListener('error', onError);
-    worker.postMessage({ request, plan, result, from, to, choices: choices.map(choice => ({ choice, dep: startDep(plan, choice, from, to) })) });
-    return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); };
+    // Best-fitting aircraft first: the sheet opens on the first few while the rest are still being worked out.
+    worker.postMessage({ request, plan, result, from, to, choices: previewOrder(plan, from, to, choices).map(choice => ({ choice, dep: startDep(plan, choice, from, to) })) });
+    return () => { worker.removeEventListener('message', onMessage); worker.removeEventListener('error', onError); worker.postMessage({ cancel: true }); };
   }, [plan, result, from, to, choices]);
   if (!state || state.plan !== plan || state.result !== result || state.from !== from || state.to !== to) {
     const working = progress && progress.total > 0 ? `正在計算航線方案… ${progress.done}/${progress.total}` : '正在計算航線方案…';
     return <Sheet size="half" title="開新航線" onClose={onClose}>{ends}<div className="hint">{error ? '計算失敗，請關閉後重試。' : working}</div></Sheet>;
   }
-  return <PlanStepReady {...props} choices={choices} previews={state.previews} />;
+  // Until every choice is worked out, only the ones that are show; the rest join the list as they arrive.
+  const shown = state.done ? choices : choices.filter((c) => state.previews.has(c.id));
+  return <PlanStepReady {...props} choices={shown} pending={choices.length - shown.length} previews={state.previews} />;
 }
 
-function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, choices, previews }: PlanStepProps & { choices: RouteChoice[]; previews: Map<string, RoutePreview> }) {
+function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, choices, pending, previews }: PlanStepProps & { choices: RouteChoice[]; pending: number; previews: Map<string, RoutePreview> }) {
   useEffect(() => { onHint([[from, to]]); }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = pairKey(from, to);
   const m = marketBetween(from, to);
@@ -350,6 +353,7 @@ function PlanStepReady({ plan, result, from, to, ends, onHint, onDone, onClose, 
       <details className="route-adjust">
         <summary><span>飛機與時間</span><small>調整</small></summary>
         {choices.length === 0 && <div className="hint center">航程或跑道不夠，沒有機型能飛</div>}
+        {pending > 0 && <div className="cs-loading" aria-live="polite"><span className="spin" aria-hidden="true" /> 還在比較其他 {pending} 個方案…</div>}
         <AircraftPicker plan={plan} choices={choices} previews={previews} best={best} chosen={chosen}
           onPick={(c) => { setPickId(c.id); setDep(null); }} />
 

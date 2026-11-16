@@ -12,6 +12,8 @@ import type { Deal } from './deals';
  * codeshares) steps aside while any of these runs, so an open sheet is not queued behind it.
  */
 let urgent = 0;
+/** Route choices previewed before the sheet opens on them; the rest are worked out while it is open. */
+const FIRST_PREVIEWS = 3;
 /** Partners tried for one of your routes: the sheet shows the best 8, and each one tried is a full simulation. */
 const HOSTED_CANDIDATES = 10;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -193,6 +195,8 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
             if (current !== version) return;
             previews.push([choice.id, previewChoice(plan, result, choice, from, to, dep)]);
             port.postMessage({ request, progress: previews.length, total: list.length });
+            // The first few (the best-fitting types come first) are enough to open the sheet on.
+            if (previews.length === FIRST_PREVIEWS && list.length > FIRST_PREVIEWS) port.postMessage({ request, previews: [...previews], partial: true });
           }
           port.postMessage({ request, previews });
         } finally { urgent--; }

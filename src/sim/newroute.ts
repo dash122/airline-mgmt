@@ -5,7 +5,7 @@ import { marketBetween, marketsAt, pairKey } from './markets';
 import { distanceKm } from './geo';
 import { departureQuality } from './choice';
 import { estimateNonstop } from './airports';import { insertRoundTrip, leaseFor, placementOptions, placeOn, typesFor, type Placement } from './schedule';
-import { blockMinutes, competitionFor, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulate, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
+import { blockMinutes, competitionFor, defaultAircraft, localMinutes, rotationInfo, routePairs, routeProblem, simulateLean, utcFromLocal, type Aircraft, type NetworkResult, type Plan } from './simulate';
 
 /** Chinese country names, for searching "日本" or "泰國" and for the destination list. */
 export const COUNTRY_ZH: Record<string, string> = {
@@ -186,6 +186,16 @@ export function shortlistChoices(plan: Plan, from: string, to: string, choices: 
   return choices.filter((c) => c.kind !== 'lease' || keep.has(c));
 }
 
+/**
+ * The order to preview choices in: the ones whose seats fit the estimated demand best first (the same fit the
+ * shortlist uses), so the likely best is worked out before the rest and a sheet can open on the first few.
+ */
+export function previewOrder(plan: Plan, from: string, to: string, choices: RouteChoice[]): RouteChoice[] {
+  const want = Math.max(1, estimateNonstop(plan, from, to));
+  const misfit = (c: RouteChoice) => Math.abs(Math.log((AIRCRAFT[c.type].seats * 14) / want));
+  return [...choices].sort((x, y) => misfit(x) - misfit(y));
+}
+
 /** Where a choice's first flight leaves from: leased aircraft start at the base end, if there is one. */
 export const departsFrom = (plan: Plan, c: RouteChoice, from: string, to: string) =>
   c.placement ? c.placement.from : to === plan.base ? to : from;
@@ -217,10 +227,10 @@ export interface RoutePreview {
 
 const profitOf = (r: NetworkResult | null) => (r ? r.revenue - r.cost : 0);
 
-/** Run the week with the new route to see what it would carry and earn. */
+/** Run the week with the new route to see what it would carry and earn (totals and the route only: no per-market detail). */
 export function previewChoice(plan: Plan, before: NetworkResult | null, c: RouteChoice, from: string, to: string, dep: number): RoutePreview {
   const next = applyChoice(plan, c, from, to, dep).plan;
-  const after = simulate(next);
+  const after = simulateLean(next);
   const r = after.routes[pairKey(from, to)];
   return {
     pax: r?.pax ?? 0,

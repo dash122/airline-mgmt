@@ -83,3 +83,38 @@ it('reports a route preview as each choice is worked out, then the whole list', 
     ]);
   } finally { vi.unstubAllGlobals(); }
 });
+
+it('sends the first few route previews early so the sheet can open, then the whole list', async () => {
+  vi.resetModules();
+  const runtime = { onmessage: null as unknown as (event: unknown) => void };
+  vi.stubGlobal('self', runtime);
+  try {
+    await import('./compute.worker');
+    const port = { onmessage: null as unknown as (event: unknown) => void, postMessage: vi.fn() };
+    runtime.onmessage({ data: { scope: 'preview', port } });
+    const choices = ['a', 'b', 'c', 'd', 'e'].map((id, dep) => ({ choice: { id }, dep }));
+    port.onmessage({ data: { request: 9, plan, result: null, from: 'A', to: 'B', choices } });
+    await vi.waitFor(() => expect(port.postMessage.mock.calls.some(([m]) => m.previews && !m.partial)).toBe(true));
+    const withPreviews = port.postMessage.mock.calls.map(([m]) => m).filter((m) => m.previews);
+    expect(withPreviews).toEqual([
+      { request: 9, previews: [['a', undefined], ['b', undefined], ['c', undefined]], partial: true },
+      { request: 9, previews: ['a', 'b', 'c', 'd', 'e'].map((id) => [id, undefined]) },
+    ]);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('stops a preview in progress when the client cancels', async () => {
+  vi.resetModules();
+  const runtime = { onmessage: null as unknown as (event: unknown) => void };
+  vi.stubGlobal('self', runtime);
+  try {
+    await import('./compute.worker');
+    const port = { onmessage: null as unknown as (event: unknown) => void, postMessage: vi.fn() };
+    runtime.onmessage({ data: { scope: 'preview', port } });
+    const choices = ['a', 'b', 'c', 'd', 'e'].map((id, dep) => ({ choice: { id }, dep }));
+    port.onmessage({ data: { request: 3, plan, result: null, from: 'A', to: 'B', choices } });
+    port.onmessage({ data: { cancel: true } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(port.postMessage.mock.calls.some(([m]) => m.previews)).toBe(false);
+  } finally { vi.unstubAllGlobals(); }
+});
