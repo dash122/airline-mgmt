@@ -56,6 +56,9 @@ self.onmessage = (event: MessageEvent<{ scope: 'simulation' | 'airport' | 'previ
   if (scope === 'warm') { setTimeout(() => prepareMarkets(Infinity), 0); return; }
   let version = 0;
   port.onmessage = async (event) => {
+    // A client that stops asking (its sheet closed or its list unmounted) cancels what it has running: any work
+    // still in progress on this port returns at its next yield, instead of holding the shared worker to the end.
+    if ((event.data as { cancel?: boolean }).cancel) { version++; return; }
     const current = ++version;
     // Collapse superseded edits before doing expensive work.
     await yieldTask();

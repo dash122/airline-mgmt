@@ -1727,6 +1727,8 @@ button.chip.strong, .chip.strong { background: var(--accent-soft); color: var(--
    While a finger is down the readout shows what would happen; nothing applies until release. */
 .fare-control { display: flex; flex-direction: column; gap: 8px; }
 .fare-control.pending { min-height: 264px; }
+/* Figures from an earlier plan (or a first pass) stay on screen while the new curve is worked out. */
+.fare-control.stale { opacity: .55; transition: opacity .2s; }
 .fare-read { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .fare-price { display: flex; flex-direction: column; min-width: 0; }
 .fare-price small { color: var(--muted); font-size: var(--fs-2xs); display: inline-flex; align-items: center; gap: 4px; }

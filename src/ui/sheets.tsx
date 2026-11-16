@@ -332,9 +332,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   // Worked out on the calculation worker; the last curve stays until the new one arrives.
   const curveAnswer = useWorkerAnswer<FarePoint[]>(plan, painted && flights.length > 0, 'fare-curve', { routeKey });
   const curve = curveAnswer?.value ?? [];
+  // Advice only from the final curve for the current plan: a partial or last-plan curve can point at the wrong fare.
+  const curveFinal = !!curveAnswer?.fresh;
   const best = bestFare(curve);
   const now = curve.find((p) => Math.abs(p.mult - fareMult) < 0.01);
-  const betterFare = best && now && best !== now && best.profit - now.profit > 1 ? best : null;
+  const betterFare = curveFinal && best && now && best !== now && best.profit - now.profit > 1 ? best : null;
   // Nobody flies these two airports: say where travellers fly today instead.
   const elsewhere = useMemo(() => {
     const comp = [competitionFor(a, b), competitionFor(b, a)];
@@ -413,7 +415,7 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
       {tab === 'fare' && <>
         {flights.length > 0 && !curveAnswer ? <div className="fare-control pending" aria-busy="true" role="status"><span className="spinner" aria-hidden="true" />正在試算票價…</div>
           : curve.length > 2 && now && best
-          ? <FareControl curve={curve} now={now} best={best} refFare={m?.refFare ?? 0} onPick={setFare}
+          ? <FareControl curve={curve} now={now} best={best} stale={!curveFinal} refFare={m?.refFare ?? 0} onPick={setFare}
               info={<p>每個票價下整個航網的每週損益。沿曲線拖動試算，放手才套用。★ 是最賺的票價，左右方向鍵也能調整。</p>} />
           : <div className="fare route-fare"><div className="grow"><div className="label">單程票價</div><div className="price">{price(fareNow)} <small>市場價 {pct(fareMult)}</small></div></div></div>}
       </>}
@@ -443,7 +445,7 @@ const signed = (n: number) => `${n >= 0 ? '+' : ''}${money(n)}`;
  * The fare as something you drag. The readout and the change in profit, load and spill follow your finger;
  * nothing is applied until you let go. Arrow keys step 5%.
  */
-function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FarePoint[]; now: FarePoint; best: FarePoint; refFare: number; onPick: (mult: number) => void; info?: ReactNode }) {
+function FareControl({ curve, now, best, stale, refFare, onPick, info }: { curve: FarePoint[]; now: FarePoint; best: FarePoint; stale?: boolean; refFare: number; onPick: (mult: number) => void; info?: ReactNode }) {
   const [scrub, setScrub] = useState<FarePoint | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const W = 320, H = 112, PAD = 10;
@@ -468,7 +470,7 @@ function FareControl({ curve, now, best, refFare, onPick, info }: { curve: FareP
   const dProfit = shown.profit - now.profit;
   const changed = shown !== now;
   return (
-    <div className={`fare-control${scrub ? ' scrubbing' : ''}`}>
+    <div className={`fare-control${scrub ? ' scrubbing' : ''}${stale ? ' stale' : ''}`} aria-busy={stale || undefined}>
       <div className="fare-read">
         <div className="fare-price">
           <small>單程票價{info && <InfoDot open={showInfo} onClick={() => setShowInfo(!showInfo)} />}</small>
