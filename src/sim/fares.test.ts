@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import { codeshareIdeas, hostedIdeas } from './codeshare';
-import { addRoundTrip, emptyPlan, simulate, toggleCodeshare, toggleHosted, setHostedShare, type Plan } from './simulate';
+import { addRoundTrip, emptyPlan, simulate, simulateLean, toggleCodeshare, toggleHosted, setHostedShare, type Plan } from './simulate';
 import { bestFare, fareCurve, fareCurveSteps } from './fares';
 import { marketBetween } from './markets';
 
@@ -16,6 +16,22 @@ const at = (p: Plan, key: string, mult: number) => simulate({ ...p, fares: { ...
 
 describe('fares', () => {
   const hkg = trips(emptyPlan('TPE'), 'TPE', 'HKG', 3);
+  test('the lean simulation the fare curve uses gives the same totals and route figures as the full one', () => {
+    // A network with connections through Taipei, and a fare that is not the default.
+    const net = trips(trips(trips(emptyPlan('TPE'), 'TPE', 'HKG', 2), 'TPE', 'NRT', 1), 'TPE', 'SIN', 1);
+    const tried = { ...net, fares: { ...net.fares, 'HKG-TPE': 1.35 } };
+    const lean = simulateLean(tried);
+    // Worked out fresh each, not one read from the other's cache.
+    const full = simulate(JSON.parse(JSON.stringify(tried)));
+    expect(lean).not.toBe(full);
+    expect(lean.revenue).toBe(full.revenue);
+    expect(lean.cost).toBe(full.cost);
+    expect(lean.routes).toEqual(full.routes);
+    expect(lean.byFlight).toEqual(full.byFlight);
+    expect(lean.connectingPax).toBe(full.connectingPax);
+    expect(Object.keys(lean.markets)).toHaveLength(0);
+    expect(Object.keys(full.markets).length).toBeGreaterThan(0);
+  });
   test('every fare step changes demand, smoothly', () => {
     const curve = fareCurve(hkg, 'HKG-TPE');
     expect(curve).toHaveLength(47);
