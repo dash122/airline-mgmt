@@ -107,6 +107,19 @@ describe('fare curve steps', () => {
     expect(out.map((p) => p.mult)).toEqual([...out.map((p) => p.mult)].sort((x, y) => x - y));
     for (const p of out.filter((p) => !p.approx)) expect(p.profit).toBeCloseTo(at(plan, 'HKG-TPE', p.mult).revenue - at(plan, 'HKG-TPE', p.mult).cost, 6);
   });
+  test('a first, rougher curve comes after every 8th step and both ends, with today\'s fare exact', () => {
+    const plan = { ...hkg, fares: { 'HKG-TPE': 1.05 } };
+    const out: ReturnType<typeof fareCurve> = [];
+    const steps = fareCurveSteps(plan, 'HKG-TPE', out);
+    let sims = 0;
+    for (let r = steps.next(); !r.done; r = steps.next()) {
+      if (r.value === 'coarse') break;
+      sims++;
+    }
+    expect(out.filter((p) => !p.approx).map((p) => p.mult)).toEqual([0.7, 1.05, 1.45, 1.85, 2.25, 2.65, 3]);
+    expect(sims).toBe(7);
+    expect(out).toHaveLength(47);
+  });
   test('the climb finds the same best fare as trying every step', () => {
     const plan = { ...hkg, fares: { 'HKG-TPE': 1.05 } };
     const everyStep = Array.from({ length: 47 }, (_, i) => {
