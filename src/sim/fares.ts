@@ -25,13 +25,15 @@ const COARSE = 4;
 
 /**
  * The route's results at every fare step from 70% to 300% of the reference fare, one simulation at a time so a caller
- * can yield between them and drop a curve a newer plan has made stale. Every 4th step comes first (the ones in line
- * with today's fare), plus both ends, and the generator yields 'coarse' once those are in `out`: a usable curve in
- * well under half the simulations. Returns the full curve, which is also `out`.
+ * can yield between them and drop a curve a newer plan has made stale. Every 8th step comes first (in line with
+ * today's fare, so today's point is exact), plus both ends, and the generator yields 'coarse' once those are in `out`:
+ * a first curve in about a third of the simulations. The rest of the every-4th grid follows with another 'coarse', then
+ * the climb to the best fare. Returns the full curve, which is also `out`.
  */
 export function* fareCurveSteps(plan: Plan, key: string, out: FarePoint[] = []): Generator<'coarse' | void, FarePoint[], void> {
   const today = plan.fares[key] ?? 1;
-  const first = Math.max(0, Math.round((today - FARE_MIN) / FARE_STEP)) % COARSE;
+  const todayStep = Math.max(0, Math.round((today - FARE_MIN) / FARE_STEP));
+  const first = todayStep % COARSE;
   const multAt = (i: number) => Math.round((FARE_MIN + i * FARE_STEP) * 100) / 100;
   const tried = new Map<number, FarePoint>();
   const run = (i: number) => {
@@ -60,9 +62,13 @@ export function* fareCurveSteps(plan: Plan, key: string, out: FarePoint[] = []):
     for (const [i, p] of tried) if (top < 0 || p.profit > tried.get(top)!.profit) top = i;
     return top;
   };
-  for (let i = first; i < STEPS; i += COARSE) { run(i); yield; }
-  // Both ends too, so the curve spans the whole 70%–300% range.
+  // A first, rougher curve: every 8th step and both ends (the curve spans the whole 70%–300% range).
+  for (let i = todayStep % (2 * COARSE); i < STEPS; i += 2 * COARSE) { run(i); yield; }
   for (const i of [0, STEPS - 1]) if (!tried.has(i)) { run(i); yield; }
+  fill();
+  yield 'coarse';
+  // The other steps of the every-4th grid.
+  for (let i = first; i < STEPS; i += COARSE) if (!tried.has(i)) { run(i); yield; }
   fill();
   yield 'coarse';
   // Profit rises then falls with the fare: climb from the best simulated step toward whichever neighbour is better,
