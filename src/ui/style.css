@@ -2775,3 +2775,22 @@ button.primary:active, button.secondary:active, .chip:active { transform: scale(
 .list-tools { display: flex; justify-content: flex-end; margin: 0 0 4px; }
 .switcher button:not(.on) .tl { display: none; }
 .sheet-head { min-height: 0 !important; padding-top: 10px !important; padding-bottom: 6px !important; }
+
+.routes-panel .kpis { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.route-list-tools { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; }
+.route-search { flex: 1; min-width: 0; }
+.route-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  font-size: max(16px, var(--fs-sm));
+}
+.route-search input::placeholder { color: var(--muted); }
+.route-list-status { margin: 6px 0; color: var(--muted); font-size: var(--fs-xs); }
+.route-list-more { margin-top: 10px; }

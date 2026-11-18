@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import geo from '../data/geo.json';
 import { AIRPORTS, AIRPORT_BY_CODE, airportMarkerRadius } from '../data/airports';
 import { greatCirclePoint } from '../sim/geo';
@@ -97,6 +97,9 @@ export default function MapCanvas(props: Props) {
   analysisRef.current = analysis;
   const propsRef = useRef(props);
   propsRef.current = props;
+  const pairs = useMemo(() => routePairs(props.plan), [props.plan.fleet]);
+  const pairsRef = useRef(pairs);
+  pairsRef.current = pairs;
   const viewRef = useRef<View | null>(null);
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const dragRef = useRef<{ from: string; x: number; y: number } | null>(null);
@@ -153,7 +156,7 @@ export default function MapCanvas(props: Props) {
       if (!a) return;
       [lat, lon] = [a.lat, a.lon];
     } else {
-      const r = props.selection.kind === 'route' ? routePairs(props.plan).find((x) => x.key === props.selection!.id) : undefined;
+      const r = props.selection.kind === 'route' ? pairs.find((x) => x.key === props.selection!.id) : undefined;
       if (!r) return;
       const A = AIRPORT_BY_CODE[r.a], B = AIRPORT_BY_CODE[r.b];
       [lat, lon] = greatCirclePoint(A.lat, A.lon, B.lat, B.lon, 0.5);
@@ -243,7 +246,7 @@ export default function MapCanvas(props: Props) {
     let sceneResult: NetworkResult | null = null;
     let sceneAnalysis = analysisRef.current;
     let sceneView: View | null = null;
-    let flightPlan: Plan | null = null;
+    let flightFleet: Plan['fleet'] | null = null;
     let flights: { acId: string; cycle: number; dep: number; block: number; points: [number, number][] }[] = [];
     let lastPaint = -Infinity;
     let lastFrame = 0;
@@ -261,12 +264,12 @@ export default function MapCanvas(props: Props) {
       if (!viewChanged && !panTarget.current && !dragRef.current && time - lastPaint < 1000 / 30 - 0.5) return;
       lastPaint = time;
       const p = propsRef.current;
-      if (flightPlan !== p.plan) {
+      if (flightFleet !== p.plan.fleet) {
         flights = p.plan.fleet.flatMap(ac => ac.legs.map(leg => ({
           acId: ac.id, cycle: cycleOf(ac) * DAY, dep: leg.dep,
           block: blockMinutes(leg.from, leg.to, ac.type), points: arc(leg.from, leg.to),
         })));
-        flightPlan = p.plan;
+        flightFleet = p.plan.fleet;
       }
       const pal = PALETTE[p.theme];
       const { w, h, dpr } = sizeRef.current;
@@ -296,7 +299,7 @@ export default function MapCanvas(props: Props) {
         if (time - lastMove > 100) rebuild = true;
         else if (time - lastRebuild > 200 && (!covered || r < 0.5 || r > 2)) rebuild = true;
       }
-      if (!rebuild && !viewMoved && !dragRef.current && (p.clock.speed === 0 || !p.plan.fleet.some(ac => ac.legs.length))) return;
+      if (!rebuild && !viewMoved && !dragRef.current && (p.clock.speed === 0 || !flights.length)) return;
       if (rebuild) {
         const sw = Math.round(W * dpr), sh = Math.round(H * dpr);
         if (sceneCanvas.width !== sw) sceneCanvas.width = sw;
@@ -372,12 +375,14 @@ export default function MapCanvas(props: Props) {
         }
 
         // Routes
-        const pairs = routePairs(p.plan);
+        const pairs = pairsRef.current;
         const hintedNodes = new Set((p.hint ?? []).flat());
+        const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
+        const selectedRoute = p.selection?.kind === 'route' ? p.selection.id : null;
         for (const r of pairs) {
           const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo));
           const res = p.result?.routes[r.key];
-          const selected = p.selection?.kind === 'route' && p.selection.id === r.key;
+          const selected = selectedRoute === r.key;
           ctx.beginPath();
           pts.forEach(([x, y], i) => (i && Math.abs(x - pts[i - 1][0]) < viewRef.current!.scale * 180 ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
           ctx.lineCap = 'round';
@@ -390,9 +395,8 @@ export default function MapCanvas(props: Props) {
           }
           ctx.strokeStyle = res ? lfColor(res.loadFactor) : pal.idle;
           ctx.lineWidth = res ? Math.min(8, 2 + Math.sqrt(res.pax / 14) / 12) : 1.5 + Math.min(4, r.flightsPerDay * 0.5);
-          // With an airport selected, show its direct routes and fade the rest.
-          const focus = p.selection?.kind === 'airport' ? p.selection.id : null;
           if (net) ctx.globalAlpha = 0.25;
+          else if (selectedRoute && !selected) ctx.globalAlpha = 0.18;
           else if (focus) {
             if (r.a === focus || r.b === focus) ctx.lineWidth += 1.5;
             else if (hintedNodes.has(r.a) || hintedNodes.has(r.b)) { /* part of a transit idea: keep it visible */ }
@@ -596,7 +600,7 @@ export default function MapCanvas(props: Props) {
       return best;
     };
     const routeAt = (x: number, y: number): string | null => {
-      for (const r of routePairs(propsRef.current.plan)) {
+      for (const r of pairsRef.current) {
         for (const offset of worldCopies(viewRef.current!, sizeRef.current.w)) {
         const pts = arc(r.a, r.b).map(([la, lo]) => screen(la, lo + offset));
         for (let i = 0; i < pts.length - 1; i++) {

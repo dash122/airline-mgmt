@@ -71,16 +71,20 @@ export type SheetNav = {
 };
 export const SheetNavContext = createContext<SheetNav | null>(null);
 
-export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className, pager }: {
+export function Sheet({ title, sub, info, onClose, children, size = 'half', over, action, footer, summary, className, pager, onSizeChange }: {
   title: string; sub?: ReactNode; info?: ReactNode; onClose: () => void; children: ReactNode; size?: SheetSize; over?: boolean; action?: ReactNode; footer?: ReactNode; summary?: ReactNode; className?: string;
   /** Swipe the top of the sheet sideways (or use the arrows) to move to the previous or next item. */
   pager?: Pager;
+  onSizeChange?: (size: SheetSize) => void;
 }) {
   const ctx = useContext(SheetNavContext);
   const nav = over ? null : ctx;
   const [local, setLocal] = useState<SheetSize>(size);
   const s = nav?.detent ?? local;
-  const setS = nav?.onDetent ?? setLocal;
+  const setS = (next: SheetSize) => {
+    (nav?.onDetent ?? setLocal)(next);
+    onSizeChange?.(next);
+  };
   const root = !!nav?.switcher;
   // The home sheet's smallest height is just its title row, so the map is the whole screen.
   const canCompact = !!summary || root;
@@ -323,14 +327,19 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const [a, b] = routeKey.split('-');
   const airlineLink = useContext(AirlineLink);
   const m = marketBetween(a, b);
-  const flights = flightsOn(plan, routeKey);
+  const flights = useMemo(() => flightsOn(plan, routeKey), [plan.fleet, routeKey]);
   const daily = flights.length / 2;
   const fareMult = plan.fares[routeKey] ?? 1;
   const setFare = (x: number) => onFare(clampFare(x));
   // Try every fare step on this route. Uses the whole network's profit, since connecting travellers pay part of it too.
   const painted = usePainted();
+  const [sheetSize, setSheetSize] = useState(size);
+  const [why, setWhy] = useState<ExplainKey | null>(null);
+  const [tab, setTab] = useState<RouteTab>('fare');
+  const expanded = sheetSize !== 'compact';
+  const marketVisible = expanded && tab === 'market';
   // Worked out on the calculation worker; the last curve stays until the new one arrives.
-  const curveAnswer = useWorkerAnswer<FarePoint[]>(plan, painted && flights.length > 0, 'fare-curve', { routeKey });
+  const curveAnswer = useWorkerAnswer<FarePoint[]>(plan, painted && expanded && tab === 'fare' && flights.length > 0, 'fare-curve', { routeKey });
   const curve = curveAnswer?.value ?? [];
   // Advice only from the final curve for the current plan: a partial or last-plan curve can point at the wrong fare.
   const curveFinal = !!curveAnswer?.fresh;
@@ -339,19 +348,21 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
   const betterFare = curveFinal && best && now && best !== now && best.profit - now.profit > 1 ? best : null;
   // Nobody flies these two airports: say where travellers fly today instead.
   const elsewhere = useMemo(() => {
+    if (!marketVisible) return null;
     const comp = [competitionFor(a, b), competitionFor(b, a)];
     if (comp.some((c) => c.services.length && !c.otherAirports)) return null;
     const pairs = [...new Set(comp.flatMap((c) => c.services.map((s) => pairKey(s.from, s.to))))].map((k) => k.replace('-', '–'));
     return pairs.length
       ? <Badge n="rival" tone="muted">對手改飛 {pairs.join('、')}</Badge>
       : <Badge n="hub" tone="good">你是唯一直飛</Badge>;
-  }, [a, b]);
+  }, [a, b, marketVisible]);
   const types = [...new Set(flights.map((f) => shortType(f.ac.type)))].join('、');
-  const [why, setWhy] = useState<ExplainKey | null>(null);
-  const [tab, setTab] = useState<RouteTab>('fare');
-  const split = useMemo(() => marketSplit(a, b, result, net), [a, b, result, net]);
-  const routeCompetitors = useMemo(() => [...new Map(rivalsBetween(a, b).map((service) => [service.airline.id, service.airline])).values()], [a, b]);
-  const explained = result && why ? explainRoute(why, result, split) : null;
+  const needsSplit = marketVisible || (expanded && why !== null);
+  const split = useMemo(() => needsSplit ? marketSplit(a, b, result, net) : undefined, [needsSplit, a, b, result, net]);
+  const routeCompetitors = useMemo(() => marketVisible
+    ? [...new Map(rivalsBetween(a, b).map((service) => [service.airline.id, service.airline])).values()]
+    : [], [a, b, marketVisible]);
+  const explained = result && why && split ? explainRoute(why, result, split) : null;
   const tap = (k: ExplainKey) => () => setWhy(why === k ? null : k);
   const profit = result ? result.revenue - result.flyingCost : 0;
   const health = routeHealth(result ? { loadFactor: result.loadFactor, spill: result.spill, profit } : null, daily);
@@ -369,11 +380,11 @@ export function RouteSheet({ plan, routeKey, result, onFare, onAdd, onRemoveOne,
     : health.key === 'ok' ? null
     : { ...advice, acts: advice.acts.filter((x) => x.icon !== 'fare') };
   // What one more or one fewer daily round trip would do to the whole network's weekly profit (lease included).
-  const whatIf = useWorkerAnswer<RouteWhatIf>(plan, painted && !!net, 'what-if', { a, b, routeKey });
+  const whatIf = useWorkerAnswer<RouteWhatIf>(plan, painted && expanded && !!net, 'what-if', { a, b, routeKey });
   const freqWhatIf = whatIf?.value ?? null;
   const tabs: [RouteTab, string][] = [['fare', '票價'], ['flights', `航班 ${flights.length}`], ['market', '市場']];
   return (
-    <Sheet size={size} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
+    <Sheet size={size} onSizeChange={setSheetSize} pager={pager} className="route-sheet" summary={<div className="route-preview-summary">
       <div className="route-preview-load"><span>載客率</span><strong className={result ? tone(result.loadFactor) : ''}>{result ? pct(result.loadFactor) : '—'}</strong>{result && <Ring value={result.loadFactor} tone={tone(result.loadFactor)} size={28} stroke={4} />}</div>
       <div className="route-preview-meta"><b>{frequencyLabel(daily)}</b><span>{result ? `${Math.round(result.pax).toLocaleString()} / ${Math.round(result.seats).toLocaleString()} 人／週` : '正在更新旅客數'}</span></div>
       <div className="route-preview-profit"><span>航線週損益</span><b className={result && profit < 0 ? 'bad' : 'good'}>{result ? hk(profit) : '—'}</b></div>

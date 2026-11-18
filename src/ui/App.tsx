@@ -1,5 +1,5 @@
 import { createComputeClient } from './compute-client';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE, BASES } from '../data/airports';
 import { AIRCRAFT } from '../data/aircraft';
@@ -92,32 +92,61 @@ export default function App() {
   if (plan && !clockRef.current) clockRef.current = new GameClock((game ?? newGame(plan.base)).utcMin);
   const [speed, setSpeedState] = useState<Speed>(1);
   const [simulation, setSimulation] = useState<{ plan: Plan; result: NetworkResult } | null>(null);
-  const simulationWorker = useRef<Worker | null>(null);
-  const simulationId = useRef(0);
+  const simulationWorker = useRef<((plan: Plan | null) => void) | null>(null);
+  const hasAircraft = !!plan?.fleet.length;
   useEffect(() => {
-    if (!plan?.fleet.length) return;
-    const worker = simulationWorker.current ??= createComputeClient('simulation');
-    const id = ++simulationId.current;
-    const onMessage = (event: MessageEvent<{ id: number; result?: NetworkResult; error?: string }>) => {
-      if (event.data.id === id && event.data.result) setSimulation({ plan, result: event.data.result });
-      else if (event.data.id === id && event.data.error) console.error('Simulation failed:', event.data.error);
+    if (!hasAircraft) return;
+    let client: Worker | null = null;
+    let latest: Plan | null = null;
+    let inFlight: { id: number; plan: Plan } | null = null;
+    let nextId = 0;
+    const submit = (plan: Plan | null) => {
+      latest = plan;
+      if (inFlight || !latest) return;
+      if (!client) {
+        client = createComputeClient('simulation');
+        client.addEventListener('message', onMessage);
+        client.addEventListener('error', onError);
+      }
+      inFlight = { id: ++nextId, plan: latest };
+      client.postMessage(inFlight);
     };
-    worker.addEventListener('message', onMessage);
-    worker.postMessage({ id, plan });
-    return () => worker.removeEventListener('message', onMessage);
-  }, [plan]);
-  useEffect(() => () => { simulationWorker.current?.terminate(); simulationWorker.current = null; }, []);
+    const onMessage = ({ data }: MessageEvent<{ id: number; result?: NetworkResult; error?: string }>) => {
+      if (!inFlight || data.id !== inFlight.id) return;
+      const completed = inFlight.plan;
+      inFlight = null;
+      if (latest !== completed) submit(latest);
+      else if (data.result) setSimulation({ plan: completed, result: data.result });
+      else if (data.error) console.error('Simulation failed:', data.error);
+    };
+    const closeClient = () => {
+      if (!client) return;
+      client.removeEventListener('message', onMessage);
+      client.removeEventListener('error', onError);
+      client.postMessage({ cancel: true });
+      client.terminate();
+      client = null;
+    };
+    const onError = (event: ErrorEvent) => {
+      const interrupted = inFlight?.plan;
+      inFlight = null;
+      closeClient();
+      if (latest !== interrupted) submit(latest);
+      else console.error('Simulation worker failed:', event.message);
+    };
+    simulationWorker.current = submit;
+    return () => {
+      closeClient();
+      simulationWorker.current = null;
+    };
+  }, [hasAircraft]);
+  useEffect(() => { simulationWorker.current?.(plan); }, [plan]);
   const result = simulation?.plan === plan ? simulation.result : null;
-  const selectedRouteKey = selection?.kind === 'route' ? selection.id : undefined;
-  // Whether the world demand model is built (see the background build below), and whether a view is waiting for it.
+  const displayResult = hasAircraft && simulation?.plan.base === plan?.base ? simulation?.result ?? null : null;
+  const pairs = useMemo(() => plan ? routePairs(plan) : [], [plan?.fleet]);
+  // Some sheets need the demand model on the main thread. Wait for the sliced build to finish.
   const [marketsBuilt, setMarketsBuilt] = useState(marketsReady);
   const marketsWanted = useRef(false);
-  // The route sheet's figures come from the calculation worker's result for the current plan. The last result is kept
-  // until the next one arrives, so an edit doesn't block the main thread with a second full simulation.
-  const lastNetwork = useRef<NetworkResult | null>(null);
-  if (result) lastNetwork.current = result;
-  const routeOpen = !!plan && !!selectedRouteKey && routePairs(plan).some((r) => r.key === selectedRouteKey);
-  const liveRouteResult = routeOpen ? (result ?? lastNetwork.current) : null;
   const resultRef = useRef(result);
   resultRef.current = result;
   const [panel, setPanel] = useState<Panel>('routes');
@@ -204,8 +233,8 @@ export default function App() {
     }, 300);
     return () => clearTimeout(timer);
   }, [marketsBuilt]);
-  // Then the competitor schedules around the player's airports, which a route's first simulation needs.
-  const planAirports = plan ? [...new Set([plan.base, ...(plan.hub ? [plan.hub] : []), ...routePairs(plan).flatMap((r) => [r.a, r.b])])].join() : '';
+  // Warm competitor schedules for the routes and markets the player is likely to inspect.
+  const planAirports = plan ? [...new Set([plan.base, ...(plan.hub ? [plan.hub] : []), ...pairs.flatMap((r) => [r.a, r.b])])].join() : '';
   useEffect(() => {
     if (!marketsBuilt || !planAirports) return;
     const steps = warmCompetition(planAirports.split(','));
@@ -287,7 +316,7 @@ export default function App() {
   };
 
   const routeKey = selection?.kind === 'route' ? selection.id : undefined;
-  const routeExists = routeKey && routePairs(plan).some((r) => r.key === routeKey);
+  const routeExists = routeKey && pairs.some((r) => r.key === routeKey);
   const aircraft = selection?.kind === 'aircraft' ? plan.fleet.find((a) => a.id === selection.id) : undefined;
   const airport = selection?.kind === 'airport' ? selection.id : undefined;
   const airlineId = selection?.kind === 'airline' ? selection.id : undefined;
@@ -325,8 +354,8 @@ export default function App() {
     if (i < 0 || list.length < 2) return undefined;
     return { label: `${i + 1}/${list.length}`, prev: i > 0 ? () => go(list[i - 1]) : undefined, next: i < list.length - 1 ? () => go(list[i + 1]) : undefined };
   };
-  const routeOrder = routePairs(plan).map((r) => r.key);
-  const airportOrder = [...new Set(routePairs(plan).flatMap((r) => [r.a, r.b]))]
+  const routeOrder = pairs.map((r) => r.key);
+  const airportOrder = [...new Set(pairs.flatMap((r) => [r.a, r.b]))]
     .sort((x, y) => (x === plan.base ? -1 : y === plan.base ? 1 : x === plan.hub ? -1 : y === plan.hub ? 1 : AIRPORT_BY_CODE[x].name.localeCompare(AIRPORT_BY_CODE[y].name)));
   // A codeshare sheet opens over whatever sheet it came from (a route, a partner, the routes list). Hide that one
   // while it is open, so only one sheet ever shows; it comes back as it was when the codeshare sheet closes.
@@ -378,7 +407,7 @@ export default function App() {
         theme={theme} onTheme={() => setTheme(theme === 'day' ? 'night' : 'day')}
         onReport={() => { if (!reportOpen) push({ kind: 'report' }); }}
         onReset={() => {
-          if (confirmReset()) { setPlan(null); setGame(null); clockRef.current = null; select(null); setPanel('routes'); setDetent('compact'); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
+          if (confirmReset()) { setPlan(null); setGame(null); setSimulation(null); clockRef.current = null; select(null); setPanel('routes'); setDetent('compact'); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(GAME_KEY); } catch { /* ignore */ } }
         }} />
 
       {nudge && !stack.length && !overlay && (detent === 'compact' || wide) && (
@@ -413,7 +442,7 @@ export default function App() {
       )}
       {marketsBuilt && routeKey && routeExists && (
         <SheetNavContext.Provider value={pageNav}>
-        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => swap({ kind: 'route', id: k, full: routeFull }))} plan={plan} routeKey={routeKey} result={liveRouteResult?.routes[routeKey]} net={liveRouteResult}
+        <RouteSheet key={routeKey} size={routeFull ? 'full' : 'compact'} pager={pagerFor(routeOrder, routeKey, (k) => swap({ kind: 'route', id: k, full: routeFull }))} plan={plan} routeKey={routeKey} result={displayResult?.routes[routeKey]} net={displayResult}
           onFare={(mult) => update({ ...plan, fares: { ...plan.fares, [routeKey]: mult } })}
           onAdd={() => setOverlay({ kind: 'svc', target: { kind: 'route', key: routeKey } })}
           onRemoveOne={() => removeOne(routeKey)}
@@ -475,7 +504,7 @@ export default function App() {
         <AirlinesPanel plan={plan} onPick={(id) => openAirline(id)} onClose={() => setDetent('compact')} />
       )}
       {showPanel === 'routes' && (
-        <RoutesPanel plan={plan} result={result} history={game?.history ?? []} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
+        <RoutesPanel plan={plan} result={displayResult} updating={hasAircraft && !result} history={game?.history ?? []} view={routesView} onView={setRoutesView} onOpen={openRoute} onNew={() => planRoute(plan.hub ?? plan.base)}
           onOpenCodeshare={openCodeshare} onShare={toggleShare} onPartners={() => openTab('airlines')} onOpenHosted={openHosted} onHost={toggleHost}
           onAdd={(key) => setOverlay({ kind: 'svc', target: { kind: 'route', key } })} onRemoveOne={removeOne} onClose={() => setDetent('compact')} />
       )}

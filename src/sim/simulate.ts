@@ -808,6 +808,20 @@ const RIVAL_CONNECT_SHARE = 0.7;
 /** Routings with less than this share of the best one's pull are left out. */
 const MIN_CONNECTION_PULL = 0.03;
 
+const hubFeeders = new Map<string, { to: string; services: RivalService[] }[]>();
+
+function feedersFrom(origin: string) {
+  let feeders = hubFeeders.get(origin);
+  if (!feeders) {
+    feeders = rivalsAt(origin).flatMap(({ to, services }) => {
+      const hubServices = services.filter((s) => s.airline.kind !== 'low' && s.airline.bases.includes(to));
+      return hubServices.length ? [{ to, services: hubServices }] : [];
+    });
+    hubFeeders.set(origin, feeders);
+  }
+  return feeders;
+}
+
 /**
  * Competitors' one-stop trips from `o` to `d`: an airline that flies both legs through one of its own hubs or bases
  * (low-cost airlines don't sell connections). Long-haul markets get the hub carriers of the Gulf and Asia, as real
@@ -818,13 +832,9 @@ export function rivalConnections(o: string, d: string): RivalConnection[] {
   if (!m) return [];
   const O = AIRPORT_BY_CODE[o], D = AIRPORT_BY_CODE[d];
   const out: (RivalConnection & { pull: number })[] = [];
-  for (const { to: h, services } of rivalsAt(o)) {
+  for (const { to: h, services: feeders } of feedersFrom(o)) {
     const H = AIRPORT_BY_CODE[h];
     if (h === d || H.metro === O.metro || H.metro === D.metro) continue;
-    // Only a hub carrier can sell this connection. Avoid generating the
-    // onward market's whole timetable when no incoming carrier qualifies. (Checked first: it needs no market lookups.)
-    const feeders = services.filter(s => s.airline.kind !== 'low' && s.airline.bases.includes(h));
-    if (!feeders.length) continue;
     const first = marketBetween(o, h), second = marketBetween(h, d);
     if (!first || !second || first.distKm + second.distKm > m.distKm * RIVAL_CONNECT_DETOUR) continue;
     const onward = rivalsFrom(h, d);
@@ -888,11 +898,7 @@ export function competitionFor(o: string, d: string): Competition {
   return c;
 }
 
-/**
- * Fills the competitor caches a simulation of these airports' network reads first: every competitor service at each
- * airport, then the competition in each market between them. Yields after each market, so it can run in short slices
- * in the background; the caches hold the same values whenever they are filled.
- */
+/** Warm each airport’s schedules in slices. Directional competition is computed on demand. */
 export function* warmCompetition(codes: readonly string[]): Generator<void, void> {
   for (const code of codes) {
     for (const m of marketsAt(code)) {
@@ -901,10 +907,6 @@ export function* warmCompetition(codes: readonly string[]): Generator<void, void
       yield;
     }
     rivalsAt(code);
-  }
-  for (const o of codes) for (const d of codes) {
-    if (o === d || !marketBetween(o, d)) continue;
-    competitionFor(o, d);
     yield;
   }
 }
@@ -983,6 +985,7 @@ function buildStructure(plan: Plan): Structure {
   // network: Guangzhou-Miami through Hong Kong and New York once the partner sells New York-Miami. Hosted feeders
   // are not chained, and the partner leg is always a flight the player sells seats on.
   const sellable = partners.filter((p) => !p.partner!.hosted);
+  if (!sellable.length) return s;
   const sellableFrom = groupBy(sellable, (f) => f.from);
   for (const f1 of flights) for (const f2 of b.ownFrom.get(f1.to) ?? []) for (const p of sellableFrom.get(f2.to) ?? []) b.twoStop([f1, f2, p]);
   for (const p of sellable) for (const f2 of b.ownFrom.get(p.to) ?? []) for (const f3 of b.ownFrom.get(f2.to) ?? []) b.twoStop([p, f2, f3]);
@@ -1686,10 +1689,12 @@ export function routePairs(plan: Plan): { key: string; a: string; b: string; fli
   const m = new Map<string, { key: string; a: string; b: string; flightsPerDay: number }>();
   for (const ac of plan.fleet) for (const l of ac.legs) {
     const key = pairKey(l.from, l.to);
-    const [a, b] = key.split('-');
-    const r = m.get(key) ?? { key, a, b, flightsPerDay: 0 };
-    r.flightsPerDay += 1 / cycleOf(ac);
-    m.set(key, r);
+    const existing = m.get(key);
+    if (existing) existing.flightsPerDay += 1 / cycleOf(ac);
+    else {
+      const [a, b] = key.split('-');
+      m.set(key, { key, a, b, flightsPerDay: 1 / cycleOf(ac) });
+    }
   }
   return [...m.values()];
 }
