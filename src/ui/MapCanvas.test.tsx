@@ -10,6 +10,7 @@ vi.mock('react', async (original) => ({
   ...await original<typeof import('react')>(),
   useEffect: (effect: () => unknown) => { hooks.effects.push(effect); },
   useLayoutEffect: (effect: () => unknown) => { hooks.effects.push(effect); },
+  useMemo: <T,>(calculate: () => T) => calculate(),
   useRef: (current: unknown) => {
     const ref = { current };
     hooks.refs.push(ref);

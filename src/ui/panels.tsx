@@ -1,7 +1,7 @@
 import { CodeshareHub } from './codeshare';
 import type { DayRecord } from './clock';
 import { ScheduleBoard, shiftText } from './ScheduleBoard';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { AIRCRAFT, MODEL_ORDER, type AircraftModel } from '../data/aircraft';
 import { AIRPORT_BY_CODE } from '../data/airports';
 import { pairKey } from '../sim/markets';
@@ -22,46 +22,85 @@ const dur = hm;
 type RouteSort = 'need' | 'profit' | 'load' | 'share';
 const SORTS = [['need', '要處理先'], ['profit', '損益'], ['load', '載客率'], ['share', '市占']] as const;
 export type RoutesView = 'own' | 'share';
+const ROUTE_PAGE_SIZE = 30;
+type RouteListMetrics = { health: ReturnType<typeof routeHealth>; figures: { profit: number; loadFactor: number } | null; share: number };
+const ROUTE_COMPARATORS: Record<RouteSort, (x: RouteListMetrics, y: RouteListMetrics) => number> = {
+  need: (x, y) => healthRank(x.health) - healthRank(y.health) || (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
+  profit: (x, y) => (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
+  load: (x, y) => (y.figures?.loadFactor ?? 0) - (x.figures?.loadFactor ?? 0),
+  share: (x, y) => y.share - x.share,
+};
 
-export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
-  plan: Plan; result: NetworkResult | null; history: DayRecord[]; view: RoutesView; onView: (v: RoutesView) => void;
+export function RoutesPanel({ plan, result, updating, history, view, onView, onOpen, onNew, onAdd, onRemoveOne, onOpenCodeshare, onShare, onPartners, onOpenHosted, onHost, onClose }: {
+  plan: Plan; result: NetworkResult | null; updating: boolean; history: DayRecord[]; view: RoutesView; onView: (v: RoutesView) => void;
   onOpen: (key: string) => void; onNew: () => void; onAdd: (key: string) => void; onRemoveOne: (key: string) => void;
   onOpenCodeshare: (airline: string, key: string) => void; onShare: (airline: string, key: string) => void; onPartners: () => void;
   onOpenHosted: (key: string, airline?: string) => void; onHost: (airline: string, key: string) => void; onClose: () => void;
 }) {
   const [sort, setSort] = useState<RouteSort>('need');
+  const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(ROUTE_PAGE_SIZE);
+  const query = useDeferredValue(search.trim().toLowerCase());
   const shared = (plan.codeshares?.length ?? 0) + (plan.hosted?.length ?? 0);
-  const pairs = routePairs(plan);
-  // Which end a route hangs from: the hub, then the base, then whichever end has more of your routes.
-  const degree = new Map<string, number>();
-  for (const r of pairs) for (const c of [r.a, r.b]) degree.set(c, (degree.get(c) ?? 0) + 1);
-  const homeOf = (a: string, b: string) => {
-    for (const h of [plan.hub, plan.base]) if (h === a || h === b) return h;
-    return (degree.get(a) ?? 0) >= (degree.get(b) ?? 0) ? a : b;
-  };
-  const rows = pairs.map((r) => {
+  const routes = useMemo(() => {
+    const pairs = routePairs(plan);
+    const degree = new Map<string, number>();
+    const types = new Map<string, Set<string>>();
+    for (const r of pairs) for (const code of [r.a, r.b]) degree.set(code, (degree.get(code) ?? 0) + 1);
+    for (const ac of plan.fleet) {
+      const type = shortType(ac.type);
+      for (const leg of ac.legs) {
+        const key = pairKey(leg.from, leg.to);
+        let models = types.get(key);
+        if (!models) types.set(key, models = new Set());
+        models.add(type);
+      }
+    }
+    // Prefer the hub, then the base, then the airport with more routes.
+    return pairs.map((r) => {
+      const preferred = [plan.hub, plan.base].find((code) => code === r.a || code === r.b);
+      const home = preferred ?? ((degree.get(r.a) ?? 0) >= (degree.get(r.b) ?? 0) ? r.a : r.b);
+      const other = home === r.a ? r.b : r.a;
+      const searchText = [r.key, ...[r.a, r.b].map((code) => AIRPORT_BY_CODE[code].name)].join(' ').toLowerCase();
+      return { ...r, home, other, searchText, types: [...(types.get(r.key) ?? [])].join('、') };
+    });
+  }, [plan.fleet, plan.hub, plan.base]);
+  const rows = useMemo(() => routes.map((r) => {
     const res = result?.routes[r.key];
     const figures = res ? { loadFactor: res.loadFactor, spill: res.spill, profit: res.revenue - res.flyingCost } : null;
-    const types = [...new Set(plan.fleet.filter((ac) => ac.legs.some((l) => pairKey(l.from, l.to) === r.key)).map((ac) => shortType(ac.type)))];
-    const home = homeOf(r.a, r.b);
-    return { ...r, figures, types, home, other: home === r.a ? r.b : r.a, share: res?.marketShare ?? 0, health: routeHealth(figures, r.flightsPerDay / 2) };
-  });
+    return { ...r, figures, share: res?.marketShare ?? 0, health: routeHealth(figures, r.flightsPerDay / 2) };
+  }), [routes, result]);
+  const { todo, avgLoad, total, daily } = useMemo(() => {
+    const loads = rows.flatMap((r) => r.figures ? [r.figures.loadFactor] : []);
+    return {
+      todo: rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending').length,
+      avgLoad: loads.length ? loads.reduce((x, y) => x + y, 0) / loads.length : 0,
+      total: rows.reduce((sum, r) => sum + (r.figures?.profit ?? 0), 0),
+      daily: rows.reduce((sum, r) => sum + r.flightsPerDay, 0) / 2,
+    };
+  }, [rows]);
   type Row = (typeof rows)[number];
-  const by: Record<RouteSort, (x: Row, y: Row) => number> = {
-    need: (x, y) => healthRank(x.health) - healthRank(y.health) || (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
-    profit: (x, y) => (y.figures?.profit ?? 0) - (x.figures?.profit ?? 0),
-    load: (x, y) => (y.figures?.loadFactor ?? 0) - (x.figures?.loadFactor ?? 0),
-    share: (x, y) => y.share - x.share,
-  };
-  const todo = rows.filter((r) => r.health.key !== 'ok' && r.health.key !== 'pending');
-  const shown = rows.slice().sort(by[sort]);
-  const loads = rows.filter((r) => r.figures).map((r) => r.figures!.loadFactor);
-  const avgLoad = loads.length ? loads.reduce((x, y) => x + y, 0) / loads.length : 0;
-  const total = rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
-  const daily = rows.reduce((s, r) => s + r.flightsPerDay, 0) / 2;
-  const groups = [...new Set(shown.map((r) => r.home))]
-    .map((home) => ({ home, rows: shown.filter((r) => r.home === home) }))
-    .sort((x, y) => (x.home === (plan.hub ?? plan.base) ? -1 : y.home === (plan.hub ?? plan.base) ? 1 : y.rows.length - x.rows.length));
+  const grouped = useMemo(() => {
+    const terms = query.split(/\s+/);
+    const matches = rows.filter((r) => terms.every((term) => r.searchText.includes(term))).sort(ROUTE_COMPARATORS[sort]);
+    const groups = new Map<string, { home: string; rows: Row[]; profit: number }>();
+    for (const row of matches) {
+      let group = groups.get(row.home);
+      if (!group) groups.set(row.home, group = { home: row.home, rows: [], profit: 0 });
+      group.rows.push(row);
+      group.profit += row.figures?.profit ?? 0;
+    }
+    const primary = plan.hub ?? plan.base;
+    return { count: matches.length, groups: [...groups.values()].sort((x, y) => Number(y.home === primary) - Number(x.home === primary) || y.rows.length - x.rows.length) };
+  }, [rows, query, sort, plan.hub, plan.base]);
+  let remaining = limit;
+  const visibleGroups = [];
+  for (const group of grouped.groups) {
+    if (!remaining) break;
+    const visible = group.rows.slice(0, remaining);
+    visibleGroups.push({ ...group, visible });
+    remaining -= visible.length;
+  }
   return (
     <Sheet size="full" className="routes-panel" title={`航線 · ${rows.length}`} onClose={onClose}
       info={rows.length > 0 && <p>航線按基地和轉運站分組。向右滑加一班來回，向左滑減一班。金額是港幣（HK$）。航線週損益不含租金。</p>}
@@ -85,34 +124,43 @@ export function RoutesPanel({ plan, result, history, view, onView, onOpen, onNew
       {rows.length > 0 && (
         <>
           <div className="kpis">
-            <Kpi n="money" label="週損益" v={`${total >= 0 ? '+' : ''}${money(total)}`} tone={total >= 0 ? 'good' : 'bad'} />
-            <Kpi n="seat" label="載客" v={pct(avgLoad)} ring={avgLoad} tone={avgLoad >= 0.8 ? 'good' : avgLoad >= 0.6 ? 'warn' : 'bad'} />
+            <Kpi n="money" label="週損益" v={result ? `${total >= 0 ? '+' : ''}${money(total)}` : '—'} tone={result ? (total >= 0 ? 'good' : 'bad') : undefined} />
+            <Kpi n="seat" label="載客" v={result ? pct(avgLoad) : '—'} ring={result ? avgLoad : undefined} tone={result ? (avgLoad >= 0.8 ? 'good' : avgLoad >= 0.6 ? 'warn' : 'bad') : undefined} />
             <Kpi n="plane" label="班/日" v={daily} />
-            {todo.length > 0 && <Kpi n="warn" label="待處理" v={todo.length} tone="warn" />}
+            {todo > 0 && <Kpi n="warn" label="待處理" v={todo} tone="warn" />}
           </div>
-          {rows.length > 1 && <div className="list-tools"><PullDown label="排序" items={SORTS} value={sort} onPick={setSort} /></div>}
+          {updating && <p className="route-list-status" role="status">正在更新航線表現…</p>}
+          {rows.length > 1 && (
+            <div className="route-list-tools">
+              <label className="route-search">
+                <span className="sr-only">搜尋航線</span>
+                <input type="search" placeholder="搜尋機場名稱或代碼" value={search}
+                  onChange={(e) => { setSearch(e.target.value); setLimit(ROUTE_PAGE_SIZE); }} />
+              </label>
+              <PullDown label="排序" items={SORTS} value={sort} onPick={(next) => { setSort(next); setLimit(ROUTE_PAGE_SIZE); }} />
+            </div>
+          )}
         </>
       )}
-      {groups.map((g) => {
-        const sum = g.rows.reduce((s, r) => s + (r.figures?.profit ?? 0), 0);
-        return (
-          <section key={g.home} className="route-group">
-            {groups.length > 1 && <div className="route-group-head">
-              <h4>{AIRPORT_BY_CODE[g.home].name} {g.home} · {g.rows.length}</h4>
-              <b className={sum >= 0 ? 'good' : 'bad'}>{sum >= 0 ? '+' : ''}{money(sum)}</b>
+      {query && <p className="route-list-status" role="status">{grouped.count ? `${grouped.count} 條符合的航線` : '找不到符合的航線'}</p>}
+      {visibleGroups.map((group) => (
+          <section key={group.home} className="route-group">
+            {grouped.groups.length > 1 && <div className="route-group-head">
+              <h4>{AIRPORT_BY_CODE[group.home].name} {group.home} · {group.rows.length}</h4>
+              {result && <b className={group.profit >= 0 ? 'good' : 'bad'}>{group.profit >= 0 ? '+' : ''}{money(group.profit)}</b>}
             </div>}
             <ul className="route-rows">
-              {g.rows.map((r) => {
-                return (
-                  <RouteRow key={r.key} name={AIRPORT_BY_CODE[r.other].name} swatch={routeColor(r.key)} figures={r.figures} daily={r.flightsPerDay / 2}
-                    sub={r.types.join('、')}
-                    onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
-                );
-              })}
+              {group.visible.map((r) => (
+                <RouteRow key={r.key} name={`${AIRPORT_BY_CODE[r.other].name} · ${r.other}`} swatch={routeColor(r.key)} figures={r.figures}
+                  daily={r.flightsPerDay / 2} sub={r.types}
+                  onOpen={() => onOpen(r.key)} onAdd={() => onAdd(r.key)} onRemove={() => onRemoveOne(r.key)} />
+              ))}
             </ul>
           </section>
-        );
-      })}
+      ))}
+      {grouped.count > limit && <button className="secondary wide route-list-more" onClick={() => setLimit((current) => current + ROUTE_PAGE_SIZE)}>
+        顯示更多航線（{limit} / {grouped.count}）
+      </button>}
       </>}
     </Sheet>
   );
